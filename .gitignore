@@ -31,3 +31,14 @@ env/
 *.njsproj
 *.sln
 *.sw?
+
+# Vite build output
+dist/
+dist-ssr/
+
+# Environment variables — never commit secrets
+.env.local
+.env.*.local
+
+# Claude Code worktrees
+.claude/worktrees/
