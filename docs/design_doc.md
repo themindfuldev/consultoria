@@ -246,6 +246,62 @@ interface Feedback {
 
 ---
 
+### `admins` Collection
+```ts
+// Document ID = admin user's UID
+interface AdminRecord {
+  uid: string;
+  email: string;        // denormalised for console readability
+  grantedAt: Timestamp;
+  grantedBy: string;    // email of the person who granted admin (audit trail)
+}
+```
+
+> **Admin records are created exclusively through the Firebase Console or a one-time bootstrap script — never through the app UI.** This ensures no privilege-escalation path exists in the client code. A user's `role` in the `users` collection (`'trainer'` or `'student'`) is unaffected by admin status.
+
+---
+
+## 🔐 Admin Mode
+
+### Purpose
+
+Admin mode allows designated super-users to impersonate any trainer or student and view the full UI experience as that user. This is the primary tool for investigating bugs reported by users without needing to share credentials or reproduce issues blind.
+
+### How Admins Are Granted
+
+1. An admin is created by adding a document to the `admins` Firestore collection with the target user's UID as the document ID.
+2. This is done manually via the Firebase Console or a one-time bootstrap script — **never through the app UI**.
+3. Any Google-authenticated user can be an admin, regardless of whether their `users` doc has `role: 'trainer'` or `role: 'student'`. The admin permission is orthogonal to role.
+
+### Admin Panel (`/admin`)
+
+Accessible only when `admins/{uid}` exists for the current user. The panel shows:
+
+- **User search / list**: all users from the `users` collection, filterable by name, email, or role.
+- **"View as" button**: next to each user, opens that user's dashboard experience.
+
+### Impersonation ("View As") Model
+
+Because Firebase Auth cannot be swapped client-side without a full re-login, impersonation is a **UI-layer overlay**, not a real auth swap:
+
+1. Admin clicks "View as" on a user.
+2. The app stores `{ impersonatedProfile, impersonatedRole }` in a React context (`AdminImpersonationContext`).
+3. `TrainerDashboard` and `StudentDashboard` read from `impersonatedProfile` instead of the real `AuthContext.profile` when impersonation is active.
+4. All Firestore reads still go through the **admin's own auth token**, so Firestore security rules must grant admins read access to all collections (see §Firestore Security Rules).
+5. Writes are **blocked** while impersonating — the admin is in observe-only mode. Any action that would mutate data shows a disabled state with a tooltip: *"Disabled in admin view"*.
+6. A persistent **"Admin View" banner** is shown at the top of every page while impersonating:
+   - Shows: avatar + name + role of the impersonated user.
+   - "Exit Admin View" button returns to the admin panel.
+
+### Security Constraints
+
+- The `/admin` route is guarded by `AdminRoute` (similar to `ProtectedRoute`), which checks `admins/{uid}` existence on load.
+- Admin status is checked once on mount and cached for the session — no polling.
+- The `admins` collection is **not readable by non-admins** (enforced in Firestore rules), so a client-side check alone is not the only gate.
+- No admin can write to any collection while impersonating (enforced in UI layer; Firestore rules additionally block writes using the admin's real UID in contexts where only the impersonated user's UID would be valid).
+
+---
+
 ## 🗂️ Exercise Library — Initial Seeding
 
 When a trainer creates their account, the app automatically creates a Google Sheet titled according to their language:
@@ -573,58 +629,74 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users can only read/write their own profile
+    // Users can only read/write their own profile; admins can read any profile
     match /users/{uid} {
-      allow read, write: if request.auth.uid == uid;
+      allow read: if request.auth.uid == uid || isAdmin();
+      allow write: if request.auth.uid == uid;
     }
 
-    // Workspace: readable by trainer + any associated student; writable only by trainer
+    // Admins collection: readable only by the owner (self-check on login) — NOT by other users
+    match /admins/{uid} {
+      allow read: if request.auth.uid == uid;
+      allow write: if false;   // never writable from the client
+    }
+
+    // Workspace: readable by trainer + any associated student + admins; writable only by trainer
     match /workspaces/{workspaceId} {
       allow read: if request.auth != null &&
-        (isTrainerOf(workspaceId) || isStudentOf(workspaceId));
+        (isAdmin() || isTrainerOf(workspaceId) || isStudentOf(workspaceId));
       allow write: if isTrainerOf(workspaceId);
     }
 
-    // StudentWorkspace: readable by trainer + the student; writable by trainer (status mgmt)
+    // StudentWorkspace: readable by trainer + the student + admins; writable by trainer (status mgmt)
     // Student can write their own emailPreferences only
     match /student_workspaces/{docId} {
       allow read: if request.auth != null &&
-        (isTrainerOf(resource.data.workspaceId) ||
+        (isAdmin() ||
+         isTrainerOf(resource.data.workspaceId) ||
          request.auth.uid == resource.data.studentUid);
       allow write: if isTrainerOf(resource.data.workspaceId);
       allow update: if request.auth.uid == resource.data.studentUid &&
         onlyUpdating(['emailPreferences']);
     }
 
-    // Training cycles / weekly sheets: trainer writes, associated students read
+    // Training cycles / weekly sheets: trainer writes, associated students + admins read
     match /training_cycles/{docId} {
-      allow read: if isTrainerOf(resource.data.workspaceId) ||
+      allow read: if isAdmin() ||
+        isTrainerOf(resource.data.workspaceId) ||
         isActiveStudentOf(resource.data.workspaceId, resource.data.studentUid);
       allow write: if isTrainerOf(resource.data.workspaceId);
     }
 
     match /weekly_sheets/{docId} {
-      allow read: if isTrainerOf(resource.data.workspaceId) ||
+      allow read: if isAdmin() ||
+        isTrainerOf(resource.data.workspaceId) ||
         isActiveStudentOf(resource.data.workspaceId, resource.data.studentUid);
       allow write: if isTrainerOf(resource.data.workspaceId);
     }
 
-    // Workout logs: trainer reads all in workspace; student writes own (active only)
+    // Workout logs: trainer reads all in workspace; student writes own (active only); admins read
     match /workout_logs/{docId} {
-      allow read: if isTrainerOf(resource.data.workspaceId) ||
+      allow read: if isAdmin() ||
+        isTrainerOf(resource.data.workspaceId) ||
         request.auth.uid == resource.data.studentUid;
       allow create, update: if request.auth.uid == resource.data.studentUid &&
         isActiveStudentOf(resource.data.workspaceId, resource.data.studentUid);
     }
 
-    // Feedback: trainer writes, student reads
+    // Feedback: trainer writes, student + admins read
     match /feedback/{docId} {
-      allow read: if isTrainerOf(resource.data.workspaceId) ||
+      allow read: if isAdmin() ||
+        isTrainerOf(resource.data.workspaceId) ||
         request.auth.uid == resource.data.studentUid;
       allow write: if isTrainerOf(resource.data.workspaceId);
     }
 
     // ── Helper functions ──────────────────────────────────────────────────────
+
+    function isAdmin() {
+      return exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
 
     function isTrainerOf(workspaceId) {
       return get(/databases/$(database)/documents/workspaces/$(workspaceId))
@@ -689,8 +761,21 @@ service cloud.firestore {
 - [ ] Morning email script (`scripts/send-morning-emails.ts`) + GitHub Actions cron workflow.
 - [ ] Trainer session-start/finish notification emails.
 
-### Phase 6 — Polish & Hardening
-- [ ] Write Firestore Security Rules (based on sketch above) and integration-test them.
+### Phase 6 — Admin Mode, Polish & Hardening
+
+#### Admin Mode
+- [ ] Add `AdminRecord` type to `src/types/index.ts`.
+- [ ] `AdminImpersonationContext`: stores `{ impersonatedProfile, isImpersonating }`, exposes `startImpersonation(profile)` and `exitImpersonation()`.
+- [ ] `AdminRoute` guard component: on mount, checks `admins/{uid}` existence via `getDoc`; redirects to `/` if not found.
+- [ ] `/admin` route wired in `App.tsx`, wrapped by `AdminRoute` + `Layout`.
+- [ ] `AdminDashboard` page: lists all users from `users` collection (real-time `onSnapshot`); filterable by name / email / role; "View as Trainer" / "View as Student" button per row.
+- [ ] Impersonation banner component: fixed top bar showing impersonated user avatar, name, role badge, and "Exit Admin View" button; only rendered when `isImpersonating === true`.
+- [ ] `TrainerDashboard` and `StudentDashboard` read from `impersonatedProfile` (override via context) when impersonation is active.
+- [ ] All mutating actions (invite, remove, delete, accept, etc.) disabled with *"Disabled in admin view"* tooltip while impersonating.
+- [ ] Bootstrap script or README note on how to grant admin: `firebase firestore:set admins/{uid} '{"uid":"…","email":"…","grantedAt":…,"grantedBy":"…"}'`.
+
+#### Polish & Hardening
+- [ ] Write Firestore Security Rules (based on sketch above, including `isAdmin()` helper) and integration-test them.
 - [ ] Integration tests for Sheets parser with mock API responses.
 - [ ] Accessibility pass (focus management, ARIA, colour contrast).
 - [ ] Final responsive QA on mobile (375px) and tablet (768px).
@@ -711,3 +796,5 @@ service cloud.firestore {
 4. **Feedback flow**: trainer opens completed session → creates feedback doc → student sees linked doc.
 5. **Progress photos**: create dated folder → upload in Drive → photos appear in app timeline → side-by-side comparison works.
 6. **Morning email dry-run**: trigger `workflow_dispatch` on the email workflow → verify correct students receive correct session content.
+7. **Admin impersonation**: sign in as an admin → open Admin panel → view a trainer account → confirm all data renders correctly and all mutating buttons are disabled → exit → confirm normal admin UI restored.
+8. **Admin access gate**: sign in as a non-admin → navigate to `/admin` → confirm redirect to `/`.
