@@ -1,169 +1,553 @@
-# Hevy-Inspired Personal Training Platform ("Consultoria") - Design Doc & Plan
+# Hevy-Inspired Personal Training Platform ("Consultoria") — Design Doc
 
-This document outlines the architecture, database schema, integration flows, and implementation steps for building **Consultoria**, a mobile-first web application designed to replace manual Google Sheets tracking with an interactive experience for personal trainers and their students.
+This document outlines the architecture, database schema, integration flows, and implementation plan for **Consultoria**, a mobile-first web app that replaces manual Google Sheets tracking with a premium interactive experience for personal trainers and their students.
 
 ---
 
 ## 🎯 Project Goals
 
-- **Wow Factor & Rich Aesthetics**: Build a responsive interface featuring a premium dark mode, Tailwind CSS utility styling, smooth micro-animations, and optimized layouts for mobile and tablet screens.
-- **Strict Budget Adherence ($0.00 Cost)**: Scale the system for 1 trainer and up to 20 students, staying 100% within the free tiers of Firebase and Resend.
-- **Language-Synced Google Storage**: Synced structure where spreadsheet columns, tabs, feedback document names, Google Drive folders, and exercise libraries dynamically match the user's preferred language (English or Portuguese).
-- **Secure Secrets & Automation**: Avoid committing secrets (API keys, client secrets) to public GitHub repos by using GitHub Secrets, Firebase Secrets Manager, and local environment variables, deploying automatically using GitHub Actions.
-- **Brand Customization**: Allow trainers to upload their custom logo, which is automatically inserted into generated spreadsheets alongside their name.
+- **Premium Aesthetics**: Responsive dark-mode UI with glassmorphism, micro-animations, and optimized mobile/tablet layouts.
+- **Near-Zero Cost**: Scale for 1 trainer and up to 20 students, staying within free quotas on Firebase Blaze and Resend. Expected monthly bill: **$0.00–$0.05**.
+- **Google Workspace as Source of Truth**: All workout data, exercise libraries, feedback docs, and progress photo folders live in the trainer's and students' Google Drive/Sheets. Firestore stores metadata, session state, and report caches only.
+- **Language-Synced Google Artifacts**: All Google Drive folders, Spreadsheet tabs/columns, Docs, and the Exercise Library are created in the **trainer's** selected language. The student's language setting controls only the app UI.
+- **Secure Secrets**: No secrets committed to the public GitHub repo. GitHub Secrets + Firebase environment variables cover all cases.
+- **Brand Customization**: Trainers can upload a logo that is embedded into every generated weekly spreadsheet.
 
 ---
 
-## 🛠️ Proposed Tech Stack
+## 🛠️ Tech Stack
 
 ```mermaid
 graph TD
-    Client[React + Vite SPA] -->|Google Auth / Firestore SDK| Firebase[Firebase Auth & Firestore]
-    Client -->|Tailwind CSS & Dark Mode| UI[User Interface]
-    Client -->|REST Requests with OAuth Token| GoogleAPIs[Google Sheets, Drive, & Docs APIs]
-    GitHub[GitHub Repo] -->|GitHub Actions| FirebaseHosting[Firebase Hosting]
-    Cron[Firebase Functions] -->|Secret Manager Credentials| Resend[Resend Free Tier]
+    Client[React + Vite SPA] -->|Google Sign-In / Firestore SDK| Firebase[Firebase Auth & Firestore]
+    Client -->|Tailwind CSS v4 + Dark Mode| UI[UI Layer]
+    Client -->|GIS Token Client + REST| GoogleAPIs[Google Sheets, Drive & Docs APIs]
+    GitHub[GitHub Repo] -->|Actions: push to main| FirebaseHosting[Firebase Hosting]
+    GitHub -->|Actions: daily cron| EmailCron[Node.js email script]
+    EmailCron -->|Firebase Admin SDK| Firestore2[Firestore - read prefs]
+    EmailCron -->|Resend API| Email[Morning Workout Emails]
 ```
 
-### 1. Frontend
-* **Framework**: **React** + **Vite** for a lightweight, extremely fast Single Page Application (SPA).
-* **Styling**: **Tailwind CSS (v4)** with full responsive utilities for mobile & tablet, and a native **Dark Mode** toggle (backed by system preference auto-detection).
-* **Charts**: **Recharts** for rendering responsive workout progression graphs.
+### Frontend
+- **React 19 + Vite** — SPA, fast HMR, optimized production bundles.
+- **TypeScript** — strict mode throughout.
+- **Tailwind CSS v4** — responsive utilities, native dark mode via `class` strategy.
+- **Recharts** — workout progression graphs.
+- **Lucide React** — icon set.
+- **canvas-confetti** — post-workout celebration animation.
 
-### 2. Backend & Auth (Firebase Spark Plan - Free Tier)
-* **Firebase Authentication**: Handles Google Sign-in and manages OAuth scopes securely.
-* **Cloud Firestore**: Stores user profiles, workspace configurations, system settings, and local workout logs cache.
-* **Firebase Hosting**: Free, ultra-fast hosting with global CDN. Includes free SSL.
-* **Firebase Cloud Functions**: Runs cron triggers for morning emails and secure Google API token refreshments.
+### Backend & Auth
+- **Firebase Auth** — Google Sign-In, manages OAuth session.
+- **Google Identity Services (GIS) Token Client** — client-side OAuth access token management with silent refresh (see §OAuth Token Strategy).
+- **Cloud Firestore** — user profiles, workspace config, session metadata, workout log cache for reports. **Blaze plan** (pay-as-you-go, free quota covers this project entirely).
+- **Firebase Hosting** — CDN-backed static hosting with free SSL.
 
-### 3. Integrations (Google APIs)
-* **Google Sheets API**: Read the `config` tab to generate workouts and insert the trainer's custom logo image; write back student workout completions.
-* **Google Drive & Docs APIs**: Automatically build feedback folders and documents dynamically named in the user's chosen language.
+### Integrations
+- **Google Sheets API** — read Config tab to render workouts; write student actuals back to session tabs; create and populate the Exercise Library sheet on trainer registration.
+- **Google Drive API** — create and manage folder structures; list progress photo folders.
+- **Google Docs API** — create per-session feedback documents inside the trainer's feedback folder.
+- **Resend** — transactional email (morning workout emails + session notifications). Free tier: 3,000 emails/month.
+
+### CI/CD
+- **GitHub Actions** — build and deploy on push to `main`; daily cron for morning emails.
+
+---
+
+## 🔑 Google OAuth Token Strategy (Zero-Cost, Client-Side)
+
+Firebase Auth's `signInWithPopup` returns a one-time Google access token that expires after **1 hour**. Rather than routing Google API calls through a server to manage refresh tokens (which would require active Cloud Functions), we use the **Google Identity Services Token Client** for silent client-side refresh.
+
+### Flow
+
+1. On app load, initialise a GIS Token Client once:
+   ```ts
+   const tokenClient = google.accounts.oauth2.initTokenClient({
+     client_id: VITE_GOOGLE_CLIENT_ID,
+     scope: [
+       'https://www.googleapis.com/auth/spreadsheets',
+       'https://www.googleapis.com/auth/drive.file',
+       'https://www.googleapis.com/auth/documents',
+     ].join(' '),
+     callback: (resp) => {
+       storeToken(resp.access_token, Date.now() + resp.expires_in * 1000);
+     },
+   });
+   ```
+2. Store `{ accessToken, expiresAt }` in React context (memory only — never localStorage).
+3. Before every Google API call, call `getValidToken()`:
+   ```ts
+   async function getValidToken(): Promise<string> {
+     if (Date.now() < expiresAt - 5 * 60 * 1000) return accessToken; // 5-min buffer
+     return new Promise((resolve) => {
+       tokenClient.requestAccessToken({ prompt: '' }); // silent if Google session active
+       // callback above resolves on next tick
+     });
+   }
+   ```
+4. `prompt: ''` means no popup is shown as long as the user's Google session is alive in the browser (the common case). A popup only appears if the session has genuinely expired, which is rare during an active workout.
 
 ---
 
 ## 📊 Database Models (Firestore)
 
 ### `users` Collection
-```typescript
+```ts
 interface User {
   uid: string;
   email: string;
   displayName: string;
   photoURL: string;
-  logoURL?: string; // Trainer uploaded logo URL (stored in Google Drive or Firebase Storage)
   role: 'trainer' | 'student';
   selectedLanguage: 'en' | 'pt-BR';
   createdAt: Timestamp;
 }
 ```
+> Trainer logo is stored on the `workspaces` document, not `users`, so it is workspace-scoped.
+
+---
 
 ### `workspaces` Collection
-```typescript
+```ts
 interface Workspace {
-  id: string; // Typically trainer's email
+  id: string;                        // trainer's email (stable, human-readable)
   trainerUid: string;
   trainerEmail: string;
-  invitedStudents: string[]; // List of invited emails
+  trainerName: string;
+  language: 'en' | 'pt-BR';         // drives ALL Google artifact naming
+  logoURL?: string;                  // trainer logo in Google Drive or Firebase Storage
+  exerciseLibrarySheetId?: string;   // Sheet ID created on registration
+  exerciseLibraryCreatedAt?: Timestamp;
+  rootDriveFolderId?: string;        // "Consultoria Training" / "Treinos Consultoria"
+  feedbackFolderId?: string;         // "Feedbacks" sub-folder
   createdAt: Timestamp;
-}
-```
-
-### `student_workspaces` Collection
-```typescript
-interface StudentWorkspace {
-  id: string; // studentUid_workspaceId
-  studentUid: string;
-  studentEmail: string;
-  workspaceId: string;
-  status: 'active' | 'read-only';
-  joinedAt: Timestamp;
-}
-```
-
-### `training_cycles` Collection
-```typescript
-interface TrainingCycle {
-  id: string;
-  workspaceId: string;
-  name: string;
-  googleSheetId: string;
-  startDate: Timestamp;
-  endDate: Timestamp;
-  isActive: boolean;
 }
 ```
 
 ---
 
-## 🔄 Core Customization & Language Localization Rules
+### `student_workspaces` Collection
+```ts
+interface StudentWorkspace {
+  id: string;                       // `${studentUid}_${workspaceId}`
+  studentUid: string;
+  studentEmail: string;
+  workspaceId: string;
+  status: 'pending' | 'active' | 'read-only';
+  // 'pending'   → trainer invited, student has not yet signed in / accepted
+  // 'active'    → student is a full member
+  // 'read-only' → trainer removed student; history visible, no new logs allowed
+  joinedAt?: Timestamp;             // set when status transitions pending → active
+  emailPreferences: {
+    morningEmailEnabled: boolean;
+    // Maps session name (e.g. "Session A") to day-of-week (0=Sun … 6=Sat)
+    sessionDays: Record<string, number>;
+  };
+}
+```
 
-### 1. Localization Dictionary for Google Workspace
-Spreadsheet names, folders, and tabs dynamically match the user's preferred language (`selectedLanguage`):
+---
 
-| Entity Type | English Value | Portuguese (Brasil) Value |
+### `training_cycles` Collection
+```ts
+interface TrainingCycle {
+  id: string;
+  workspaceId: string;
+  studentUid: string;               // one cycle per student
+  name: string;                     // e.g. "Cycle 1 – Hypertrophy"
+  startDate: Timestamp;
+  endDate: Timestamp;
+  isActive: boolean;
+  totalWeeks: number;
+}
+```
+
+---
+
+### `weekly_sheets` Collection
+```ts
+interface WeeklySheet {
+  id: string;
+  cycleId: string;
+  workspaceId: string;
+  studentUid: string;
+  weekNumber: number;               // 1-based within the cycle
+  weekStartDate: Timestamp;         // Monday of that week
+  googleSheetId: string;
+  googleSheetUrl: string;
+  sessions: SessionDefinition[];    // ordered list of sessions in this sheet
+  createdAt: Timestamp;
+}
+
+interface SessionDefinition {
+  tabName: string;                  // e.g. "Session A" / "Treino A"
+  sessionKey: string;               // stable key used in emailPreferences: "A", "B", etc.
+}
+```
+
+---
+
+### `workout_logs` Collection
+```ts
+interface WorkoutLog {
+  id: string;                       // `${studentUid}_${weeklySheetId}_${sessionKey}`
+  studentUid: string;
+  workspaceId: string;
+  cycleId: string;
+  weeklySheetId: string;
+  sessionKey: string;               // "A", "B", etc.
+  sessionTabName: string;
+  googleSheetId: string;
+  status: 'in_progress' | 'completed';
+  startedAt: Timestamp;
+  finishedAt?: Timestamp;
+  preWorkout: {
+    energyLevel: 1 | 2 | 3 | 4 | 5;
+    feeling: 'well' | 'not-well';
+  };
+  postWorkout?: {
+    feeling: 'same' | 'better' | 'worse';
+  };
+  // Cached exercise data — written on session finish for fast report queries.
+  // Source of truth is always the Google Sheet; this is a read cache only.
+  exerciseCache: WorkoutExerciseCache[];
+}
+
+interface WorkoutExerciseCache {
+  exerciseName: string;
+  setIndex: number;                 // 0-based
+  plannedReps: number;
+  plannedLoad: number;
+  plannedRpe: number;
+  actualReps?: number;
+  actualLoad?: number;
+  actualRpe?: number;
+  wasCustomized: boolean;
+  isDone: boolean;
+  observations?: string;
+}
+```
+
+---
+
+### `feedback` Collection
+```ts
+interface Feedback {
+  id: string;                       // `${workspaceId}_${workoutLogId}`
+  workoutLogId: string;
+  studentUid: string;
+  workspaceId: string;
+  trainerUid: string;
+  googleDocId: string;
+  googleDocUrl: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+```
+
+---
+
+## 🗂️ Exercise Library — Initial Seeding
+
+When a trainer creates their account, the app automatically creates a Google Sheet titled according to their language:
+
+| Language | Sheet Title |
+| :--- | :--- |
+| English | `Exercise Library — Consultoria` |
+| Portuguese | `Biblioteca de Exercícios — Consultoria` |
+
+### Sheet Columns (also language-matched)
+
+| EN | PT-BR |
+| :--- | :--- |
+| Name | Nome |
+| Muscle Group | Grupo Muscular |
+| Equipment | Equipamento |
+| Description | Descrição |
+| Video URL | URL do Vídeo |
+
+### Pre-Seeded Exercises (77 total — CrossFit Essentials playlist, positions 1–81 excluding 56, 60, 74, 79)
+
+The `Name` and `Video URL` columns are pre-populated. `Muscle Group`, `Equipment`, and `Description` are left blank for the trainer to complete at their convenience.
+
+| # | Name | Video URL |
+|---|---|---|
+| 1 | Burpee | https://www.youtube.com/watch?v=auBLPXO8Fww |
+| 2 | Power Snatch | https://www.youtube.com/watch?v=TL8SMp7RdXQ |
+| 3 | Push Press | https://www.youtube.com/watch?v=iaBVSJm78ko |
+| 4 | Thruster | https://www.youtube.com/watch?v=L219ltL15zk |
+| 5 | Clean and Jerk | https://www.youtube.com/watch?v=PjY1rH4_MOA |
+| 6 | Hang Power Clean | https://www.youtube.com/watch?v=0aP3tgKZcHQ |
+| 7 | Front Squat | https://www.youtube.com/watch?v=uYumuL_G_V0 |
+| 8 | Deadlift | https://www.youtube.com/watch?v=1ZXobu7JvvE |
+| 9 | Clean | https://www.youtube.com/watch?v=Ty14ogq_Vok |
+| 10 | Dumbbell Power Snatch | https://www.youtube.com/watch?v=3mlhF3dptAo |
+| 11 | Shoulder Press | https://www.youtube.com/watch?v=5yWaNOvgFCM |
+| 12 | Dumbbell Thruster | https://www.youtube.com/watch?v=u3wKkZjE8QM |
+| 13 | Air Squat | https://www.youtube.com/watch?v=rMvwVtlqjTE |
+| 14 | Hang Power Snatch | https://www.youtube.com/watch?v=-mLzQdVAwlw |
+| 15 | Dumbbell Push Press | https://www.youtube.com/watch?v=4tCaD42ghlc |
+| 16 | Dumbbell Turkish Get-Up | https://www.youtube.com/watch?v=saYKvqSscuY |
+| 17 | Snatch | https://www.youtube.com/watch?v=GhxhiehJcQY |
+| 18 | Wall Walk | https://www.youtube.com/watch?v=NK_OcHEm8yM |
+| 19 | Kettlebell Swing | https://www.youtube.com/watch?v=mKDIuUbH94Q |
+| 20 | Bench Press | https://www.youtube.com/watch?v=SCVCLChPQFY |
+| 21 | Push-Up | https://www.youtube.com/watch?v=0pkjOk0EiAk |
+| 22 | Strict Handstand Push-Up | https://www.youtube.com/watch?v=0wDEO6shVjc |
+| 23 | Box Step-Up | https://www.youtube.com/watch?v=5qjqDHOUh-A |
+| 24 | Back Squat | https://www.youtube.com/watch?v=QmZAiBqPvZw |
+| 25 | Sumo Deadlift High Pull | https://www.youtube.com/watch?v=gh55vVlwlQg |
+| 26 | Box Jump | https://www.youtube.com/watch?v=NBY9-kTuHEk |
+| 27 | Muscle Snatch | https://www.youtube.com/watch?v=bJYzOo1cNqY |
+| 28 | Kettlebell Snatch | https://www.youtube.com/watch?v=Pm-b2XFeABA |
+| 29 | Kipping Toes-to-Bar | https://www.youtube.com/watch?v=6dHvTlsMvNY |
+| 30 | Burpee Box Jump Over | https://www.youtube.com/watch?v=GLktGkmcvWE |
+| 31 | Split Jerk | https://www.youtube.com/watch?v=GUDkOtraHHY |
+| 32 | Dumbbell Clean | https://www.youtube.com/watch?v=SYxObzJ3gn0 |
+| 33 | Dumbbell Hang Clean | https://www.youtube.com/watch?v=8r44xv_Aqbw |
+| 34 | Walking Lunge | https://www.youtube.com/watch?v=DlhojghkaQ0 |
+| 35 | Dumbbell Power Clean | https://www.youtube.com/watch?v=viWI2rEt-HU |
+| 36 | Strict Bar Muscle-Up | https://www.youtube.com/watch?v=o69WaY_7k2c |
+| 37 | Medicine-Ball Clean | https://www.youtube.com/watch?v=KVGhkHSrDJo |
+| 38 | Kipping Chest-to-Bar Pull-Up | https://www.youtube.com/watch?v=AyPTCEXTjOo |
+| 39 | Inverted Burpee | https://www.youtube.com/watch?v=M6_nkTKhaFY |
+| 40 | Slam Ball | https://www.youtube.com/watch?v=k9W6g9LvXDI |
+| 41 | Strict Toes-to-Bar | https://www.youtube.com/watch?v=xX9Hzi7Onnw |
+| 42 | Ring Dip | https://www.youtube.com/watch?v=EznLCDBAPIU |
+| 43 | Pull-Over | https://www.youtube.com/watch?v=faJDYEZmueM |
+| 44 | Rowing | https://www.youtube.com/watch?v=fxfhQMbATCw |
+| 45 | Ring Row | https://www.youtube.com/watch?v=sEAOZc77wk8 |
+| 46 | Dumbbell Overhead Squat | https://www.youtube.com/watch?v=azumEfnk-GI |
+| 47 | Sots Press | https://www.youtube.com/watch?v=eJ9MLnNV6FY |
+| 48 | AbMat Sit-Up | https://www.youtube.com/watch?v=VIZX2Ru9qU8 |
+| 49 | Dumbbell Push Jerk | https://www.youtube.com/watch?v=rnN3pYswScE |
+| 50 | Hang Power Clean and Push Jerk | https://www.youtube.com/watch?v=8IYt7AtP8BI |
+| 51 | Zercher Squat | https://www.youtube.com/watch?v=nwx6Ip7hd3I |
+| 52 | Hanging L-Sit | https://www.youtube.com/watch?v=WHi1bvZLwlw |
+| 53 | Strict Muscle-Up | https://www.youtube.com/watch?v=vJTJFc2wmk4 |
+| 54 | L Pull-Up | https://www.youtube.com/watch?v=qeGS55RHBUU |
+| 55 | Chest-to-Wall Handstand Push-Up | https://www.youtube.com/watch?v=lkPPVyExFpU |
+| 56 | Hang Clean and Push Jerk | https://www.youtube.com/watch?v=KBpys4KTG5Q |
+| 57 | GHD Sit-Up | https://www.youtube.com/watch?v=oFwt7WfnPcc |
+| 58 | Modified Rope Climb: Pull to Stand | https://www.youtube.com/watch?v=BsDRv1fiXIY |
+| 59 | Strict Chest-to-Bar Pull-Up | https://www.youtube.com/watch?v=xf69XHAs5w8 |
+| 60 | Handstand | https://www.youtube.com/watch?v=_-9_46by2JI |
+| 61 | GHD Hip, Back, and Hip-Back Extensions | https://www.youtube.com/watch?v=uha4orxDqSM |
+| 62 | Split Snatch | https://www.youtube.com/watch?v=VFdCGK8yk-8 |
+| 63 | Shoot-Through | https://www.youtube.com/watch?v=sZ9fP4iOmFs |
+| 64 | Medicine Ball Progression | https://www.youtube.com/watch?v=TlneBvU4XFY |
+| 65 | Handstand Pirouettes | https://www.youtube.com/watch?v=tTnvKzRLCUk |
+| 66 | Power Clean and Split Jerk | https://www.youtube.com/watch?v=Sk1vhXhHO_A |
+| 67 | Split Clean | https://www.youtube.com/watch?v=a5CR3Bi2Gc8 |
+| 68 | GHD Back Extension | https://www.youtube.com/watch?v=ivDB23Kcv-A |
+| 69 | Strict Toes to Rings | https://www.youtube.com/watch?v=1zp-B1Vb_Vs |
+| 70 | GHD Hip Extension | https://www.youtube.com/watch?v=P0iuN0xygc0 |
+| 71 | GHD Hip & Back Extension | https://www.youtube.com/watch?v=QdCzafAXJhY |
+| 72 | L-Sit Rope Climb | https://www.youtube.com/watch?v=Ewf8rqGRbrE |
+| 73 | Freestanding Handstand Push-Up | https://www.youtube.com/watch?v=aAErmRDDJKY |
+| 74 | Kipping Deficit Handstand Push-Up | https://www.youtube.com/watch?v=DJA1t6Fp5WE |
+| 75 | Swing to Backward Roll to Support | https://www.youtube.com/watch?v=nwpEUd_Yc_E |
+| 76 | L-Sit on Rings | https://www.youtube.com/watch?v=lwcHmXvw-T4 |
+| 77 | Planche Press | https://www.youtube.com/watch?v=z8mC1DND2kI |
+
+> Exercise names remain in English regardless of the trainer's language setting. The trainer is free to rename, add, or remove rows in the sheet at any time.
+
+---
+
+## 🔄 Language Localization Rules
+
+### Rule: Trainer's Language Drives All Google Artifacts
+
+The `workspaces.language` field determines the language of every Google-hosted artifact. The student's `selectedLanguage` controls **only their app UI** — it has no effect on spreadsheet column headers, tab names, folder names, or document titles.
+
+### Localization Dictionary
+
+| Entity | English | Portuguese (Brasil) |
 | :--- | :--- | :--- |
-| **Main Folder Name** | `Consultoria Training` | `Treinos Consultoria` |
-| **Feedback Folder Name** | `Feedbacks - {StudentName}` | `Feedbacks - {StudentName}` |
-| **Spreadsheet Columns** | `Session, Group, Exercise, Sets, Reps, Load, RPE, Rest, Observations` | `Treino, Grupo, Exercício, Séries, Repetições, Carga, RPE, Descanso, Observações` |
-| **Spreadsheet Tabs** | `Session A, Session B, Config` | `Treino A, Treino B, Configuração` |
-| **Exercise Library Header** | `Name, Muscle, Equipment, Video` | `Nome, Músculo, Equipamento, Vídeo` |
+| **Root Drive Folder** | `Consultoria Training` | `Treinos Consultoria` |
+| **Feedback Sub-folder** | `Feedbacks` | `Feedbacks` |
+| **Progress Photos Folder** | `Progress Photos — {StudentName}` | `Fotos de Evolução — {StudentName}` |
+| **Weekly Sheet Title** | `{StudentName} — Week {N} — {CycleName}` | `{StudentName} — Semana {N} — {CycleName}` |
+| **Config Tab** | `Config` | `Configuração` |
+| **Session Tab** | `Session {X}` | `Treino {X}` |
+| **Config Columns** | `Session, Group, Exercise, Sets, Reps, Load, RPE, Rest, Observations` | `Treino, Grupo, Exercício, Séries, Repetições, Carga, RPE, Descanso, Observações` |
+| **Group Values** | `Warm-up, Training, Extra` | `Aquecimento, Treino, Extra` |
+| **Exercise Library Sheet** | `Exercise Library — Consultoria` | `Biblioteca de Exercícios — Consultoria` |
+| **Exercise Library Columns** | `Name, Muscle Group, Equipment, Description, Video URL` | `Nome, Grupo Muscular, Equipamento, Descrição, URL do Vídeo` |
+| **Feedback Doc Title** | `Feedback — {StudentName} — {SessionTabName} — Week {N}` | `Feedback — {StudentName} — {SessionTabName} — Semana {N}` |
 
-### 2. Trainer Logo Sheet Insertion
-- When a weekly spreadsheet is generated, the app calls the Google Sheets API `spreadsheets.batchUpdate` with `insertEmbeddedImage` or `overGrid` request to position the trainer's logo beautifully at the top-left or top-right of the **Config** and **Session** sheets, alongside the trainer's name.
+---
+
+## 🏗️ Google Drive Folder Structure
+
+All Google Drive artifacts are created in the **trainer's Google Drive** using their OAuth token.
+
+```
+Consultoria Training/                        ← root folder (created on trainer registration)
+├── Feedbacks/                               ← created on trainer registration
+│   ├── Feedback — Ana — Session A — Week 1.gdoc
+│   └── Feedback — Ana — Session B — Week 1.gdoc
+└── Progress Photos — Ana/                  ← created when student enables progress photos
+    ├── 2025-01-15/                          ← created on demand; student uploads here directly
+    └── 2025-02-01/
+```
+
+Weekly spreadsheets are created in the trainer's root Drive (not inside the folder above), to keep them easily accessible by students who are given viewer/editor access.
+
+---
+
+## 📋 Spreadsheet Structure (Per Weekly Sheet)
+
+Each weekly sheet is created by the app via the Sheets API when the trainer generates a new week for a student.
+
+```
+[ Session A ]  [ Session B ]  …  [ Config ]
+                                    ↑ last tab always
+```
+
+### Config Tab Layout
+
+| Row 1 (frozen header) |
+|---|
+| Session \| Group \| Exercise \| Sets \| Reps \| Load \| RPE \| Rest \| Observations |
+
+- Trainer fills this tab to define the week's workout plan.
+- Each row is one set of one exercise within a session.
+- The `Session` column value must match a session tab name exactly.
+- Exercises in the `Exercise` column are validated against the Exercise Library sheet.
+
+### Session Tab Layout
+
+Populated automatically from the Config tab when the sheet is generated (or when the trainer finalises the Config tab). Each session tab has:
+
+- **Header rows**: trainer logo (if set) + trainer name, week number, student name.
+- **Exercise rows**: read-only planned values (Sets, Reps, Load, RPE, Rest, Observations from Config) + editable student columns: `Actual Reps`, `Actual Load`, `Actual RPE`, `Customized?` (checkbox), `Done?` (checkbox), `Student Notes`.
+- **Sentinel rows**: `PRE_ENERGY`, `PRE_FEELING`, `POST_FEELING` — special rows the app writes to when the student starts/finishes a session.
+
+---
+
+## 👤 Student Invitation & Onboarding Flow
+
+```
+Trainer invites student email
+        ↓
+student_workspaces doc created  (status: 'pending')
+        ↓
+Student receives email with sign-in link
+        ↓
+Student signs in with Google (first time or returning)
+        ↓
+App detects pending student_workspaces for their email
+        ↓
+Student accepts → status: 'active', joinedAt: now()
+        ↓
+Student sees workspace in their dashboard
+```
+
+**Key rules**:
+- A student with `status: 'pending'` cannot view any workout content yet.
+- When a trainer removes a student, status transitions `active → read-only`. The student retains visibility of all historical `workout_logs` and weekly sheets but cannot start new sessions.
+- A `read-only` student can still be invited by other trainers and join new workspaces.
+- Deleting a student account removes all `student_workspaces` records but does **not** delete their Google Sheets data (those live in the trainer's Drive).
+
+---
+
+## 📧 Morning Email Engine (GitHub Actions Cron)
+
+Rather than Firebase Cloud Functions (which require the Blaze plan's active invocation to run on a schedule), morning emails are sent by a **GitHub Actions scheduled workflow** running a Node.js script.
+
+### How It Works
+
+```
+GitHub Actions cron (daily, 11:00 UTC / 8:00 AM ET)
+        ↓
+scripts/send-morning-emails.ts
+  - Firebase Admin SDK → query Firestore for today's sessions
+  - Sheets API → fetch that student's session tab for the day
+  - Resend API → send personalised email
+```
+
+### Email Content
+
+Each morning email contains:
+- Greeting with student's name (in **student's** language — this is UI comms, not a Google artifact).
+- The full workout grid for that session: Exercise, Group, Sets × Reps, Load, RPE, Rest, Observations.
+- A deep link button: **"Open in Consultoria"** → routes directly to that session in the app.
+- Footer: trainer name + logo (if set).
+
+### GitHub Actions Workflow Snippet
+
+```yaml
+# .github/workflows/morning-emails.yml
+name: Morning Workout Emails
+on:
+  schedule:
+    - cron: '0 11 * * *'   # 11:00 UTC daily
+  workflow_dispatch:         # manual trigger for testing
+jobs:
+  send-emails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'pnpm' }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tsx scripts/send-morning-emails.ts
+        env:
+          FIREBASE_SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+```
+
+---
+
+## 📸 Progress Photos
+
+Progress photos are **not uploaded through the app**. The workflow is:
+
+1. Student (or trainer) taps **"Add Progress Photos"** in the app.
+2. App calls the Drive API to create a dated subfolder under `Progress Photos — {StudentName}/` (e.g., `2025-01-15`). Access is shared with the student's Google account.
+3. App displays a **"Open folder in Google Drive"** button that deep-links to that folder.
+4. Student uploads photos directly in the Google Drive app/browser (familiar, no re-implementation needed).
+5. In the app, the **Progress Photos** page uses the Drive API to list all dated subfolders, fetch thumbnail URLs for photos inside them, and display a timeline.
+6. Student can select any two photos from the timeline for a **side-by-side comparison** view.
 
 ---
 
 ## 🔒 Secrets & Environment Management
 
-To maintain absolute code safety in our public GitHub repository, secrets will be configured as follows:
+| Secret | Where Stored | How Used |
+| :--- | :--- | :--- |
+| Firebase client config (`VITE_FIREBASE_*`) | `.env.local` (dev) / GitHub Secrets (CI) | Public-safe; Vite embeds at build time |
+| `VITE_GOOGLE_CLIENT_ID` | `.env.local` / GitHub Secrets | Used by GIS Token Client in the browser |
+| `RESEND_API_KEY` | GitHub Secrets | Used only in `send-morning-emails.ts` script |
+| `FIREBASE_SERVICE_ACCOUNT_KEY` | GitHub Secrets | Used by Admin SDK in email script + CI deploy |
+| `GOOGLE_SERVICE_ACCOUNT_KEY` | GitHub Secrets | Used by email script for Sheets read in cron |
 
-1. **Client-Side Firebase Keys**: Standard Firebase client configs are non-sensitive and public (safe to commit to GitHub).
-2. **Server-Side API Keys (Resend, Google OAuth Secrets)**: 
-   - **Local Development**: Read from a `.env.local` file (listed in `.gitignore`).
-   - **Production Firebase Functions**: Deployed securely using **Google Secret Manager** integrated directly with Firebase Functions (`defineSecret` API). Secrets are never printed in logs or committed to version control.
-3. **Deployment Secrets**:
-   - The `FIREBASE_CLI_TOKEN` (or service account key JSON) is stored securely in **GitHub Secrets** on your repository.
+> **Firebase client config is safe to commit** — it identifies your Firebase project but is protected by Firebase Security Rules and Google API key restrictions (HTTP referrer allowlist).
 
 ---
 
-## 📦 Build & Deploy Workflows (GitHub Actions)
-
-### 1. The Build Process
-- Run `pnpm run build` locally or in CI. Vite bundles the React app, tree-shakes tailwind classes, compiles TypeScript, and places the optimized static bundle in the `dist/` directory.
-
-### 2. CI/CD GitHub Actions Configuration
-A GitHub Action workflow (`.github/workflows/deploy.yml`) is triggered on every push to the `main` branch:
+## 🚀 Build & Deploy (GitHub Actions)
 
 ```yaml
-name: Build and Deploy to Firebase
+# .github/workflows/deploy.yml
+name: Build and Deploy
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 9
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-
-      - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build Application
-        run: pnpm run build
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'pnpm' }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -171,9 +555,8 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-
-      - name: Deploy to Firebase Hosting
-        uses: FirebaseExtended/action-hosting-deploy@v0
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+      - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
@@ -183,45 +566,148 @@ jobs:
 
 ---
 
-## ⚡ Step-by-Step Implementation Plan
+## 🛡️ Firestore Security Rules (Sketch)
 
-### Phase 1: Authentication & Workspace Structure (Week 1)
-- [ ] Initialize Vite React SPA with Tailwind CSS v4 and Dark Mode support.
-- [ ] Set up GitHub Actions deploy workflow skeleton.
-- [ ] Configure Firebase Auth (Google Sign-In) and request Google OAuth Scopes.
-- [ ] Set up user creation in Firestore with role assignment and bilingual settings.
-- [ ] Build the Workspace Management Dashboard:
-  - Invite students by email.
-  - Revoke invitations, remove students, delete trainer account.
-  - Handle active vs. read-only student permissions.
+```js
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
 
-### Phase 2: Spreadsheet Integrations, Localization & Parser (Weeks 1-2)
-- [ ] Develop the localized Google Sheets API wrapper.
-- [ ] Implement exercise validation from the custom translation-synced `Exercise Library` sheet.
-- [ ] Implement Trainer Logo uploading and embedding into Google Sheets headers.
-- [ ] Build the Student Workout Execution Engine:
-  - Pre/post-workout questionnaires.
-  - Workout timer & interactive sets checker with customized inputs.
-  - Real-time write back to Sheet cells.
+    // Users can only read/write their own profile
+    match /users/{uid} {
+      allow read, write: if request.auth.uid == uid;
+    }
 
-### Phase 3: Feedback, Media, & Progress Photos (Week 3)
-- [ ] Design the Google Drive directory structure creation workflow (bilingual naming).
-- [ ] Build the trainer feedback portal using Google Docs API (automatically synced feedback files).
-- [ ] Create the Progress Photos Module (shared timeline and organized Drive uploads).
+    // Workspace: readable by trainer + any associated student; writable only by trainer
+    match /workspaces/{workspaceId} {
+      allow read: if request.auth != null &&
+        (isTrainerOf(workspaceId) || isStudentOf(workspaceId));
+      allow write: if isTrainerOf(workspaceId);
+    }
 
-### Phase 4: Reports, Daily Emails & Polish (Week 3)
-- [ ] Create responsive Recharts components for RPE, Load, and Volume evolution.
-- [ ] Implement daily morning email engine (Firebase Cloud Functions + Resend API).
-- [ ] Refine responsive CSS transitions, glassmorphic aesthetics, and accessibility.
+    // StudentWorkspace: readable by trainer + the student; writable by trainer (status mgmt)
+    // Student can write their own emailPreferences only
+    match /student_workspaces/{docId} {
+      allow read: if request.auth != null &&
+        (isTrainerOf(resource.data.workspaceId) ||
+         request.auth.uid == resource.data.studentUid);
+      allow write: if isTrainerOf(resource.data.workspaceId);
+      allow update: if request.auth.uid == resource.data.studentUid &&
+        onlyUpdating(['emailPreferences']);
+    }
+
+    // Training cycles / weekly sheets: trainer writes, associated students read
+    match /training_cycles/{docId} {
+      allow read: if isTrainerOf(resource.data.workspaceId) ||
+        isActiveStudentOf(resource.data.workspaceId, resource.data.studentUid);
+      allow write: if isTrainerOf(resource.data.workspaceId);
+    }
+
+    match /weekly_sheets/{docId} {
+      allow read: if isTrainerOf(resource.data.workspaceId) ||
+        isActiveStudentOf(resource.data.workspaceId, resource.data.studentUid);
+      allow write: if isTrainerOf(resource.data.workspaceId);
+    }
+
+    // Workout logs: trainer reads all in workspace; student writes own (active only)
+    match /workout_logs/{docId} {
+      allow read: if isTrainerOf(resource.data.workspaceId) ||
+        request.auth.uid == resource.data.studentUid;
+      allow create, update: if request.auth.uid == resource.data.studentUid &&
+        isActiveStudentOf(resource.data.workspaceId, resource.data.studentUid);
+    }
+
+    // Feedback: trainer writes, student reads
+    match /feedback/{docId} {
+      allow read: if isTrainerOf(resource.data.workspaceId) ||
+        request.auth.uid == resource.data.studentUid;
+      allow write: if isTrainerOf(resource.data.workspaceId);
+    }
+
+    // ── Helper functions ──────────────────────────────────────────────────────
+
+    function isTrainerOf(workspaceId) {
+      return get(/databases/$(database)/documents/workspaces/$(workspaceId))
+        .data.trainerUid == request.auth.uid;
+    }
+
+    function isStudentOf(workspaceId) {
+      // Any status counts for basic workspace read
+      return exists(/databases/$(database)/documents/student_workspaces/
+        $(request.auth.uid + '_' + workspaceId));
+    }
+
+    function isActiveStudentOf(workspaceId, studentUid) {
+      return request.auth.uid == studentUid &&
+        get(/databases/$(database)/documents/student_workspaces/
+          $(studentUid + '_' + workspaceId)).data.status == 'active';
+    }
+
+    function onlyUpdating(fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+  }
+}
+```
+
+---
+
+## ⚡ Implementation Plan
+
+### Phase 1 — Auth, Routing & Workspace Management
+- [ ] Fix `App.tsx` (replace Vite default), add React Router, mount `LanguageProvider`, fix `App.css` import.
+- [ ] Wire Landing → role selection → Dashboard routing; auth-gate protected routes.
+- [ ] Complete `AuthContext`: integrate GIS Token Client alongside Firebase Auth.
+- [ ] On trainer registration: create Workspace doc, create root Drive folder + Feedbacks sub-folder, create and seed Exercise Library sheet (77 exercises).
+- [ ] Trainer Dashboard: invite students by email (creates `student_workspaces` with `status: 'pending'`); view pending/active/read-only students; remove student; delete own account.
+- [ ] Student Dashboard skeleton: detect pending invitations on sign-in, accept flow (`pending → active`).
+- [ ] GitHub Actions deploy workflow (`.github/workflows/deploy.yml`).
+
+### Phase 2 — Training Cycles & Weekly Sheets
+- [ ] Trainer UI: create a training cycle for a student (name, start/end date, total weeks).
+- [ ] Trainer UI: generate a weekly sheet for a given week (calls Sheets API to create spreadsheet with Config + Session tabs, inserts trainer logo if set, populates session tabs from Config).
+- [ ] Exercise autocomplete in Config tab backed by Exercise Library sheet.
+- [ ] Student Dashboard: list active cycles and weekly sheets; deep-link to current week.
+- [ ] Student email preferences UI (weekday per session + morning email toggle).
+
+### Phase 3 — Workout Execution Engine
+- [ ] Pre-workout screen: energy level (1–5) + feeling (well / not-well) → write `PRE_*` sentinel rows to Sheet.
+- [ ] Workout grid: read session tab from Sheet; render exercise rows with editable Actual Reps/Load/RPE, Customized checkbox, Done checkbox, Student Notes.
+- [ ] Real-time write-back to Google Sheets on each cell change.
+- [ ] Finish session screen: post-workout feeling → write `POST_FEELING` row; write `exerciseCache` to Firestore `workout_logs`; trigger trainer notification email via Resend.
+- [ ] Confetti animation on session completion.
+
+### Phase 4 — Feedback & Progress Photos
+- [ ] Trainer UI: "Give Feedback" button on any completed session → creates Google Doc in Feedbacks folder (language-named) → stores reference in `feedback` collection.
+- [ ] Feedback editor: rich text comments + video/image link inputs, synced to the Google Doc.
+- [ ] Student view: read-only feedback panel linked to their session.
+- [ ] Progress Photos: create dated Drive subfolder on demand; Drive API photo listing + timeline; side-by-side comparison view.
+
+### Phase 5 — Reports & Morning Emails
+- [ ] Recharts progression graphs: load, RPE, volume evolution per exercise, queried from `workout_logs.exerciseCache`.
+- [ ] Weekly/monthly/cycle summary report page.
+- [ ] Morning email script (`scripts/send-morning-emails.ts`) + GitHub Actions cron workflow.
+- [ ] Trainer session-start/finish notification emails.
+
+### Phase 6 — Polish & Hardening
+- [ ] Write Firestore Security Rules (based on sketch above) and integration-test them.
+- [ ] Integration tests for Sheets parser with mock API responses.
+- [ ] Accessibility pass (focus management, ARIA, colour contrast).
+- [ ] Final responsive QA on mobile (375px) and tablet (768px).
+- [ ] Performance audit: lazy-load routes, image optimisation, Lighthouse score.
 
 ---
 
 ## 🔍 Verification Plan
 
 ### Automated Tests
-- Integration tests for localized spreadsheet parser using mock Google API JSON responses.
-- Security rules testing for Cloud Firestore to verify trainers cannot read other trainers' workspaces and students can only access their associated workspaces (including read-only logic).
+- Firestore Security Rules tests (Firebase Emulator): verify cross-workspace isolation, read-only enforcement, trainer-only writes.
+- Sheets parser unit tests: mock Google Sheets API JSON responses → verify correct exercise row extraction and sentinel row writing.
 
-### Manual Verification
-- **E2E Browser Testing**: Authenticate as Trainer, invite dummy Student, log in as Student, accept workspace, initiate session, modify sets, complete session, and verify cell updates in the Google Sheet.
-- **Drive Automation Test**: Check if correct folders and Google Docs are created under the dummy workspace when giving training feedback.
+### Manual E2E Scenarios
+1. **Full student onboarding**: trainer invites → student signs in → accepts → sees workspace.
+2. **Workout execution**: student starts session, fills actuals, finishes → verify Sheet cells updated + `workout_logs` cache written + trainer notification sent.
+3. **Read-only enforcement**: trainer removes student → student can view history but Start Session is disabled.
+4. **Feedback flow**: trainer opens completed session → creates feedback doc → student sees linked doc.
+5. **Progress photos**: create dated folder → upload in Drive → photos appear in app timeline → side-by-side comparison works.
+6. **Morning email dry-run**: trigger `workflow_dispatch` on the email workflow → verify correct students receive correct session content.
