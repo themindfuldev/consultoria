@@ -53,7 +53,8 @@ A premium, mobile-first, and highly responsive web application inspired by **Hev
 ### 📋 Prerequisites
 Make sure you have the following tools installed locally:
 - [Node.js](https://nodejs.org/) (v20 or higher)
-- [Firebase CLI](https://firebase.google.com/docs/cli) (`npm install -g firebase-tools`)
+- [pnpm](https://pnpm.io/) (`npm install -g pnpm`)
+- [Firebase CLI](https://firebase.google.com/docs/cli) (`pnpm add -g firebase-tools`)
 - A Firebase Project set up with Authentication and Firestore enabled.
 
 ### 📦 Setup & Installation
@@ -63,7 +64,7 @@ Make sure you have the following tools installed locally:
    ```
 2. Install the project dependencies:
    ```bash
-   npm install
+   pnpm install
    ```
 3. Set up your local environment variables. Create a `.env.local` file in the root directory:
    ```env
@@ -78,14 +79,14 @@ Make sure you have the following tools installed locally:
 ### 🏃 Running Locally
 Start the development server:
 ```bash
-npm run dev
+pnpm run dev
 ```
 The application will be accessible at `http://localhost:5173`.
 
 ### 🏗️ Building for Production
 To build the application and compile TypeScript:
 ```bash
-npm run build
+pnpm run build
 ```
 
 ---
@@ -99,7 +100,7 @@ Ensure your GitHub repository has the following secrets configured:
 - `FIREBASE_SERVICE_ACCOUNT_KEY`: Service account credentials JSON.
 - `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, etc. (used during build process).
 
-On every push to the `main` branch, the workflow will automatically execute `npm run build` and deploy the production static assets to Firebase.
+On every push to the `main` branch, the workflow will automatically execute `pnpm run build` and deploy the production static assets to Firebase.
 
 ---
 

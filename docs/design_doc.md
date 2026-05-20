@@ -130,7 +130,7 @@ To maintain absolute code safety in our public GitHub repository, secrets will b
 ## 📦 Build & Deploy Workflows (GitHub Actions)
 
 ### 1. The Build Process
-- Run `npm run build` locally or in CI. Vite bundles the React app, tree-shakes tailwind classes, compiles TypeScript, and places the optimized static bundle in the `dist/` directory.
+- Run `pnpm run build` locally or in CI. Vite bundles the React app, tree-shakes tailwind classes, compiles TypeScript, and places the optimized static bundle in the `dist/` directory.
 
 ### 2. CI/CD GitHub Actions Configuration
 A GitHub Action workflow (`.github/workflows/deploy.yml`) is triggered on every push to the `main` branch:
@@ -148,17 +148,22 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-node: '20'
-          cache: 'npm'
+          node-version: '20'
+          cache: 'pnpm'
 
       - name: Install Dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build Application
-        run: npm run build
+        run: pnpm run build
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
