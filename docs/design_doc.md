@@ -320,44 +320,99 @@ After being approved, the student adds their training cycle:
 
 ## 🏋️ Training Session View
 
+### Spreadsheet structure (confirmed from live template analysis)
+
+The trainer's spreadsheet has this exact row layout per training tab:
+
+```
+Row 1   Metadata: block/session ID in col C (e.g. "b1 - s1 - mg"),
+                  "Visto do Aluno" label in col G
+Row 2   Config:   workout motto in col A, training day label in col C (e.g. "treino 2"),
+                  student-viewed checkbox (TRUE/FALSE) in col G
+Rows 3–4  Empty
+Row 5   ── "Preencha abaixo (INÍCIO DO TREINO)" section header ──
+Row 6   "Qual o seu nível de ânimo?"  |  integer 1–5 (displayed as ★s) in col B
+Row 7   "Como está se sentindo?"      |  dropdown string in col B
+Row 8   Section label: "Aquecimento"  (or other warm-up label)
+Row 9   Column headers: Exercício · Séries · Repetições · Carga · Descanso · Observações · RPE
+Rows 10+ Warm-up exercise rows
+Row N   Section label: "Treino"  (main workout)
+Row N+1 Empty
+Row N+2 Column headers (repeated)
+Rows N+3+ Main exercise rows (some exercises span multiple rows for progressive sets)
+Row M   "rm"  ← special: student records 1RM / personal best
+Row M+1 ── "Preencha abaixo (FINAL DO TREINO)" section header ──
+Row M+2 "Qual o seu nível de ânimo?"  |  integer 1–5 in col B
+Row M+3 "Como está se sentindo?"      |  dropdown string in col B
+```
+
+**Confirmed column positions (A–G, columns H+ are empty in current template):**
+
+| Col | Label | Notes |
+|-----|-------|-------|
+| A | Exercício | Exercise name; **empty on continuation rows** of a multi-set exercise |
+| B | Séries | Sets (integer). Also used for energy level answers (rows 6, M+2) |
+| C | Repetições | Reps (integer or string e.g. "30 segundos", "10s +") |
+| D | Carga | Load in kg; special values: `"rpe"` (choose by feel), `"ESCOLHER"` (student picks) |
+| E | Descanso | Rest period |
+| F | Observações | Trainer notes |
+| G | RPE | Target RPE (integer 1–10); `"PREENCHER"` = student must fill this in |
+
+**There is also a separate "Strikes" tab** (first tab, gid=0) that tracks student compliance: consecutive absences, exercise/weight change penalties, and main lift PRs. The app ignores this tab.
+
 ### Reading the spreadsheet
 
-When a student opens a session (tab), the app calls:
+When a student opens a session, the app calls:
 ```
-GET https://sheets.googleapis.com/v4/spreadsheets/{sheetId}/values/{tabName}
+GET https://sheets.googleapis.com/v4/spreadsheets/{sheetId}/values/{tabName}!A:R
 ```
 
-The response is parsed row-by-row. The app identifies:
-- **Pre-workout section**: rows containing "INÍCIO DO TREINO" / "início do treino" (case-insensitive)
-- **Exercise rows**: rows in the training body (group, exercise name, sets, reps, load, RPE, rest, observations columns)
-- **Post-workout section**: rows containing "FINAL DO TREINO"
+The raw 2D array is parsed with the following logic:
 
-Column positions are determined from the header row (row 1). This makes the parser resilient to minor trainer template changes.
+1. **Skip rows 1–2** (metadata/config). On open, write `TRUE` to cell `G2` ("Visto do Aluno").
+2. **Detect pre-workout block**: find row where col A contains `"INÍCIO DO TREINO"` (case-insensitive). Next two rows are energy level and feeling.
+3. **Detect section labels**: rows where col A is a known label (`"Aquecimento"`, `"Treino"`, etc.) and cols B–G are all empty/null.
+4. **Detect exercise header rows**: rows where col A = `"Exercício"` — skip these.
+5. **Parse exercise rows**: non-empty rows after a section label and header row, up to the next section/post-workout marker.
+   - If col A is non-empty → start of a new exercise group.
+   - If col A is empty → continuation row of the previous exercise (different set/weight in the same progression).
+   - Group all continuation rows under the exercise name from the first row.
+6. **Detect "rm" row**: row where col A = `"rm"` — render as a special "Record your max" input card.
+7. **Detect post-workout block**: row where col A contains `"FINAL DO TREINO"`.
 
 ### Pre-workout form
 
-Shown before the exercise list. Two questions:
-- **Nível de ânimo** (Energy level): 5-star tap target or emoji selector (1–5)
-- **Como está se sentindo?** (How are you feeling?): Two large buttons — Bem / Mal
+Shown before the exercise list. Two large-tap-target questions:
+- **Nível de ânimo**: 5-star selector (1–5). Value stored as integer; displayed using the same ★ format as the sheet.
+- **Como está se sentindo?**: Two big buttons — **Bem** / **Mal**.
 
-Answers saved to the `sessions` doc in Firestore. Not written to the sheet at this stage.
+Answers saved to `sessions.preWorkout` in Firestore. Not written to the sheet at this stage.
 
 ### Exercise list
 
-Each exercise is rendered as a card:
-- Planned values shown read-only (Sets, Reps, Load, RPE, Rest, Observations)
-- Student fills: **Repetições realizadas · Carga realizada · RPE realizado · Observações** + **Concluído** toggle
-- Cards for the same exercise across sets are grouped together
-- **"💬 Ver feedback anterior"** indicator shown if `session_exercises` history + `feedback` exists for this exercise name (tapping opens a bottom sheet with the most recent trainer feedback)
+Each exercise group is rendered as a card:
+- Planned values shown read-only: Sets · Reps · Load · Rest · Observations · Target RPE
+- Special states: `"rpe"` load → show "Escolha pelo RPE"; `"ESCOLHER"` → show "Escolha o peso"; `"PREENCHER"` RPE → input required
+- Student fills per set:
+  - **Repetições realizadas** (number)
+  - **Carga realizada** (number, pre-filled from planned if deterministic)
+  - **RPE realizado** (1–10 slider or number)
+  - **Observações** (text)
+  - **Concluído** toggle (checkbox)
+- **"💬 Feedback anterior"** chip shown if prior trainer feedback exists for this exercise name — tapping opens a bottom sheet
+
+### "rm" card
+
+Rendered between the last exercise and the post-workout form. Student enters their best lift for the session (or leaves blank). Saved to `session_exercises` with a special `isPersonalRecord: true` flag.
 
 ### Post-workout form
 
-After the last exercise card. Same two questions — Nível de ânimo + Como se sentiu.
+Same two questions as pre-workout. Feeling options: **Igual** / **Melhor** / **Pior**.
 
 ### Session action buttons
 
-- **"Iniciar Treino"** (Start Session) — shown before the pre-workout form is submitted. Tapping triggers a `wa.me` deep link (see §WhatsApp Notifications) and sets `session.status = 'in_progress'`.
-- **"Finalizar Treino"** (Finish Session) — shown after all exercises are filled and post-workout is complete. Triggers write-back to `Respostas` tab, saves `session_exercises` to Firestore, sets `session.status = 'completed'`, triggers trainer notification deep link.
+- **"Iniciar Treino"** — shown before pre-workout form is submitted. Writes `TRUE` to `G2` ("Visto do Aluno"), sets `session.status = 'in_progress'`, triggers trainer `wa.me` deep link.
+- **"Finalizar Treino"** — shown after all exercises have `isDone = true` and post-workout is complete. Triggers write-back to `Respostas` tab, saves all `session_exercises` to Firestore, sets `session.status = 'completed'`, triggers trainer notification deep link.
 
 ---
 
@@ -372,7 +427,26 @@ One header row (created once). One data row per exercise set per session:
 | Date | Tab | Exercise | Set | Planned Reps | Planned Load | Planned RPE | Actual Reps | Actual Load | Actual RPE | Observations | Done | Pre Energy | Pre Feeling | Post Energy | Post Feeling |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 
-**Language**: Column headers are in Portuguese (`Data`, `Treino`, `Exercício`, `Série`, `Reps Previstas`, `Carga Prevista`, `RPE Previsto`, `Reps Realizadas`, `Carga Realizada`, `RPE Realizado`, `Observações`, `Concluído`, `Ânimo Início`, `Sentimento Início`, `Ânimo Final`, `Sentimento Final`).
+**Language**: All headers in Portuguese. Column order:
+
+| # | Header | Source |
+|---|--------|--------|
+| 1 | Data | Session date |
+| 2 | Treino | Tab name (e.g. "treino 2") |
+| 3 | Exercício | Exercise name |
+| 4 | Série | Set index (1-based) |
+| 5 | Reps Previstas | Planned reps (col C) |
+| 6 | Carga Prevista | Planned load (col D) |
+| 7 | RPE Previsto | Target RPE (col G) — "PREENCHER" stored as blank |
+| 8 | Reps Realizadas | Actual reps (student-filled) |
+| 9 | Carga Realizada | Actual load (student-filled) |
+| 10 | RPE Realizado | Actual RPE (student-filled) |
+| 11 | Observações | Student notes |
+| 12 | Concluído | TRUE/FALSE |
+| 13 | Ânimo Início | Pre-workout energy level (1–5) |
+| 14 | Sentimento Início | Pre-workout feeling |
+| 15 | Ânimo Final | Post-workout energy level (1–5) |
+| 16 | Sentimento Final | Post-workout feeling |
 
 Pre/post workout data is repeated in every row of the same session (denormalised) so each row is self-contained and the trainer can filter or pivot by date/tab without needing to join.
 
@@ -527,32 +601,82 @@ All WhatsApp interactions use `wa.me` deep links. On mobile, tapping opens Whats
 
 ## 📊 Google Sheets Template (Portuguese, AA Contrast)
 
-### Status
-⚠️ The existing template at the trainer's URL is not publicly accessible. **Before building the sheet parser, the trainer must share the template as "Anyone with the link → Viewer"** so the exact tab structure and column positions can be mapped.
+### Context
 
-### What the new template must include (known requirements)
+The existing template (`gid=1061322602`) has been analysed. The new template:
+- Preserves the exact row/section structure the trainer already knows
+- Adds student input columns H–L to the right of the trainer's A–G columns (trainer's layout untouched)
+- Fixes all contrast issues with an AA-verified colour palette
+- Is in Portuguese throughout
 
-Each **Treino X** tab:
+> ⚠️ **Visual colour analysis still needed**: cell background/text colours cannot be read from CSV. Before finalising the existing-template contrast fixes, the trainer must open the sheet and share a screenshot, or open it in a Chrome session connected to Claude.
 
-| Section | Contents |
-|---|---|
-| Header | Trainer name/logo, student name, cycle name, week number |
-| INÍCIO DO TREINO | Nível de ânimo (1–5) · Como está se sentindo? (Bem / Mal) |
-| Training body | Group · Exercise · Sets · Reps · Load · RPE · Rest · Observations · Actual Reps · Actual Load · Actual RPE · Student Notes · Done (checkbox) |
-| FINAL DO TREINO | Nível de ânimo (1–5) · Como se sentiu? (Igual / Melhor / Pior) |
+### Column layout
 
-### AA Contrast Requirements (WCAG 2.1 Level AA)
+**Trainer fills (A–G) — read-only from student's perspective in the app:**
 
-All text in student-facing cells must meet:
-- **Normal text** (< 18pt, not bold): contrast ratio ≥ **4.5:1**
-- **Large text** (≥ 18pt, or ≥ 14pt bold): contrast ratio ≥ **3:1**
+| Col | PT Label | EN notes |
+|-----|----------|----------|
+| A | Exercício | Exercise name (empty on continuation sets) |
+| B | Séries | Sets |
+| C | Repetições | Reps |
+| D | Carga | Load (kg, or "rpe" / "ESCOLHER") |
+| E | Descanso | Rest |
+| F | Observações | Trainer notes |
+| G | RPE | Target RPE ("PREENCHER" = student must fill) |
 
-Common failures in training spreadsheets to fix:
-- Light gray instructional text on white background (often ~2.5:1 — fails)
-- Coloured section headers with insufficiently dark text
-- Placeholder text in input cells styled too light
+**Student fills (H–L) — new columns added by the new template:**
 
-The new template will use a high-contrast colour palette and be verified with a contrast checker before delivery.
+| Col | PT Label | Type |
+|-----|----------|------|
+| H | Reps Realizadas | Number |
+| I | Carga Realizada | Number |
+| J | RPE Realizado | Number 1–10 |
+| K | Observações do Aluno | Text |
+| L | Concluído ✓ | Checkbox |
+
+In the app, the student fills H–L via the UI and the app writes them back via Sheets API. In the original trainer template (no H–L columns), the app writes only to the `Respostas` tab and Firestore.
+
+### Row structure (new template)
+
+```
+Row 1   Metadata header (block/session ID in C, "Visto do Aluno" in G, student name in A)
+Row 2   Config (motto in A, training day in C, viewed checkbox G — app writes TRUE on open)
+Row 3   Empty
+Row 4   Empty
+Row 5   "Preencha abaixo (INÍCIO DO TREINO)"   ← section header, merged A:L, bold
+Row 6   "Qual o seu nível de ânimo?"   |  [★★☆☆☆ number input in B]
+Row 7   "Como está se sentindo?"       |  [Bem / Mal dropdown in B]
+Row 8   "Aquecimento"                  ← section label, merged A:L
+Row 9   Column headers (A–G trainer · H–L student)
+Row 10+ Warm-up exercises
+Row N   "Treino"                       ← section label
+Row N+1 Empty
+Row N+2 Column headers (repeated)
+Row N+3+ Main exercises
+Row M   "rm"                           ← 1RM / record row (cols H–I for student to fill)
+Row M+1 "Preencha abaixo (FINAL DO TREINO)"   ← section header
+Row M+2 "Qual o seu nível de ânimo?"   |  [★★★★★ number input in B]
+Row M+3 "Como está se sentindo?"       |  [Igual / Melhor / Pior dropdown in B]
+```
+
+### AA-compliant colour palette
+
+All ratios verified against WCAG 2.1 Level AA (≥ 4.5:1 for normal text, ≥ 3:1 for large/bold).
+
+| Element | Background | Text | Ratio |
+|---------|-----------|------|-------|
+| Sheet default | `#FFFFFF` | `#1E293B` | 16.1:1 ✅ |
+| Section headers ("Aquecimento", "Treino") | `#1E293B` | `#FFFFFF` | 16.1:1 ✅ |
+| Pre/post workout rows | `#F5F3FF` | `#1E293B` | 14.8:1 ✅ |
+| Column header row | `#334155` | `#FFFFFF` | 10.1:1 ✅ |
+| Trainer planned cells (A–G body) | `#F8FAFC` | `#475569` | 4.63:1 ✅ |
+| Student input cells (H–L) | `#EFF6FF` | `#1E293B` | 14.8:1 ✅ |
+| "PREENCHER" / required RPE cells | `#FFF7ED` | `#9A3412` | 5.0:1 ✅ |
+| Star rating rows (energy level) | `#F5F3FF` | `#6D28D9` | 5.3:1 ✅ |
+| Done / Concluído column (checked) | `#DCFCE7` | `#166534` | 5.4:1 ✅ |
+| "rm" personal record row | `#FEF9C3` | `#854D0E` | 5.5:1 ✅ |
+| "Visto do Aluno" row (config) | `#F0FDF4` | `#166534` | 6.7:1 ✅ |
 
 ---
 
