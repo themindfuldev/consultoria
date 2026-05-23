@@ -275,22 +275,6 @@ interface FeedbackMediaFile {
 
 ---
 
-### `admins` Collection
-*(Carried over from v1 — unchanged.)*
-
-```ts
-// Document ID = admin user's UID
-interface AdminRecord {
-  uid: string;
-  email: string;
-  grantedAt: Timestamp;
-  grantedBy: string;
-}
-```
-> Created exclusively via Firebase Console or a bootstrap script. Never writable from the client.
-
----
-
 ## 👤 Student Registration & Trainer Connection Flow
 
 ```
@@ -700,8 +684,6 @@ Row M+3 "Como está se sentindo?"       |  [Igual / Melhor / Pior dropdown in B]
 
 All ratios verified against WCAG 2.1 Level AA (≥ 4.5:1 for normal text, ≥ 3:1 for large/bold).
 
-| Element | Background | Text | Ratio |
-|---------|-----------|------|-------|
 **Contrast failures confirmed from screenshot analysis:**
 
 | Element | Current (approx) | Current ratio | Fix | Fixed ratio |
@@ -779,8 +761,7 @@ interface ProgressPhotoFolder {
 |---|---|---|
 | `VITE_FIREBASE_API_KEY` + other `VITE_FIREBASE_*` | `.env.local` / GitHub Secrets | Firebase SDK (client) |
 | `VITE_GOOGLE_CLIENT_ID` | `.env.local` / GitHub Secrets | GIS Token Client (browser) |
-| `RESEND_API_KEY` | GitHub Secrets | Morning email script |
-| `FIREBASE_SERVICE_ACCOUNT_KEY` | GitHub Secrets | CI deploy + email script |
+| `FIREBASE_SERVICE_ACCOUNT_KEY` | GitHub Secrets | CI deploy (Firebase Hosting) |
 
 See `docs/setup_guide.md` for step-by-step instructions to obtain all values.
 

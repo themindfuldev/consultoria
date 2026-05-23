@@ -86,13 +86,12 @@ The Firebase project *is* a Google Cloud project. You now need to enable the API
 
 ---
 
-### 2.2 Enable the three Google APIs
+### 2.2 Enable the Google APIs
 
 1. Sidebar → **APIs & Services → Library**
 2. Search for and **Enable** each of these:
    - **Google Sheets API**
    - **Google Drive API**
-   - **Google Docs API**
 
 For each: click the result → **"Enable"**
 
@@ -109,10 +108,9 @@ This is what users see when they authorize the app. Only needs to be done once.
    - **User support email**: your email
    - **Developer contact email**: your email
 4. Click **"Save and Continue"**
-5. **Scopes** step → click **"Add or Remove Scopes"** → add these three:
+5. **Scopes** step → click **"Add or Remove Scopes"** → add these two:
    - `https://www.googleapis.com/auth/spreadsheets`
    - `https://www.googleapis.com/auth/drive.file`
-   - `https://www.googleapis.com/auth/documents`
    - → **"Update"** → **"Save and Continue"**
 6. **Test users** step → add your own email (and any other testers) → **"Save and Continue"**
 7. **Summary** → **"Back to Dashboard"**
@@ -207,8 +205,6 @@ Add these in **GitHub → repo → Settings → Secrets and variables → Action
 | `VITE_FIREBASE_APP_ID` | Same as `.env.local` |
 | `VITE_GOOGLE_CLIENT_ID` | Same as `.env.local` |
 | `FIREBASE_SERVICE_ACCOUNT_KEY` | Firebase console → Project settings → **Service accounts** tab → **"Generate new private key"** → copy the entire JSON as a single line |
-| `RESEND_API_KEY` | [resend.com](https://resend.com) → API Keys → Create *(Phase 5 — morning emails)* |
-| `GOOGLE_SERVICE_ACCOUNT_KEY` | Cloud Console → IAM & Admin → Service Accounts → create one with Sheets + Drive read permissions → download JSON *(Phase 5 — email cron)* |
 
 ---
 
@@ -221,7 +217,7 @@ pnpm install   # if not done yet
 pnpm dev
 ```
 
-Open `http://localhost:5173` — you should see the Landing page. Click **"Sign in with Google"** — it should open a Google popup, request Sheets/Drive/Docs permissions on first sign-in, then route you to role selection.
+Open `http://localhost:5173` — you should see the Landing page. Click **"Entrar com Google"** — it should open a Google popup, request Sheets/Drive permissions on first sign-in, then route you to role selection.
 
 ---
 
@@ -234,9 +230,8 @@ For 1 trainer and up to 30 students, every service stays within its free tier:
 | Cloud Firestore | ~1% of daily ops, ~1% of storage | $0.00 |
 | Firebase Auth | Negligible | $0.00 |
 | Firebase Hosting | ~14% of transfer | $0.00 |
-| Google APIs (Sheets/Drive/Docs) | User-quota, not billed | $0.00 |
+| Google APIs (Sheets/Drive) | User-quota, not billed | $0.00 |
 | GitHub Actions | ~5% of minutes | $0.00 |
-| Resend | ~20% of email quota | $0.00 |
 | **Total** | | **$0.00/month** |
 
 The Blaze plan credit card is a safety net only — the free quota is sufficient for this scale. Costs would only appear at roughly 100× current usage.
