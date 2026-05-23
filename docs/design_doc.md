@@ -12,10 +12,11 @@ This document defines the architecture, data models, integration flows, and impl
 ## 🎯 Project Goals
 
 - **Mobile-first UX**: Trainer and student primarily use their phones. Every screen is designed at 375px first.
-- **Near-zero cost**: 1 trainer + 20–30 students, each with 1–2 active cycles. Expected monthly bill: **$0.00–$0.05**.
+- **Near-zero cost**: 1 trainer + 20–30 students. Expected monthly bill: **$0.00–$0.05**.
 - **Google Sheets as source of truth**: The trainer's existing spreadsheet defines every session. Consultoria reads it for display and writes student responses to a dedicated `Respostas` tab. The trainer's layout is never modified.
 - **No duplication of the other product**: No training cycle creation, no exercise library management, no student management — those live elsewhere.
 - **WhatsApp-compatible notifications**: Trainer and students communicate via WhatsApp today. Consultoria integrates via `wa.me` deep links (no WhatsApp Business API, no dedicated bot number, no cost).
+- **Language**: UI, spreadsheet templates, and all user-facing artifacts are entirely in **PT-BR**. The codebase (variables, comments, commit messages, type names) is in **English**.
 
 ---
 
@@ -29,8 +30,6 @@ graph TD
     Client -->|ffmpeg.wasm — in Web Worker| VideoCompression[Client-side Video Compression]
     Client -->|wa.me deep links| WhatsApp[WhatsApp]
     GitHub[GitHub Repo] -->|Actions: push to main| FirebaseHosting[Firebase Hosting]
-    GitHub -->|Actions: daily cron| EmailCron[Morning Email Script]
-    EmailCron -->|Resend API| Email[Morning Workout Emails]
 ```
 
 ### Frontend
@@ -52,7 +51,6 @@ graph TD
 - **Google Sheets API** — read session tabs for workout display; write student responses to `Respostas` tab.
 - **Google Drive API** — create per-session video folders; upload compressed student videos; upload trainer feedback media files.
 - **WhatsApp** — `wa.me` deep links for start/finish/feedback notifications (no Business API).
-- **Resend** — optional morning workout emails (GitHub Actions cron).
 
 ---
 
@@ -80,7 +78,7 @@ interface UserProfile {
   displayName: string;
   photoURL: string;
   role: 'trainer' | 'student';
-  selectedLanguage: 'en' | 'pt-BR';
+  // No selectedLanguage — the app is PT-BR only.
   whatsappPhone: string;    // e.g. "5511999999999" — used to build wa.me links
   createdAt: Timestamp;
 }
@@ -98,7 +96,6 @@ interface Workspace {
   trainerEmail: string;
   trainerName: string;
   whatsappPhone: string;
-  selectedLanguage: 'en' | 'pt-BR';
   createdAt: Timestamp;
 }
 ```
@@ -124,22 +121,37 @@ interface StudentWorkspace {
 ---
 
 ### `cycles` Collection
-One document per Google Sheets spreadsheet (= one training cycle). Students create these themselves after connecting to a trainer.
+One document per Google Sheets spreadsheet. Students create these themselves after connecting to a trainer. A student may have multiple active cycles simultaneously (different modalities / different trainers).
 
 ```ts
+type Modality =
+  | 'Força'
+  | 'Hipertrofia'
+  | 'Treino'
+  | 'Flexibilidade'
+  | 'Corrida'
+  | 'Handstands'
+  | 'Outro';                  // free-text fallback
+
 interface Cycle {
   id: string;
   studentUid: string;
-  workspaceId: string;
+  workspaceId: string;        // trainer's email
   googleSheetId: string;      // extracted from the URL
   googleSheetUrl: string;     // original URL pasted by student
   title: string;              // fetched from sheet title, editable by student
-  status: 'active' | 'completed';
+  modality: Modality;
+  modalityCustom?: string;    // populated when modality === 'Outro'
+  status: 'active' | 'archived';
+  // 'active'   → student is currently training this cycle
+  // 'archived' → student manually archived or it was incorrect; hidden by default
   startDate: Timestamp;
-  completedAt?: Timestamp;
+  archivedAt?: Timestamp;
   createdAt: Timestamp;
 }
 ```
+
+> Students can archive a cycle (hide it from the main view) or restore it. Archived cycles are soft-deleted — data is retained for history and reports.
 
 ---
 
@@ -284,37 +296,51 @@ interface AdminRecord {
 ```
 Student signs in with Google (first time)
         ↓
-Prompted: "Enter your trainer's email"
+Prompted: "Selecione seu treinador" (dropdown — lists all registered trainers by name)
         ↓
-App looks up workspace by trainerEmail
-  → Not found: "Trainer not found — ask them to sign up for Consultoria first"
-  → Found: create student_workspaces doc { status: 'pending' }
+Student picks a trainer from the list
+        ↓
+App creates student_workspaces doc { status: 'pending' }
         ↓
 Trainer sees pending request in their dashboard
         ↓
-Trainer taps "Approve" → status: 'active', joinedAt: now()
+Trainer taps "Aprovar" → status: 'active', joinedAt: now()
         ↓
 Student can now add cycles
 ```
 
+**Trainer dropdown:**
+- Populated by querying `workspaces` collection (all registered trainers).
+- Displayed as: "Nome do Treinador — email@example.com".
+- Students can connect to multiple trainers; each connection is a separate `student_workspaces` doc.
+- If a trainer has not yet signed up, the student is shown: *"Peça ao seu treinador para se cadastrar no Consultoria primeiro."*
+
 **Key rules:**
 - A student with `status: 'pending'` sees a waiting screen — no cycle or session access.
-- A student can connect to multiple trainers (one `student_workspaces` doc per trainer).
-- If a trainer is not yet in Consultoria, the student gets a clear error and a shareable app link to send to the trainer.
+- A student can connect to multiple trainers simultaneously.
+- Trainer approval is required before a student can add cycles under that trainer.
 
 ---
 
 ## 📋 Cycle Management
 
-After being approved, the student adds their training cycle:
+After being approved, the student adds a training cycle:
 
-1. Student taps **"Add Cycle"**
-2. Pastes the Google Sheets URL shared by their trainer
-3. App extracts the `spreadsheetId` from the URL and calls Sheets API to fetch the spreadsheet title + list of tab names
-4. Student confirms or edits the cycle title
-5. A `cycles` doc is created; the app immediately displays the session tab cards
+1. Student taps **"Adicionar Programa"**
+2. Selects the trainer this program belongs to (dropdown — their approved trainers)
+3. Pastes the Google Sheets URL shared by their trainer
+4. App extracts the `spreadsheetId`, calls Sheets API to fetch the title and tab list, and **filters to only session tabs** (excludes "Dados" and any tab that lacks the "INÍCIO DO TREINO" marker when spot-checked)
+5. Student fills: **Título** (pre-filled from sheet title, editable) + **Modalidade** (dropdown with free-text "Outro" option)
+6. A `cycles` doc is created; session tab cards appear immediately
 
-**One active cycle per trainer-student pair** at a time. A student with multiple trainers can have one active cycle per trainer.
+**Multiple cycles:** A student can have any number of active cycles simultaneously — different modalities, different trainers, different spreadsheets.
+
+**Archive / remove a cycle:**
+- Student long-presses or taps the ⋯ menu on a cycle card → **"Arquivar"**
+- Archived cycles are hidden from the main view but retained for history and reports
+- **"Ver arquivados"** toggle on the cycles page reveals them
+- Archived cycles can be restored (**"Restaurar"**) if archived by mistake
+- There is no permanent deletion — data is always retained
 
 ---
 
@@ -360,6 +386,15 @@ Row M+3 "Como está se sentindo?"      |  dropdown string in col B
 
 **There is also a separate "Strikes" tab** (first tab, gid=0) that tracks student compliance: consecutive absences, exercise/weight change penalties, and main lift PRs. The app ignores this tab.
 
+### Tab structure (confirmed from live template)
+
+The spreadsheet tabs observed: **Dados · Segunda · Terça · Quarta · Quinta · Sábado**
+
+- **"Dados"** (first tab) — summary/compliance data. **Always skipped** by the parser.
+- **Day tabs** (Segunda → Sábado) — one per training day. Each is a session the student can open.
+- Tab ordering in the app follows day-of-week order (Segunda first).
+- For spreadsheets with non-day tab names (e.g. "Treino A", "Bloco 1"), all tabs except "Dados" are shown; the parser validates each by scanning for the "INÍCIO DO TREINO" marker before rendering.
+
 ### Reading the spreadsheet
 
 When a student opens a session, the app calls:
@@ -370,15 +405,16 @@ GET https://sheets.googleapis.com/v4/spreadsheets/{sheetId}/values/{tabName}!A:R
 The raw 2D array is parsed with the following logic:
 
 1. **Skip rows 1–2** (metadata/config). On open, write `TRUE` to cell `G2` ("Visto do Aluno").
-2. **Detect pre-workout block**: find row where col A contains `"INÍCIO DO TREINO"` (case-insensitive). Next two rows are energy level and feeling.
-3. **Detect section labels**: rows where col A is a known label (`"Aquecimento"`, `"Treino"`, etc.) and cols B–G are all empty/null.
-4. **Detect exercise header rows**: rows where col A = `"Exercício"` — skip these.
-5. **Parse exercise rows**: non-empty rows after a section label and header row, up to the next section/post-workout marker.
-   - If col A is non-empty → start of a new exercise group.
-   - If col A is empty → continuation row of the previous exercise (different set/weight in the same progression).
-   - Group all continuation rows under the exercise name from the first row.
-6. **Detect "rm" row**: row where col A = `"rm"` — render as a special "Record your max" input card.
-7. **Detect post-workout block**: row where col A contains `"FINAL DO TREINO"`.
+2. **Detect pre-workout block**: first row where col A contains `"INÍCIO DO TREINO"` (case-insensitive substring match). Next two rows are energy level (col B = integer 1–5 formatted as stars) and feeling (col B = dropdown string).
+3. **Detect section labels** (generic — any name, not hardcoded): a row where col A is non-empty AND cols B–G are ALL empty/null AND it does NOT match exercise-header or pre/post-workout patterns. Examples in the wild: "Aquecimento", "Treino", "Extra", "Cardio", "Mobility" — all handled identically.
+4. **Detect exercise header rows**: col A contains `"Exercício"` (case-insensitive) — skip these, they are visual column labels only.
+5. **Parse exercise rows**: non-empty rows after a section label, up to the next section label or post-workout marker.
+   - Col A non-empty → start of a new exercise group (name = col A value).
+   - Col A empty → continuation row of the previous exercise (different set/load in the same progression). Group under the last named exercise.
+   - Special load tokens: `"rpe"` → show "Escolha pelo RPE"; `"ESCOLHER"` → show "Escolha o peso".
+   - Special RPE token: `"PREENCHER"` → required student input (render as highlighted empty field).
+6. **Detect "rm" row**: col A exactly equals `"rm"` (case-insensitive) — render as a "Recorde pessoal" input card between the last exercise and the post-workout form.
+7. **Detect post-workout block**: first row where col A contains `"FINAL DO TREINO"` (case-insensitive).
 
 ### Pre-workout form
 
@@ -609,7 +645,7 @@ The existing template (`gid=1061322602`) has been analysed. The new template:
 - Fixes all contrast issues with an AA-verified colour palette
 - Is in Portuguese throughout
 
-> ⚠️ **Visual colour analysis still needed**: cell background/text colours cannot be read from CSV. Before finalising the existing-template contrast fixes, the trainer must open the sheet and share a screenshot, or open it in a Chrome session connected to Claude.
+> Screenshot analysed — contrast issues confirmed and fixes specified below.
 
 ### Column layout
 
@@ -666,33 +702,74 @@ All ratios verified against WCAG 2.1 Level AA (≥ 4.5:1 for normal text, ≥ 3:
 
 | Element | Background | Text | Ratio |
 |---------|-----------|------|-------|
+**Contrast failures confirmed from screenshot analysis:**
+
+| Element | Current (approx) | Current ratio | Fix | Fixed ratio |
+|---------|-----------------|--------------|-----|-------------|
+| "Preencha abaixo (INÍCIO/FINAL DO TREINO)" header | `#DC2626` bg / white text | **3.46:1 ❌ FAILS** | `#991B1B` bg / white text | 5.83:1 ✅ |
+| RPE chips (green bg, numbered value) | `#22C55E` bg / white text | **2.14:1 ❌ FAILS** | `#15803D` bg / white text | 4.54:1 ✅ |
+
+**Elements confirmed passing (no change needed):**
+
+| Element | Approx colours | Ratio |
+|---------|---------------|-------|
+| Dark rows (Bench sets, header area) | `#111827` bg / white text | ~18:1 ✅ |
+| Section labels (Aquecimento, Treino) | dark teal bg / white text | ~9:1 ✅ |
+| Yellow row (Extensão de punho) | `#FCD34D` bg / `#1E293B` text | ~7:1 ✅ |
+| Light pink rows (Dip, Tríceps) | `#FECACA` bg / `#1E293B` text | ~12:1 ✅ |
+| Light blue row (Pull Up) | `#BAE6FD` bg / `#1E293B` text | ~9:1 ✅ |
+| Orange header text (b1 • e1 • mg) | `#F97316` / dark bg | ~7:1 ✅ |
+| "PREENCHER" dropdown cells | white bg / dark text | ~16:1 ✅ |
+
+**New template colour palette** (preserves the dark/bold aesthetic of the original):
+
+| Element | Background | Text | Ratio |
+|---------|-----------|------|-------|
 | Sheet default | `#FFFFFF` | `#1E293B` | 16.1:1 ✅ |
-| Section headers ("Aquecimento", "Treino") | `#1E293B` | `#FFFFFF` | 16.1:1 ✅ |
-| Pre/post workout rows | `#F5F3FF` | `#1E293B` | 14.8:1 ✅ |
+| Section headers ("Aquecimento", "Treino", etc.) | `#1E293B` | `#FFFFFF` | 16.1:1 ✅ |
+| Pre/post workout section headers | `#991B1B` | `#FFFFFF` | 5.83:1 ✅ |
+| Pre/post workout question rows | `#1C1917` | `#FFFFFF` | 16.8:1 ✅ |
 | Column header row | `#334155` | `#FFFFFF` | 10.1:1 ✅ |
 | Trainer planned cells (A–G body) | `#F8FAFC` | `#475569` | 4.63:1 ✅ |
 | Student input cells (H–L) | `#EFF6FF` | `#1E293B` | 14.8:1 ✅ |
-| "PREENCHER" / required RPE cells | `#FFF7ED` | `#9A3412` | 5.0:1 ✅ |
-| Star rating rows (energy level) | `#F5F3FF` | `#6D28D9` | 5.3:1 ✅ |
-| Done / Concluído column (checked) | `#DCFCE7` | `#166534` | 5.4:1 ✅ |
+| RPE chips (numbered) | `#15803D` | `#FFFFFF` | 4.54:1 ✅ |
+| "PREENCHER" required RPE cells | `#FFF7ED` | `#9A3412` | 5.0:1 ✅ |
 | "rm" personal record row | `#FEF9C3` | `#854D0E` | 5.5:1 ✅ |
-| "Visto do Aluno" row (config) | `#F0FDF4` | `#166534` | 6.7:1 ✅ |
+| Done / Concluído (checked) | `#DCFCE7` | `#166534` | 5.4:1 ✅ |
+| Metadata / "Visto do Aluno" row | `#0F172A` | `#F97316` | 6.8:1 ✅ |
 
 ---
 
-## 📧 Morning Email Engine (Optional — GitHub Actions)
+## 📸 Progress Photos
 
-*(Carried over from v1. Can be activated independently of the rest of the app.)*
+Students can maintain a visual timeline of their physical progress, stored in Google Drive.
 
-Daily cron via GitHub Actions (`scripts/send-morning-emails.ts`) + Resend API. Sends each student their day's workout tab content from their active cycle spreadsheet. Student configures which tabs map to which days of the week in their Consultoria profile.
+### Flow
 
----
+1. Student taps **"Adicionar Fotos de Progresso"** on any cycle's detail page.
+2. App creates a dated subfolder in the student's Drive:
+   ```
+   Consultoria — Fotos de Evolução/
+   └── 2026-05-21/          ← created on demand
+   ```
+   Folder is set to "Anyone with the link → Viewer" so the trainer can see it.
+3. App displays a **"Abrir pasta no Google Drive"** button — student uploads photos directly in the Drive app on their phone (no re-implementation of upload needed).
+4. The **Fotos de Evolução** page in the app uses the Drive API to list all dated subfolders, fetches thumbnail URLs for photos inside each folder, and renders a chronological timeline.
+5. Student can select any two photos from the timeline for a **side-by-side comparison** view.
+6. Folder URL and metadata stored in a `progressPhotoFolders` sub-collection under the cycle doc.
 
-## 🔐 Admin Mode
+### Firestore model
 
-*(Carried over from v1 — full specification unchanged.)*
-
-Admins are granted via the `admins` Firestore collection (console-only). Admin panel at `/admin` lists all users; "View as" impersonates any trainer or student with a persistent banner and all write actions disabled.
+```ts
+// Stored as a sub-collection: cycles/{cycleId}/progressPhotoFolders/{docId}
+interface ProgressPhotoFolder {
+  id: string;
+  driveFolderId: string;
+  driveFolderUrl: string;
+  date: Timestamp;       // the date shown to the student
+  createdAt: Timestamp;
+}
+```
 
 ---
 
@@ -722,26 +799,23 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Users can only read/write their own profile.
+    // Trainers may also read any student profile that is connected to their workspace.
     match /users/{uid} {
-      allow read: if request.auth.uid == uid || isAdmin();
+      allow read: if request.auth.uid == uid || isConnectedTrainer(uid);
       allow write: if request.auth.uid == uid;
     }
 
-    match /admins/{uid} {
-      allow read: if request.auth.uid == uid;
-      allow write: if false;
-    }
-
+    // Workspaces: readable by trainer + any connected student; writable only by trainer
     match /workspaces/{workspaceId} {
-      allow read: if isAdmin() || isTrainerOf(workspaceId) || isStudentOf(workspaceId);
+      allow read: if isTrainerOf(workspaceId) || isStudentOf(workspaceId);
       allow create: if request.auth.uid == request.resource.data.trainerUid;
       allow update, delete: if isTrainerOf(workspaceId);
     }
 
+    // Student connections: student creates their own request; trainer approves/rejects
     match /student_workspaces/{docId} {
-      // Student can create their own request; trainer can update status; both can read
-      allow read: if isAdmin() ||
-        isTrainerOf(resource.data.workspaceId) ||
+      allow read: if isTrainerOf(resource.data.workspaceId) ||
         request.auth.uid == resource.data.studentUid;
       allow create: if request.auth.uid == request.resource.data.studentUid;
       allow update: if isTrainerOf(resource.data.workspaceId);
@@ -749,50 +823,53 @@ service cloud.firestore {
         request.auth.uid == resource.data.studentUid;
     }
 
+    // Cycles: student creates and manages; trainer can read (to track student progress)
     match /cycles/{docId} {
-      allow read: if isAdmin() ||
-        isTrainerOf(resource.data.workspaceId) ||
+      allow read: if isTrainerOf(resource.data.workspaceId) ||
         request.auth.uid == resource.data.studentUid;
       allow create, update: if request.auth.uid == resource.data.studentUid;
-      allow delete: if request.auth.uid == resource.data.studentUid ||
-        isTrainerOf(resource.data.workspaceId);
+      allow delete: if request.auth.uid == resource.data.studentUid;
+
+      // Progress photo folders as sub-collection
+      match /progressPhotoFolders/{folderId} {
+        allow read: if isTrainerOf(get(/databases/$(database)/documents/cycles/$(docId)).data.workspaceId) ||
+          request.auth.uid == get(/databases/$(database)/documents/cycles/$(docId)).data.studentUid;
+        allow create, update, delete: if
+          request.auth.uid == get(/databases/$(database)/documents/cycles/$(docId)).data.studentUid;
+      }
     }
 
+    // Sessions: student creates/updates; trainer reads all sessions in their workspace
     match /sessions/{docId} {
-      allow read: if isAdmin() ||
-        isTrainerOf(resource.data.workspaceId) ||
+      allow read: if isTrainerOf(resource.data.workspaceId) ||
         request.auth.uid == resource.data.studentUid;
       allow create, update: if request.auth.uid == resource.data.studentUid &&
         isActiveStudentOf(resource.data.workspaceId, resource.data.studentUid);
     }
 
+    // Session exercises (actuals cache): student writes; trainer reads
     match /session_exercises/{docId} {
-      allow read: if isAdmin() ||
-        isTrainerOf(resource.data.workspaceId) ||
+      allow read: if isTrainerOf(resource.data.workspaceId) ||
         request.auth.uid == resource.data.studentUid;
       allow create, update: if request.auth.uid == resource.data.studentUid;
     }
 
+    // Videos: student uploads; trainer reads (to give feedback)
     match /videos/{docId} {
-      allow read: if isAdmin() ||
-        isTrainerOf(resource.data.workspaceId) ||
+      allow read: if isTrainerOf(resource.data.workspaceId) ||
         request.auth.uid == resource.data.studentUid;
       allow create: if request.auth.uid == resource.data.studentUid;
       allow update, delete: if request.auth.uid == resource.data.studentUid;
     }
 
+    // Feedback: trainer writes; student reads
     match /feedback/{docId} {
-      allow read: if isAdmin() ||
-        isTrainerOf(resource.data.workspaceId) ||
+      allow read: if isTrainerOf(resource.data.workspaceId) ||
         request.auth.uid == resource.data.studentUid;
       allow create, update: if isTrainerOf(resource.data.workspaceId);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
-
-    function isAdmin() {
-      return exists(/databases/$(database)/documents/admins/$(request.auth.uid));
-    }
 
     function isTrainerOf(workspaceId) {
       return get(/databases/$(database)/documents/workspaces/$(workspaceId))
@@ -809,6 +886,13 @@ service cloud.firestore {
         get(/databases/$(database)/documents/student_workspaces/
           $(studentUid + '_' + workspaceId)).data.status == 'active';
     }
+
+    function isConnectedTrainer(studentUid) {
+      // True if the requesting user is a trainer who has an active student_workspaces
+      // connection with the given student. Used for trainer to read student profiles.
+      return exists(/databases/$(database)/documents/student_workspaces/
+        $(studentUid + '_' + request.auth.uid));
+    }
   }
 }
 ```
@@ -818,84 +902,100 @@ service cloud.firestore {
 ## ⚡ Implementation Plan
 
 ### Phase 1 — Foundation & Auth
-- [ ] Vite + React 19 + TypeScript + Tailwind CSS v4 project setup
+- [ ] Vite + React 19 + TypeScript + Tailwind CSS v4 project setup (PT-BR only, no language toggle)
 - [ ] Firebase Auth (Google Sign-In) + Firestore SDK
 - [ ] GIS Token Client for Sheets + Drive API access
-- [ ] User profile creation (role, language, WhatsApp phone number)
+- [ ] User profile creation (role, WhatsApp phone number)
 - [ ] Trainer workspace auto-creation on first trainer sign-in
-- [ ] Student connection flow: enter trainer email → create pending `student_workspaces` doc
+- [ ] Student connection flow: trainer dropdown (query all `workspaces`) → create pending `student_workspaces` doc
 - [ ] Trainer dashboard: approve/reject pending student connections
 - [ ] `ProtectedRoute` + role-based routing
-- [ ] Mobile-first app shell: glassmorphism layout, dark mode, language toggle, nav
+- [ ] Mobile-first app shell: glassmorphism layout, dark mode, nav (no language toggle)
 
 ### Phase 2 — Cycle & Session Management
-- [ ] Student adds a cycle: paste Google Sheets URL → fetch sheet title + tab names
-- [ ] Cycle overview page: list of session tab cards
-- [ ] Session view: parse spreadsheet tab → render exercise cards (planned values, input fields)
-- [ ] Pre/post workout forms (energy + feeling)
+- [ ] Student adds a cycle: select trainer (dropdown) + paste Sheets URL + pick modality
+- [ ] Tab filtering: skip "Dados" tab; detect session tabs by "INÍCIO DO TREINO" marker
+- [ ] Cycle overview page: session tab cards ordered by day-of-week
+- [ ] Archive / restore cycle flow (soft-delete with "Ver arquivados" toggle)
+- [ ] Session view: generic section parser (flexible section names) → render exercise cards
+- [ ] Multi-set grouping: continuation rows (empty col A) grouped under parent exercise
+- [ ] Special token handling: "PREENCHER", "rpe", "ESCOLHER", "rm"
+- [ ] Pre/post workout forms (star energy selector + feeling buttons)
 - [ ] Exercise actuals input: reps, load, RPE, observations, done toggle
+- [ ] Write `TRUE` to G2 ("Visto do Aluno") on session open
 - [ ] "Iniciar Treino" and "Finalizar Treino" `wa.me` deep links
-- [ ] Write-back: create `Respostas` tab if absent; append session row(s) to sheet
+- [ ] Write-back: create `Respostas` tab if absent; append all exercise rows to sheet
 - [ ] Save session + `session_exercises` to Firestore
 
-### Phase 3 — Video Upload
+### Phase 3 — Video Upload & Progress Photos
 - [ ] Drive folder creation per session (student's Drive, `drive.file` scope)
 - [ ] File picker → ffmpeg.wasm compression (Web Worker, lazy-loaded) → Drive upload
 - [ ] Progress UI during compression and upload
-- [ ] Exercise association (dropdown from session exercises) + free-form description
-- [ ] Video list view per session
+- [ ] Exercise association (dropdown from session exercises) + free-form description for extra videos
+- [ ] Video list view per session (thumbnail + exercise label)
 - [ ] "Notificar treinador" `wa.me` deep link after upload
+- [ ] Progress photos: dated Drive subfolder creation under `Consultoria — Fotos de Evolução/`
+- [ ] Progress photo timeline: list dated folders via Drive API, render thumbnails
+- [ ] Side-by-side comparison view (select two dates)
 
 ### Phase 4 — Trainer Feedback
-- [ ] Trainer dashboard: "Awaiting Feedback" session list
-- [ ] Feedback view: session summary + per-exercise video player
+- [ ] Trainer dashboard: "Aguardando Feedback" session list (completed sessions with videos)
+- [ ] Feedback view: session summary + per-exercise video player (streams from Drive URL)
 - [ ] Per-exercise text feedback field
 - [ ] Media file upload (device picker — audio/video) → trainer's Drive feedback folder
-- [ ] General notes field
+- [ ] General notes field ("Observações gerais")
 - [ ] "Feedback Completo" button → update Firestore + `wa.me` deep link to student
-- [ ] Student feedback view (read-only)
+- [ ] Student feedback view (read-only mirror of trainer view)
 
 ### Phase 5 — Historical Feedback & Reports
-- [ ] Historical feedback query per exercise name → "💬 Feedback anterior" chip in session view
-- [ ] Feedback history bottom sheet (last 5 instances)
-- [ ] Reports page: Recharts charts (load, RPE, volume, energy level over time)
-- [ ] Cycle summary statistics
-- [ ] Optional: morning email script + GitHub Actions cron
+- [ ] Historical feedback query per exercise name across all sessions → "💬 Feedback anterior" chip
+- [ ] Feedback history bottom sheet (most recent 5 instances, grouped by date)
+- [ ] Reports page: Recharts charts (load, RPE, volume, energy level over time per exercise)
+- [ ] Cycle summary: total sessions, completion rate, personal records from "rm" rows
 
-### Phase 6 — Template, Polish & Admin
-- [ ] Analyse existing trainer template (requires public share link)
-- [ ] Build new Portuguese AA-contrast template in Google Sheets
-- [ ] Document template column mapping for the sheet parser
-- [ ] Admin mode: `AdminRoute`, `AdminImpersonationContext`, `AdminDashboard`, impersonation banner
-- [ ] Firestore Security Rules deployment + integration tests
-- [ ] Accessibility pass (focus management, ARIA, colour contrast)
+### Phase 6 — Template & Polish
+- [ ] Build new PT-BR AA-contrast Google Sheets template (based on confirmed colour fixes)
+- [ ] Validate template with the parser (all sections, multi-set exercises, rm row)
+- [ ] Firestore Security Rules deployment + emulator integration tests
+- [ ] Accessibility pass (focus management, ARIA labels, colour contrast in app UI)
 - [ ] Responsive QA: 375px mobile + 768px tablet
-- [ ] Performance audit: lazy-load ffmpeg.wasm, route splitting, Lighthouse score
+- [ ] Performance audit: lazy-load ffmpeg.wasm, route splitting, Lighthouse score ≥ 90
 
 ---
 
 ## 🔍 Verification Plan
 
 ### Manual E2E Scenarios
-1. **Student connection**: student signs in → enters trainer email → trainer approves → student can add cycle
-2. **Cycle registration**: student pastes sheet URL → app reads tabs → session cards appear
-3. **Full session flow**: student opens session → fills pre-workout → fills exercise actuals → fills post-workout → taps "Finalizar" → WhatsApp deep link opens with correct message → `Respostas` tab updated in sheet → `session_exercises` written to Firestore
-4. **Video upload**: student uploads 2 videos → compression runs → files appear in Drive folder → "Notificar treinador" link works
-5. **Trainer feedback**: trainer opens awaiting-feedback session → watches videos → adds text feedback + uploads audio file → taps "Feedback Completo" → student WhatsApp link opens
-6. **Historical feedback**: student does "Treino A" a second time → "💬 Feedback anterior" appears on exercises that had feedback → bottom sheet shows correct previous feedback
-7. **Reports**: after 3+ sessions, reports page shows load/RPE charts per exercise
-8. **Admin impersonation**: admin views a student account → all data renders correctly → all write actions disabled
-9. **Token refresh**: leave app open for 55+ minutes → trigger a Sheets write → silent token refresh succeeds without visible popup
+1. **Student connection**: student signs in → picks trainer from dropdown → trainer approves → student can add cycle
+2. **Cycle registration**: student selects trainer + pastes sheet URL + picks modality → "Dados" tab filtered out → day-tab cards appear in day-of-week order
+3. **Cycle archive/restore**: student archives a cycle → it disappears from main view → "Ver arquivados" reveals it → restore works
+4. **Full session flow**: student opens "Terça" tab → pre-workout form → fills actuals including a "PREENCHER" RPE and an "ESCOLHER" load → "rm" card filled → post-workout → taps "Finalizar" → WhatsApp deep link opens correctly → `Respostas` tab row appended in sheet → `session_exercises` written to Firestore
+5. **Multi-set exercise grouping**: Bench (6 continuation rows) renders as one card with 6 sets — not 6 separate exercises
+6. **Video upload**: student uploads 2 videos (1 tagged to exercise, 1 free-form) → compression runs → files appear in Drive session folder → "Notificar treinador" link opens WhatsApp with correct message
+7. **Progress photos**: student creates dated folder → Drive link opens → photos uploaded externally → thumbnail timeline renders in app → side-by-side comparison works
+8. **Trainer feedback**: trainer opens awaiting-feedback session → watches videos → adds text feedback per exercise + uploads audio file → taps "Feedback Completo" → student WhatsApp link fires
+9. **Historical feedback**: student opens a second session with the same exercise → "💬 Feedback anterior" chip appears → bottom sheet shows trainer's feedback from the previous session
+10. **Reports**: after 3+ sessions, load/RPE/volume charts render per exercise; energy level trend visible
+11. **Token refresh**: leave app open 55+ minutes → trigger a Sheets write → silent re-auth succeeds with no visible popup
 
 ### Automated Tests
-- Firestore Security Rules (Firebase Emulator): cross-workspace isolation, pending student blocks, trainer-only feedback writes
-- Sheets parser unit tests: mock API response → verify correct column detection, exercise row extraction, pre/post section detection
+- Firestore Security Rules (Firebase Emulator): cross-workspace isolation, pending student blocks, trainer-only feedback writes, student can't write another student's session
+- Sheets parser unit tests: mock gviz API response → verify section detection (generic labels), multi-set grouping, "PREENCHER"/"rpe"/"ESCOLHER" token handling, pre/post block extraction, "rm" row detection
 
 ---
 
-## ❓ Open Items (Needs Confirmation)
+## ✅ All Items Resolved
 
-1. **Spreadsheet template access**: The existing template must be shared publicly (Viewer) before Phase 6 template work and the sheet parser column mapping can be finalised.
-2. **Morning emails**: Still wanted? (Can be activated in Phase 5 independently of the rest.)
-3. **Progress photos**: Original design had a Drive-based photo timeline + side-by-side comparison. Still in scope?
-4. **Multiple active cycles**: Can a student have more than one active cycle per trainer (e.g. two different programs running in parallel)?
+All open items from the previous design iteration have been confirmed:
+
+| Item | Decision |
+|------|----------|
+| Spreadsheet template | Analysed from screenshot — contrast fixes specified, column mapping confirmed |
+| Morning emails | ❌ Not needed |
+| Admin mode | ❌ Not needed |
+| Progress photos | ✅ In scope (Phase 3) |
+| Multiple active cycles | ✅ Yes — multiple simultaneous cycles per student, each with a modality |
+| Language | PT-BR only for UI and artifacts; English codebase |
+| Cycle archive | ✅ Soft-delete with restore capability |
+| Trainer connection | ✅ Dropdown of registered trainers (not free-text email) |
+| Section names | ✅ Generic parser — any section name works, not hardcoded |
