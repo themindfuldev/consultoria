@@ -1,30 +1,49 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   collection,
   doc,
+  getDoc,
+  getDocs,
   onSnapshot,
+  orderBy,
   query,
   Timestamp,
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { CheckCircle, Clock, Users, XCircle } from 'lucide-react';
+import { CheckCircle, Clock, MessageSquare, Users, Video, XCircle } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
 import { Avatar } from '../../components/Avatar';
-import type { StudentWorkspace } from '../../types';
+import type { Feedback, Session, StudentWorkspace, UserProfile } from '../../types';
+
+// ── Pending-feedback item ─────────────────────────────────────────────────────
+
+interface PendingFeedbackItem {
+  session: Session;
+  studentName: string;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export function TrainerDashboard() {
   const { userProfile } = useAuth();
+  const navigate = useNavigate();
   const [pending, setPending] = useState<StudentWorkspace[]>([]);
   const [active, setActive] = useState<StudentWorkspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionError, setActionError] = useState('');
 
+  // Sessions waiting for feedback
+  const [feedbackQueue, setFeedbackQueue] = useState<PendingFeedbackItem[]>([]);
+  const [queueLoading, setQueueLoading] = useState(true);
+
   const workspaceId = userProfile?.email ?? '';
 
-  // Real-time listener on student_workspaces for this trainer's workspace.
+  // ── Student workspace listener ──────────────────────────────────────────────
+
   useEffect(() => {
     if (!workspaceId) return;
     const q = query(
@@ -43,6 +62,59 @@ export function TrainerDashboard() {
     );
     return unsubscribe;
   }, [workspaceId]);
+
+  // ── Feedback queue ──────────────────────────────────────────────────────────
+  // Query sessions with hasVideos==true, then filter those without complete feedback.
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    setQueueLoading(true);
+
+    const loadQueue = async () => {
+      try {
+        const sessionsSnap = await getDocs(
+          query(
+            collection(db, 'sessions'),
+            where('workspaceId', '==', workspaceId),
+            where('hasVideos', '==', true),
+            orderBy('date', 'desc'),
+          ),
+        );
+
+        const sessions = sessionsSnap.docs.map((d) => d.data() as Session);
+
+        // Parallel-fetch feedback docs + student profiles
+        const feedbackResults = await Promise.all(
+          sessions.map((s) => getDoc(doc(db, 'feedback', s.id))),
+        );
+
+        // Keep only sessions where feedback is not yet complete
+        const needsFeedback = sessions.filter((_, i) => {
+          const fb = feedbackResults[i];
+          if (!fb.exists()) return true;
+          return (fb.data() as Feedback).status !== 'complete';
+        });
+
+        // Fetch student display names (parallel, cached via workspace active list)
+        const studentNames = await Promise.all(
+          needsFeedback.map(async (s) => {
+            const u = await getDoc(doc(db, 'users', s.studentUid));
+            return u.exists() ? (u.data() as UserProfile).displayName : s.studentUid;
+          }),
+        );
+
+        setFeedbackQueue(
+          needsFeedback.map((s, i) => ({ session: s, studentName: studentNames[i] })),
+        );
+      } finally {
+        setQueueLoading(false);
+      }
+    };
+
+    loadQueue();
+  }, [workspaceId]);
+
+  // ── Actions ─────────────────────────────────────────────────────────────────
 
   const handleApprove = async (connection: StudentWorkspace) => {
     setActionError('');
@@ -67,6 +139,8 @@ export function TrainerDashboard() {
     }
   };
 
+  // ── Render ──────────────────────────────────────────────────────────────────
+
   return (
     <Layout title="Painel do Treinador">
       {/* Greeting */}
@@ -83,6 +157,50 @@ export function TrainerDashboard() {
         <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-950/40 dark:text-red-400">
           {actionError}
         </p>
+      )}
+
+      {/* ── Feedback queue ────────────────────────────────────────────── */}
+      {!queueLoading && feedbackQueue.length > 0 && (
+        <section className="mb-8">
+          <div className="mb-3 flex items-center gap-2">
+            <Video className="h-4 w-4 text-violet-500" />
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Aguardando feedback
+            </h2>
+            <span className="ml-auto rounded-full bg-violet-100 px-2 py-0.5 text-xs font-bold text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+              {feedbackQueue.length}
+            </span>
+          </div>
+
+          <ul className="flex flex-col gap-2">
+            {feedbackQueue.map(({ session, studentName }) => {
+              const dateLabel = session.date instanceof Timestamp
+                ? session.date.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+                : '';
+              return (
+                <li key={session.id}>
+                  <button
+                    onClick={() => navigate(`/trainer/sessions/${session.id}`)}
+                    className="glass-premium flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all active:scale-[0.99]"
+                  >
+                    <MessageSquare className="h-5 w-5 flex-shrink-0 text-violet-500" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+                        {studentName}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {session.tabName} · {dateLabel}
+                      </p>
+                    </div>
+                    <span className="flex-shrink-0 text-xs font-medium text-violet-600 dark:text-violet-400">
+                      Ver →
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
 
       {loading ? (

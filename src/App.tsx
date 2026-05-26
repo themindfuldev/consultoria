@@ -5,10 +5,14 @@ import { LoadingSpinner } from './components/LoadingSpinner';
 import { Landing } from './pages/Landing';
 import { Onboarding } from './pages/Onboarding';
 import { TrainerDashboard } from './pages/trainer/TrainerDashboard';
+import { TrainerFeedbackView } from './pages/trainer/TrainerFeedbackView';
 import { StudentDashboard } from './pages/student/StudentDashboard';
 import { TrainerSelect } from './pages/student/TrainerSelect';
 import { PendingApproval } from './pages/student/PendingApproval';
 import { AddCycle } from './pages/student/AddCycle';
+import { CycleDetail } from './pages/student/CycleDetail';
+import { SessionDetail } from './pages/student/SessionDetail';
+import { FeedbackView } from './pages/student/FeedbackView';
 
 export default function App() {
   const { loading } = useAuth();
@@ -38,6 +42,14 @@ export default function App() {
         element={
           <ProtectedRoute role="trainer">
             <TrainerDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/trainer/sessions/:sessionId"
+        element={
+          <ProtectedRoute role="trainer">
+            <TrainerFeedbackView />
           </ProtectedRoute>
         }
       />
@@ -72,6 +84,30 @@ export default function App() {
         element={
           <ProtectedRoute role="student">
             <AddCycle />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/student/cycles/:cycleId"
+        element={
+          <ProtectedRoute role="student">
+            <CycleDetail />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/student/cycles/:cycleId/sessions/:sessionId"
+        element={
+          <ProtectedRoute role="student">
+            <SessionDetail />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/student/sessions/:sessionId/feedback"
+        element={
+          <ProtectedRoute role="student">
+            <FeedbackView />
           </ProtectedRoute>
         }
       />

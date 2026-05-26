@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { doc, deleteField, Timestamp, updateDoc } from 'firebase/firestore';
-import { Archive, ExternalLink, MoreVertical, RotateCcw } from 'lucide-react';
+import { Archive, ExternalLink, MoreVertical, RotateCcw, Video } from 'lucide-react';
 import { db } from '../../firebase';
 import type { Cycle, Modality } from '../../types';
 
@@ -24,6 +25,7 @@ interface CycleCardProps {
 }
 
 export function CycleCard({ cycle, onError }: CycleCardProps) {
+  const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -86,7 +88,7 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
         {/* ⋯ menu */}
         <div className="relative flex-shrink-0">
           <button
-            onClick={() => setMenuOpen((o) => !o)}
+            onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
             disabled={busy}
             aria-label="Opções"
             className="rounded-full p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
@@ -137,16 +139,31 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
         </span>
       </div>
 
-      {/* ── Action button ───────────────────────────────────────────────── */}
-      <a
-        href={cycle.googleSheetUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white/60 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-slate-700"
-      >
-        <ExternalLink className="h-3.5 w-3.5" />
-        Abrir planilha
-      </a>
+      {/* ── Action buttons ──────────────────────────────────────────────── */}
+      <div className="flex gap-2">
+        {/* Sessions / video feedback (active cycles only) */}
+        {!isArchived && (
+          <button
+            onClick={() => navigate(`/student/cycles/${cycle.id}`)}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 active:scale-95"
+          >
+            <Video className="h-3.5 w-3.5" />
+            Sessões de vídeo
+          </button>
+        )}
+
+        {/* Open spreadsheet */}
+        <a
+          href={cycle.googleSheetUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className={`flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white/60 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-slate-700 ${isArchived ? 'flex-1' : 'px-3'}`}
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+          {isArchived ? 'Abrir planilha' : ''}
+        </a>
+      </div>
     </div>
   );
 }

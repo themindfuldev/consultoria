@@ -103,6 +103,8 @@ export interface Session {
   driveFolderUrl?: string;
   hasVideos: boolean;
   videosNotifiedAt?: Timestamp;
+  /** Denormalised from the feedback doc — avoids N+1 reads on trainer dashboard. */
+  feedbackStatus?: 'none' | 'draft' | 'complete';
 }
 
 // ── Session exercises (actuals cache) ─────────────────────────────────────────
@@ -178,6 +180,8 @@ export interface Feedback {
   generalNotes: string;
   createdAt: Timestamp;
   completedAt?: Timestamp;
+  /** Google Docs URL for the exported feedback document (created on first student view). */
+  feedbackDocUrl?: string;
 }
 
 // ── Progress photos ───────────────────────────────────────────────────────────
