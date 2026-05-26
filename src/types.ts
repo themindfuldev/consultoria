@@ -74,6 +74,9 @@ export interface Cycle {
   startDate: Timestamp;
   archivedAt?: Timestamp;
   createdAt: Timestamp;
+  /** Denormalised from the trainer's workspace doc at creation time — avoids extra queries when rendering cycle cards. */
+  trainerName?: string;
+  trainerEmail?: string;
 }
 
 // ── Sessions ──────────────────────────────────────────────────────────────────

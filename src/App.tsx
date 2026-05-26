@@ -8,6 +8,7 @@ import { TrainerDashboard } from './pages/trainer/TrainerDashboard';
 import { StudentDashboard } from './pages/student/StudentDashboard';
 import { TrainerSelect } from './pages/student/TrainerSelect';
 import { PendingApproval } from './pages/student/PendingApproval';
+import { AddCycle } from './pages/student/AddCycle';
 
 export default function App() {
   const { loading } = useAuth();
@@ -63,6 +64,14 @@ export default function App() {
         element={
           <ProtectedRoute role="student">
             <PendingApproval />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/student/add-cycle"
+        element={
+          <ProtectedRoute role="student">
+            <AddCycle />
           </ProtectedRoute>
         }
       />
