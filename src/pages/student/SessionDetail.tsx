@@ -14,6 +14,8 @@ import {
   where,
 } from 'firebase/firestore';
 import {
+  ChevronDown,
+  ChevronRight,
   MessageSquare,
   PlusCircle,
   Upload,
@@ -27,7 +29,8 @@ import {
   getOrCreateSessionFolder,
   uploadFileToDrive,
 } from '../../services/driveService';
-import type { Cycle, Session, SessionVideo } from '../../types';
+import { getExerciseNames, parseTrainingTab } from '../../services/sheetsService';
+import type { Cycle, ParsedSheetTab, PlannedExercise, Session, SessionVideo } from '../../types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -37,6 +40,18 @@ function fmtBytes(mb: number): string {
 
 function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function fmtLoad(load: number | string): string {
+  if (load === 'ESCOLHER') return 'a definir';
+  if (load === '--' || !load) return '—';
+  return `${load} kg`;
+}
+
+function fmtRpe(rpe: number | string): string {
+  if (rpe === 'PREENCHER') return 'preencher';
+  if (rpe === '--' || !rpe) return '—';
+  return `RPE ${rpe}`;
 }
 
 // ── Upload state per video ────────────────────────────────────────────────────
@@ -62,7 +77,12 @@ export function SessionDetail() {
   const [videos, setVideos] = useState<SessionVideo[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Exercise label sheet for the dropdown (seeded from prior uploads in this cycle)
+  // Parsed sheet data for this session's tab
+  const [parsedTab, setParsedTab] = useState<ParsedSheetTab | null>(null);
+  const [parsedTabLoading, setParsedTabLoading] = useState(false);
+  const [showWorkoutPlan, setShowWorkoutPlan] = useState(false);
+
+  // Exercise options for the video tag dropdown
   const [exerciseOptions, setExerciseOptions] = useState<string[]>([]);
 
   // Per-video upload state (shown during active upload)
@@ -90,6 +110,26 @@ export function SessionDetail() {
     });
   }, [cycleId, sessionId]);
 
+  // ── Load parsed sheet tab for this session ──────────────────────────────────
+
+  useEffect(() => {
+    if (!cycle?.googleSheetId || !session?.tabName) return;
+    setParsedTabLoading(true);
+    getAccessToken()
+      .then((token) => parseTrainingTab(cycle.googleSheetId, session.tabName, token))
+      .then((tab) => {
+        setParsedTab(tab);
+        // Merge sheet exercise names with any already-tagged video names
+        const sheetNames = getExerciseNames(tab);
+        setExerciseOptions((prev) => {
+          const combined = Array.from(new Set([...sheetNames, ...prev])).sort();
+          return combined;
+        });
+      })
+      .catch(() => {/* non-fatal — sheet might not have this tab yet */})
+      .finally(() => setParsedTabLoading(false));
+  }, [cycle?.googleSheetId, session?.tabName]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Real-time videos listener ───────────────────────────────────────────────
 
   useEffect(() => {
@@ -105,11 +145,14 @@ export function SessionDetail() {
       (snap) => {
         const vids = snap.docs.map((d) => d.data() as SessionVideo);
         setVideos(vids);
-        // Build exercise options from all videos in this cycle (unique, sorted)
+        // Merge video exercise names into options
         const names = Array.from(
           new Set(vids.map((v) => v.exerciseName).filter(Boolean) as string[]),
         ).sort();
-        setExerciseOptions(names);
+        setExerciseOptions((prev) => {
+          const combined = Array.from(new Set([...prev, ...names])).sort();
+          return combined;
+        });
         setLoading(false);
       },
       () => setLoading(false),
@@ -122,7 +165,6 @@ export function SessionDetail() {
     const file = e.target.files?.[0];
     if (!file) return;
     setPendingFile(file);
-    // Reset the input so the same file can be re-selected
     e.target.value = '';
   };
 
@@ -226,8 +268,6 @@ export function SessionDetail() {
       `📹 Enviei ${videos.length} vídeo(s) do treino *${session.tabName}* de ${dateStr}.\n` +
       `Aguardo seu feedback: ${appUrl}/trainer/sessions/${session.id}`,
     );
-
-    // Look up trainer phone from workspace (denormalised in cycle)
     getDoc(doc(db, 'workspaces', cycle.workspaceId)).then((ws) => {
       const phone = (ws.data() as { whatsappPhone?: string })?.whatsappPhone ?? '';
       window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
@@ -281,6 +321,30 @@ export function SessionDetail() {
             </p>
           </div>
         </button>
+      )}
+
+      {/* ── Workout plan from sheet ───────────────────────────────────── */}
+      {(parsedTabLoading || parsedTab) && (
+        <div className="mb-5">
+          <button
+            onClick={() => setShowWorkoutPlan((v) => !v)}
+            className="mb-2 flex w-full items-center justify-between rounded-xl bg-slate-100/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-100 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <span className="flex items-center gap-2">
+              📋 Plano de treino
+              {parsedTabLoading && (
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+              )}
+            </span>
+            {showWorkoutPlan
+              ? <ChevronDown className="h-4 w-4" />
+              : <ChevronRight className="h-4 w-4" />}
+          </button>
+
+          {showWorkoutPlan && parsedTab && (
+            <WorkoutPlan tab={parsedTab} />
+          )}
+        </div>
       )}
 
       {/* Active upload progress */}
@@ -383,7 +447,7 @@ export function SessionDetail() {
             <div className="mb-4 flex items-center gap-3">
               <Video className="h-5 w-5 text-indigo-500" />
               <div>
-                <p className="text-sm font-semibold text-slate-900 dark:text-white truncate max-w-[240px]">
+                <p className="max-w-[240px] truncate text-sm font-semibold text-slate-900 dark:text-white">
                   {pendingFile.name}
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -437,7 +501,64 @@ export function SessionDetail() {
           </div>
         </div>
       )}
-
     </Layout>
+  );
+}
+
+// ── WorkoutPlan sub-component ─────────────────────────────────────────────────
+
+function WorkoutPlan({ tab }: { tab: ParsedSheetTab }) {
+  // Group exercises by section
+  const sections = new Map<string, PlannedExercise[]>();
+  for (const ex of tab.exercises) {
+    const list = sections.get(ex.section) ?? [];
+    list.push(ex);
+    sections.set(ex.section, list);
+  }
+
+  if (sections.size === 0) {
+    return (
+      <p className="text-xs text-slate-400 dark:text-slate-500 px-1">
+        Nenhum exercício encontrado nesta aba.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {[...sections.entries()].map(([sectionName, exercises]) => (
+        <div key={sectionName} className="rounded-xl border border-slate-200 bg-white/60 dark:border-slate-700 dark:bg-slate-800/60">
+          <p className="rounded-t-xl bg-slate-100/80 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-slate-600 dark:bg-slate-700/80 dark:text-slate-300">
+            {sectionName}
+          </p>
+          <div className="divide-y divide-slate-100 dark:divide-slate-700">
+            {exercises.map((ex) => (
+              <div key={ex.exerciseName} className="px-3 py-2.5">
+                <p className="mb-1.5 text-sm font-semibold text-slate-800 dark:text-white">
+                  {ex.exerciseName}
+                </p>
+                <div className="flex flex-col gap-0.5">
+                  {ex.setGroups.map((sg, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                      <span className="min-w-[1.5rem] font-medium text-slate-700 dark:text-slate-300">
+                        {sg.sets}×{sg.reps}
+                      </span>
+                      <span>{fmtLoad(sg.load)}</span>
+                      {sg.rpe !== '--' && <span className="text-emerald-600 dark:text-emerald-400">{fmtRpe(sg.rpe)}</span>}
+                      {sg.rest && <span>⏱ {sg.rest}</span>}
+                      {sg.observations && (
+                        <span className="ml-auto italic text-amber-600 dark:text-amber-400">
+                          {sg.observations}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }

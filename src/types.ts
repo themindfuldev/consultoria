@@ -184,6 +184,39 @@ export interface Feedback {
   feedbackDocUrl?: string;
 }
 
+// ── Parsed Google Sheet data ──────────────────────────────────────────────────
+
+/** One "set group" row from the sheet: e.g. "3 series × 5 reps @ 100 kg, RPE 8" */
+export interface PlannedSetGroup {
+  sets: number;
+  reps: number | string;  // number, or string like "6-8", or '--'
+  load: number | string;  // number, 'ESCOLHER' (student picks), or '--'
+  rest: string;           // rest time string or ''
+  observations: string;   // trainer notes inline in the cell
+  rpe: number | string;   // number, 'PREENCHER' (student fills), or '--'
+}
+
+/** A single exercise entry from the sheet, with all its set-group rows. */
+export interface PlannedExercise {
+  exerciseName: string;
+  section: string;          // e.g. "Aquecimento", "Treino", "Extra"
+  setGroups: PlannedSetGroup[];
+}
+
+/** Full parsed content of one training tab. */
+export interface ParsedSheetTab {
+  tabName: string;
+  exercises: PlannedExercise[];
+  preWorkout: {
+    energyLevel: number | null;  // 1–5, or null if not filled
+    feeling: string | null;      // "Bem" / "Mal" / "-" / null
+  };
+  postWorkout: {
+    energyLevel: number | null;
+    feeling: string | null;
+  };
+}
+
 // ── Progress photos ───────────────────────────────────────────────────────────
 
 /** Sub-collection: cycles/{cycleId}/progressPhotoFolders/{docId} */
