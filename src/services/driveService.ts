@@ -78,6 +78,50 @@ export async function createDriveFolder(
   return folder;
 }
 
+/** Escapes single quotes for use inside a Drive API `q` string literal. */
+function escapeForDriveQuery(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+/**
+ * Finds a folder by exact name (optionally scoped to a parent folder).
+ * Returns the first match, or `null` if none exists.
+ */
+async function findFolder(
+  name: string,
+  token: string,
+  parentFolderId?: string,
+): Promise<DriveFolder | null> {
+  let q =
+    `name = '${escapeForDriveQuery(name)}' ` +
+    `and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  if (parentFolderId) q += ` and '${parentFolderId}' in parents`;
+
+  const res = await driveJson<{ files: DriveFolder[] }>(
+    `/files?q=${encodeURIComponent(q)}&fields=files(id,webViewLink)&pageSize=1`,
+    { method: 'GET' },
+    token,
+  );
+
+  return res.files[0] ?? null;
+}
+
+/**
+ * Returns an existing folder matching `name` (+ parent), or creates one if
+ * absent. Use this instead of `createDriveFolder` whenever a folder may be
+ * shared/reused across multiple uploads (e.g. cycle/week/session folders) —
+ * it avoids creating duplicate folders on every call.
+ */
+export async function findOrCreateFolder(
+  name: string,
+  token: string,
+  parentFolderId?: string,
+): Promise<DriveFolder> {
+  const existing = await findFolder(name, token, parentFolderId);
+  if (existing) return existing;
+  return createDriveFolder(name, token, parentFolderId);
+}
+
 // ── File upload (multipart, with progress callback) ───────────────────────────
 
 export interface UploadedFile {
@@ -161,18 +205,43 @@ export async function uploadFileToDrive(
 // ── Session folder (student) ──────────────────────────────────────────────────
 
 /**
- * Creates (or returns cached) the per-session Drive folder:
- *   "Consultoria — <cycleTitle> — <YYYY-MM-DD>"
+ * Ensures the full 4-level folder hierarchy exists in the student's Drive
+ * and returns the innermost (session) folder:
  *
- * Returns the folder id + webViewLink.
+ *   1. "Consultoria: <trainerName> - <studentName>"   (root — one per student↔trainer pair)
+ *   2.   └─ "<cycleTitle>"                             (one per training cycle)
+ *   3.       └─ "<weekLabel>"                          (one per cycle week, e.g. "Semana 1")
+ *   4.           └─ "<sessionLabel>"                   (one per session, e.g. "Terça — 2026-05-25")
+ *
+ * Each level is found-or-created, so re-running this for sessions in the
+ * same cycle/week reuses existing folders instead of duplicating them.
+ *
+ * Returns the session folder's id + webViewLink.
  */
 export async function getOrCreateSessionFolder(
+  trainerName: string,
+  studentName: string,
   cycleTitle: string,
-  dateStr: string,   // e.g. "2026-05-25"
+  weekLabel: string,    // e.g. "Semana 1"
+  sessionLabel: string, // e.g. "Terça — 2026-05-25"
   token: string,
 ): Promise<DriveFolder> {
-  const folderName = `Consultoria — ${cycleTitle} — ${dateStr}`;
-  return createDriveFolder(folderName, token);
+  const root = await findOrCreateFolder(`Consultoria: ${trainerName} - ${studentName}`, token);
+  const cycleFolder = await findOrCreateFolder(cycleTitle, token, root.id);
+  const weekFolder = await findOrCreateFolder(weekLabel, token, cycleFolder.id);
+  const sessionFolder = await findOrCreateFolder(sessionLabel, token, weekFolder.id);
+  return sessionFolder;
+}
+
+/**
+ * Computes the cycle-relative week label for a session date, e.g. "Semana 1",
+ * "Semana 2"… based on full 7-day spans since the cycle's start date.
+ */
+export function getCycleWeekLabel(cycleStartDate: Date, sessionDate: Date): string {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const diffDays = Math.floor((sessionDate.getTime() - cycleStartDate.getTime()) / msPerDay);
+  const weekNumber = Math.max(1, Math.floor(diffDays / 7) + 1);
+  return `Semana ${weekNumber}`;
 }
 
 // ── Trainer feedback folder ───────────────────────────────────────────────────

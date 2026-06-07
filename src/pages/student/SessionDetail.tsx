@@ -26,6 +26,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useVideoCompress } from '../../hooks/useVideoCompress';
 import { Layout } from '../../components/Layout';
 import {
+  getCycleWeekLabel,
   getOrCreateSessionFolder,
   uploadFileToDrive,
 } from '../../services/driveService';
@@ -198,10 +199,23 @@ export function SessionDetail() {
       let folderUrl = session.driveFolderUrl;
 
       if (!folderId) {
+        const sessionDate = session.date instanceof Timestamp ? session.date.toDate() : new Date();
         const dateStr = session.date instanceof Timestamp
-          ? session.date.toDate().toISOString().slice(0, 10)
+          ? sessionDate.toISOString().slice(0, 10)
           : todayStr();
-        const folder = await getOrCreateSessionFolder(cycle.title, dateStr, token);
+        const cycleStartDate = cycle.startDate instanceof Timestamp
+          ? cycle.startDate.toDate()
+          : sessionDate;
+        const weekLabel = getCycleWeekLabel(cycleStartDate, sessionDate);
+        const sessionLabel = `${session.tabName} — ${dateStr}`;
+        const folder = await getOrCreateSessionFolder(
+          cycle.trainerName ?? 'Treinador',
+          currentUser.displayName ?? 'Aluno',
+          cycle.title,
+          weekLabel,
+          sessionLabel,
+          token,
+        );
         folderId = folder.id;
         folderUrl = folder.webViewLink;
         await updateDoc(doc(db, 'sessions', session.id), {
@@ -215,7 +229,7 @@ export function SessionDetail() {
       setUploadState((s) => s ? { ...s, phase: 'uploading', progress: 0 } : s);
 
       const uploaded = await uploadFileToDrive(
-        `${exerciseName ?? 'video'}_${Date.now()}.mp4`,
+        `${session.tabName} - ${exerciseName ?? 'video'}_${Date.now()}.mp4`,
         'video/mp4',
         buffer,
         folderId,
