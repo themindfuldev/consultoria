@@ -44,20 +44,16 @@ export interface StudentWorkspace {
 
 export type Modality =
   | 'Força'
-  | 'Hipertrofia'
-  | 'Treino'
-  | 'Flexibilidade'
-  | 'Corrida'
-  | 'Handstands'
+  | 'Mobilidade'
+  | 'Cardio'
+  | 'Competição'
   | 'Outro';
 
 export const MODALITIES: readonly Modality[] = [
   'Força',
-  'Hipertrofia',
-  'Treino',
-  'Flexibilidade',
-  'Corrida',
-  'Handstands',
+  'Mobilidade',
+  'Cardio',
+  'Competição',
   'Outro',
 ] as const;
 

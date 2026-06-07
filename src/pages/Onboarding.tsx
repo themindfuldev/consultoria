@@ -29,8 +29,8 @@ export function Onboarding() {
     if (!role) return;
 
     const cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length < 10) {
-      setError('Por favor, insira um número válido com DDD (somente dígitos).');
+    if (cleaned.length < 11) {
+      setError('Por favor, insira o número completo com código do país e DDD (ex: +55 11 99999-9999).');
       return;
     }
 
@@ -145,7 +145,7 @@ export function Onboarding() {
                 Seu número do WhatsApp
               </h3>
               <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-                Usado para notificações de treino. Somente você e seu{' '}
+                Inclua o código do país (ex: +55 para Brasil). Usado para notificações de treino — somente você e seu{' '}
                 {role === 'trainer' ? 'aluno' : 'treinador'} verão este número.
               </p>
 
@@ -156,7 +156,7 @@ export function Onboarding() {
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-                  placeholder="55 11 99999-9999"
+                  placeholder="+55 11 99999-9999"
                   autoComplete="tel"
                   className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-indigo-400"
                 />
