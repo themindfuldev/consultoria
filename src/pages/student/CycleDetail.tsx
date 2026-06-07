@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -12,7 +14,16 @@ import {
   Timestamp,
   where,
 } from 'firebase/firestore';
-import { CalendarDays, ExternalLink, MessageSquare, PlusCircle, RefreshCw, Video } from 'lucide-react';
+import {
+  CalendarDays,
+  CheckCircle2,
+  ExternalLink,
+  MessageSquare,
+  PlusCircle,
+  RefreshCw,
+  Trash2,
+  Video,
+} from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
@@ -53,6 +64,10 @@ export function CycleDetail() {
   );
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
+
+  // Session deletion state
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState('');
 
   // ── Load cycle doc ──────────────────────────────────────────────────────────
 
@@ -109,7 +124,14 @@ export function CycleDetail() {
 
   const handleCreate = async () => {
     if (!currentUser || !cycle) return;
-    if (!tabName.trim()) { setCreateError('Selecione ou informe o dia/treino.'); return; }
+    const trimmedTabName = tabName.trim();
+    if (!trimmedTabName) { setCreateError('Selecione ou informe o dia/treino.'); return; }
+
+    // Max 1 session per spreadsheet training tab.
+    if (sessions.some((s) => s.tabName === trimmedTabName)) {
+      setCreateError('Já existe uma sessão para este treino. Veja o histórico abaixo.');
+      return;
+    }
 
     setCreateError('');
     setCreating(true);
@@ -121,7 +143,7 @@ export function CycleDetail() {
         cycleId: cycle.id,
         studentUid: currentUser.uid,
         workspaceId: cycle.workspaceId,
-        tabName: tabName.trim(),
+        tabName: trimmedTabName,
         status: 'in_progress',
         date: Timestamp.fromDate(new Date(year, month - 1, day)),
         startedAt: serverTimestamp(),
@@ -135,6 +157,31 @@ export function CycleDetail() {
       setCreateError('Não foi possível criar a sessão. Tente novamente.');
     } finally {
       setCreating(false);
+    }
+  };
+
+  // ── Delete session ──────────────────────────────────────────────────────────
+
+  const handleDeleteSession = async (session: Session) => {
+    const confirmed = window.confirm(
+      `Excluir a sessão "${session.tabName}" de ${fmtDate(session.date)}? Essa ação não pode ser desfeita. Os vídeos enviados ao Google Drive não serão apagados.`,
+    );
+    if (!confirmed) return;
+
+    setDeleteError('');
+    setDeletingId(session.id);
+    try {
+      // Clean up related Firestore docs so the session leaves no dangling references.
+      const videosSnap = await getDocs(
+        query(collection(db, 'videos'), where('sessionId', '==', session.id)),
+      );
+      await Promise.all(videosSnap.docs.map((d) => deleteDoc(d.ref)));
+      await deleteDoc(doc(db, 'feedback', session.id)).catch(() => {/* may not exist */});
+      await deleteDoc(doc(db, 'sessions', session.id));
+    } catch {
+      setDeleteError('Não foi possível excluir a sessão. Tente novamente.');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -160,6 +207,11 @@ export function CycleDetail() {
       </span>
     );
   };
+
+  // Names of training-sheet tabs that already have a session created — used to
+  // grey-out / disable the "create session" buttons for tabs already in use
+  // (max 1 session per spreadsheet training tab).
+  const usedTabNames = new Set(sessions.map((s) => s.tabName));
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -215,20 +267,30 @@ export function CycleDetail() {
             <p className="text-xs text-red-500 dark:text-red-400">{sheetTabsError}</p>
           ) : (
             <div className="flex flex-wrap gap-2">
-              {sheetTabs.map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => {
-                    setTabName(tab);
-                    setSessionDate(new Date().toISOString().slice(0, 10));
-                    setShowModal(true);
-                  }}
-                  className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95"
-                >
-                  <PlusCircle className="h-3.5 w-3.5" />
-                  {tab}
-                </button>
-              ))}
+              {sheetTabs.map((tab) => {
+                const alreadyUsed = usedTabNames.has(tab);
+                return (
+                  <button
+                    key={tab}
+                    disabled={alreadyUsed}
+                    title={alreadyUsed ? 'Já existe uma sessão para este treino' : undefined}
+                    onClick={() => {
+                      if (alreadyUsed) return;
+                      setTabName(tab);
+                      setSessionDate(new Date().toISOString().slice(0, 10));
+                      setShowModal(true);
+                    }}
+                    className={
+                      alreadyUsed
+                        ? 'flex cursor-not-allowed items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-400 dark:bg-slate-800 dark:text-slate-500'
+                        : 'flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95'
+                    }
+                  >
+                    {alreadyUsed ? <CheckCircle2 className="h-3.5 w-3.5" /> : <PlusCircle className="h-3.5 w-3.5" />}
+                    {tab}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -254,10 +316,15 @@ export function CycleDetail() {
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
             Histórico de sessões
           </p>
+          {deleteError && (
+            <p className="mb-2 text-xs text-red-600 dark:text-red-400">{deleteError}</p>
+          )}
           <ul className="flex flex-col gap-3">
             {sessions.map((s) => (
-              <li key={s.id}>
-                <button
+              <li key={s.id} className="relative">
+                <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() =>
                     navigate(
                       s.feedbackStatus === 'complete'
@@ -265,7 +332,16 @@ export function CycleDetail() {
                         : `/student/cycles/${cycleId}/sessions/${s.id}`,
                     )
                   }
-                  className="glass-premium w-full rounded-2xl p-4 text-left transition-all active:scale-[0.99]"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      navigate(
+                        s.feedbackStatus === 'complete'
+                          ? `/student/sessions/${s.id}/feedback`
+                          : `/student/cycles/${cycleId}/sessions/${s.id}`,
+                      );
+                    }
+                  }}
+                  className="glass-premium w-full cursor-pointer rounded-2xl p-4 text-left transition-all active:scale-[0.99]"
                 >
                   <div className="mb-1 flex items-start justify-between gap-2">
                     <div>
@@ -277,7 +353,7 @@ export function CycleDetail() {
                         {fmtDate(s.date)}
                       </p>
                     </div>
-                    <div className="flex flex-shrink-0 flex-col items-end gap-1.5">
+                    <div className="flex flex-shrink-0 flex-col items-end gap-1.5 pr-7">
                       {s.hasVideos && (
                         <span className="flex items-center gap-1 text-xs text-slate-400">
                           <Video className="h-3 w-3" /> vídeos
@@ -292,6 +368,21 @@ export function CycleDetail() {
                       <MessageSquare className="h-3.5 w-3.5" />
                       Ver feedback do treinador
                     </div>
+                  )}
+                </div>
+
+                {/* Delete session */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteSession(s); }}
+                  disabled={deletingId === s.id}
+                  aria-label="Excluir sessão"
+                  title="Excluir sessão"
+                  className="absolute right-3 top-3 rounded-full p-1.5 text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:text-slate-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                >
+                  {deletingId === s.id ? (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
                   )}
                 </button>
               </li>

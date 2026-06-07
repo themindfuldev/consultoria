@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   collection,
@@ -13,14 +13,10 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { Mic, Save, Send, Upload } from 'lucide-react';
+import { Save, Send } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
-import {
-  getOrCreateTrainerFeedbackFolder,
-  uploadFileToDrive,
-} from '../../services/driveService';
 import type {
   Cycle,
   ExerciseFeedback,
@@ -29,7 +25,6 @@ import type {
   Session,
   SessionVideo,
   UserProfile,
-  Workspace,
 } from '../../types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -46,13 +41,12 @@ function fmtDate(ts: Timestamp): string {
 
 export function TrainerFeedbackView() {
   const { sessionId } = useParams<{ sessionId: string }>();
-  const { currentUser, getAccessToken } = useAuth();
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
 
   const [session, setSession] = useState<Session | null>(null);
   const [cycle, setCycle] = useState<Cycle | null>(null);
   const [studentProfile, setStudentProfile] = useState<UserProfile | null>(null);
-  const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [videos, setVideos] = useState<SessionVideo[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -60,15 +54,11 @@ export function TrainerFeedbackView() {
   const [feedbackMap, setFeedbackMap] = useState<Map<string, string>>(new Map());
   const [generalNotes, setGeneralNotes] = useState('');
   const [mediaMap, setMediaMap] = useState<Map<string, FeedbackMediaFile[]>>(new Map());
-  const [uploadingMedia, setUploadingMedia] = useState<string | null>(null); // exerciseName or 'general'
 
   const [saving, setSaving] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
-
-  const mediaInputRef = useRef<HTMLInputElement>(null);
-  const activeMediaTarget = useRef<string>(''); // exerciseName or 'general'
 
   // ── Load session + related data ─────────────────────────────────────────────
 
@@ -82,10 +72,9 @@ export function TrainerFeedbackView() {
         const s = sessionSnap.data() as Session;
         setSession(s);
 
-        const [cycleSnap, studentSnap, wsSnap, videosSnap, feedbackSnap] = await Promise.all([
+        const [cycleSnap, studentSnap, videosSnap, feedbackSnap] = await Promise.all([
           getDoc(doc(db, 'cycles', s.cycleId)),
           getDoc(doc(db, 'users', s.studentUid)),
-          getDoc(doc(db, 'workspaces', s.workspaceId)),
           getDocs(query(
             collection(db, 'videos'),
             where('sessionId', '==', sessionId),
@@ -96,7 +85,6 @@ export function TrainerFeedbackView() {
 
         if (cycleSnap.exists()) setCycle(cycleSnap.data() as Cycle);
         if (studentSnap.exists()) setStudentProfile(studentSnap.data() as UserProfile);
-        if (wsSnap.exists()) setWorkspace(wsSnap.data() as Workspace);
 
         const vids = videosSnap.docs.map((d) => d.data() as SessionVideo);
         setVideos(vids);
@@ -240,67 +228,6 @@ export function TrainerFeedbackView() {
     }
   };
 
-  // ── Trainer media upload ────────────────────────────────────────────────────
-
-  const handleMediaFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file || !currentUser || !session || !studentProfile) return;
-
-    const target = activeMediaTarget.current;
-    setUploadingMedia(target);
-
-    try {
-      const token = await getAccessToken();
-
-      const dateStr = session.date instanceof Timestamp
-        ? session.date.toDate().toISOString().slice(0, 10)
-        : '';
-      const sessionLabel = `${session.tabName} — ${dateStr}`;
-
-      const { subfolder, rootFolderId } = await getOrCreateTrainerFeedbackFolder(
-        studentProfile.displayName,
-        sessionLabel,
-        token,
-        workspace?.id ? undefined : undefined, // future: cache rootFolderId on workspace
-      );
-
-      const mimeType = file.type || 'application/octet-stream';
-      const uploaded = await uploadFileToDrive(
-        file.name,
-        mimeType,
-        await file.arrayBuffer(),
-        subfolder.id,
-        token,
-      );
-
-      const newMedia: FeedbackMediaFile = {
-        driveFileId: uploaded.id,
-        driveFileUrl: uploaded.webViewLink,
-        mediaType: file.type.startsWith('audio') ? 'audio' : 'video',
-        fileName: file.name,
-        sizeMB: file.size / 1_048_576,
-      };
-
-      setMediaMap((prev) => {
-        const next = new Map(prev);
-        next.set(target, [...(prev.get(target) ?? []), newMedia]);
-        return next;
-      });
-
-      // Optionally save the root folder ID to workspace doc for reuse
-      if (rootFolderId && workspace) {
-        updateDoc(doc(db, 'workspaces', workspace.id), {
-          feedbackFolderId: rootFolderId,
-        }).catch(() => {/* non-fatal */});
-      }
-    } catch (err) {
-      setSaveError(`Erro ao enviar mídia: ${String(err)}`);
-    } finally {
-      setUploadingMedia(null);
-    }
-  };
-
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -327,15 +254,6 @@ export function TrainerFeedbackView() {
         </p>
       </div>
 
-      {/* Hidden media input */}
-      <input
-        ref={mediaInputRef}
-        type="file"
-        accept="audio/*,video/*"
-        className="hidden"
-        onChange={handleMediaFileSelected}
-      />
-
       {/* Exercise blocks */}
       <div className="flex flex-col gap-6">
         {[...exerciseGroups.byExercise.entries()].map(([exerciseName, vids]) => (
@@ -345,14 +263,9 @@ export function TrainerFeedbackView() {
             videos={vids}
             feedbackText={feedbackMap.get(exerciseName) ?? ''}
             mediaFiles={mediaMap.get(exerciseName) ?? []}
-            uploadingMedia={uploadingMedia === exerciseName}
             onFeedbackChange={(t) =>
               setFeedbackMap((m) => { const n = new Map(m); n.set(exerciseName, t); return n; })
             }
-            onAddMedia={() => {
-              activeMediaTarget.current = exerciseName;
-              mediaInputRef.current?.click();
-            }}
           />
         ))}
 
@@ -363,14 +276,9 @@ export function TrainerFeedbackView() {
             videos={exerciseGroups.general}
             feedbackText={feedbackMap.get('Geral') ?? ''}
             mediaFiles={mediaMap.get('Geral') ?? []}
-            uploadingMedia={uploadingMedia === 'Geral'}
             onFeedbackChange={(t) =>
               setFeedbackMap((m) => { const n = new Map(m); n.set('Geral', t); return n; })
             }
-            onAddMedia={() => {
-              activeMediaTarget.current = 'Geral';
-              mediaInputRef.current?.click();
-            }}
           />
         )}
 
@@ -432,9 +340,7 @@ interface ExerciseBlockProps {
   videos: SessionVideo[];
   feedbackText: string;
   mediaFiles: FeedbackMediaFile[];
-  uploadingMedia: boolean;
   onFeedbackChange: (text: string) => void;
-  onAddMedia: () => void;
 }
 
 function ExerciseBlock({
@@ -442,9 +348,7 @@ function ExerciseBlock({
   videos,
   feedbackText,
   mediaFiles,
-  uploadingMedia,
   onFeedbackChange,
-  onAddMedia,
 }: ExerciseBlockProps) {
   return (
     <div className="glass-premium rounded-2xl p-4">
@@ -496,22 +400,6 @@ function ExerciseBlock({
           ))}
         </ul>
       )}
-
-      {/* Add media button */}
-      <button
-        onClick={onAddMedia}
-        disabled={uploadingMedia}
-        className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white/60 px-3 py-2 text-xs font-semibold text-slate-600 transition-all hover:bg-white active:scale-95 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300"
-      >
-        {uploadingMedia ? (
-          <span className="animate-pulse">Enviando…</span>
-        ) : (
-          <>
-            {exerciseName === 'Geral' ? <Upload className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
-            Adicionar áudio/vídeo
-          </>
-        )}
-      </button>
     </div>
   );
 }

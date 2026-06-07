@@ -146,7 +146,7 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 active:scale-95"
           >
             <Video className="h-3.5 w-3.5" />
-            Sessões de vídeo
+            Enviar vídeos
           </button>
         )}
 
