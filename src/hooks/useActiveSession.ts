@@ -13,12 +13,10 @@ import type { Session } from '../types';
 export function useActiveSession(): Session | null {
   const { currentUser, userProfile } = useAuth();
   const [activeSession, setActiveSession] = useState<Session | null>(null);
+  const isStudent = !!currentUser && userProfile?.role === 'student';
 
   useEffect(() => {
-    if (!currentUser || userProfile?.role !== 'student') {
-      setActiveSession(null);
-      return;
-    }
+    if (!isStudent || !currentUser) return;
     const q = query(
       collection(db, 'sessions'),
       where('studentUid', '==', currentUser.uid),
@@ -28,7 +26,9 @@ export function useActiveSession(): Session | null {
     return onSnapshot(q, (snap) => {
       setActiveSession(snap.empty ? null : (snap.docs[0].data() as Session));
     });
-  }, [currentUser, userProfile?.role]);
+  }, [currentUser, isStudent]);
 
-  return activeSession;
+  // Gate the returned value rather than resetting state on role change —
+  // avoids a synchronous setState in the effect for the non-student branch.
+  return isStudent ? activeSession : null;
 }

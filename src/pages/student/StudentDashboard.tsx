@@ -46,8 +46,9 @@ export function StudentDashboard() {
 
   useEffect(() => {
     if (!currentUser || connectionStatus !== 'active') return;
-    setCyclesLoading(true);
 
+    // `cyclesLoading` already starts `true` — the snapshot/error callbacks
+    // below are what flip it to `false` once the first page of data arrives.
     // Fetch ALL cycles for this student (both active + archived).
     // Filtering is done client-side since the count is always small.
     const q = query(

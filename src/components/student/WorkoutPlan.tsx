@@ -2,13 +2,13 @@ import type { ParsedSheetTab, PlannedExercise } from '../../types';
 
 // ── Display helpers ───────────────────────────────────────────────────────────
 
-export function fmtLoad(load: number | string): string {
+function fmtLoad(load: number | string): string {
   if (load === 'ESCOLHER') return 'a definir';
   if (load === '--' || !load) return '—';
   return `${load} kg`;
 }
 
-export function fmtRpe(rpe: number | string): string {
+function fmtRpe(rpe: number | string): string {
   if (rpe === 'PREENCHER') return 'preencher';
   if (rpe === '--' || !rpe) return '—';
   return `RPE ${rpe}`;

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   GoogleAuthProvider,
@@ -10,29 +10,17 @@ import type { User } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import type { UserProfile } from '../types';
-
-export interface AuthContextValue {
-  currentUser: User | null;
-  userProfile: UserProfile | null;
-  /** True while the initial auth state and/or Firestore profile are loading. */
-  loading: boolean;
-  signInWithGoogle: () => Promise<void>;
-  logOut: () => Promise<void>;
-  /**
-   * Returns a valid Google OAuth access token for Sheets/Drive API calls.
-   * Uses the cached token when still valid; otherwise performs a silent GIS
-   * token refresh (no popup as long as the user's Google session is active).
-   */
-  getAccessToken: () => Promise<string>;
-}
-
-export const AuthContext = createContext<AuthContextValue | null>(null);
+import { AuthContext } from './AuthContextDef';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [profileLoading, setProfileLoading] = useState(false);
+
+  // uid the current `userProfile` snapshot corresponds to — set only inside
+  // the listener callbacks below (never synchronously in the effect body), so
+  // "profile loading" can be derived as `currentUser.uid !== profileUid`.
+  const [profileUid, setProfileUid] = useState<string | null>(null);
 
   // GIS Token Client — all state kept in refs so it never triggers re-renders.
   const tokenClientRef = useRef<GISTokenClient | null>(null);
@@ -49,7 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthLoading(false);
       if (!user) {
         setUserProfile(null);
-        setProfileLoading(false);
+        setProfileUid(null);
         // Clear any cached token when the user signs out.
         accessTokenRef.current = null;
         tokenExpiryRef.current = 0;
@@ -63,20 +51,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!currentUser) return;
-    setProfileLoading(true);
+    const uid = currentUser.uid;
     const unsubscribe = onSnapshot(
-      doc(db, 'users', currentUser.uid),
+      doc(db, 'users', uid),
       (snap) => {
         setUserProfile(snap.exists() ? (snap.data() as UserProfile) : null);
-        setProfileLoading(false);
+        setProfileUid(uid);
       },
       () => {
         // On permission error (e.g. rules not yet deployed), fall through gracefully.
-        setProfileLoading(false);
+        setUserProfile(null);
+        setProfileUid(uid);
       },
     );
     return unsubscribe;
   }, [currentUser]);
+
+  // True between picking up a new `currentUser` and the first profile snapshot
+  // for that uid arriving — derived so no synchronous setState is needed above.
+  const profileLoading = !!currentUser && profileUid !== currentUser.uid;
 
   // ── Auth actions ────────────────────────────────────────────────────────────
 

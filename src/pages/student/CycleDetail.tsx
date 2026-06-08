@@ -140,6 +140,10 @@ export function CycleDetail() {
 
   useEffect(() => {
     if (!cycle?.googleSheetId) return;
+    // `loadSheetTabs` is shared with the "Tentar novamente" retry button and
+    // necessarily sets `sheetTabsLoading`/`sheetTabsError` up front — the
+    // standard fetch-with-retry shape, intentionally not split in two.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadSheetTabs(cycle.googleSheetId);
   }, [cycle?.googleSheetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -147,7 +151,8 @@ export function CycleDetail() {
 
   useEffect(() => {
     if (!currentUser || !cycleId) return;
-    setLoading(true);
+    // `loading` already starts `true` — the snapshot/error callbacks below
+    // are what flip it to `false` once the first page of data arrives.
     const q = query(
       collection(db, 'sessions'),
       where('cycleId', '==', cycleId),

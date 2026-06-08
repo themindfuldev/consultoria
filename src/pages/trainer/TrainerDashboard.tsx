@@ -68,8 +68,9 @@ export function TrainerDashboard() {
 
   useEffect(() => {
     if (!workspaceId) return;
-    setQueueLoading(true);
 
+    // `queueLoading` already starts `true` — the `finally` below is what
+    // flips it to `false` once the queue has been (re)computed.
     const loadQueue = async () => {
       try {
         const sessionsSnap = await getDocs(

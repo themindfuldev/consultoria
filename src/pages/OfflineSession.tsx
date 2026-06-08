@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { WifiOff } from 'lucide-react';
 import { WorkoutPlan } from '../components/student/WorkoutPlan';
@@ -30,6 +30,29 @@ function fmtSavedAt(ms: number): string {
   });
 }
 
+interface LoadedSnapshot {
+  state: 'ok' | 'missing' | 'expired';
+  snapshot: OfflineSnapshot | null;
+}
+
+function loadSnapshot(sessionId: string | undefined): LoadedSnapshot {
+  if (!sessionId) return { state: 'missing', snapshot: null };
+  const key = offlineKey(sessionId);
+  const raw = localStorage.getItem(key);
+  if (!raw) return { state: 'missing', snapshot: null };
+  try {
+    const parsed = JSON.parse(raw) as OfflineSnapshot;
+    if (Date.now() - parsed.savedAt > EXPIRY_MS) {
+      localStorage.removeItem(key);
+      return { state: 'expired', snapshot: null };
+    }
+    return { state: 'ok', snapshot: parsed };
+  } catch {
+    localStorage.removeItem(key);
+    return { state: 'missing', snapshot: null };
+  }
+}
+
 /**
  * Fully standalone, unauthenticated static snapshot viewer — deliberately has
  * NO Firebase/auth/Layout dependencies so it survives the student being logged
@@ -38,36 +61,7 @@ function fmtSavedAt(ms: number): string {
  */
 export function OfflineSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
-  const [snapshot, setSnapshot] = useState<OfflineSnapshot | null>(null);
-  const [state, setState] = useState<'loading' | 'ok' | 'missing' | 'expired'>('loading');
-
-  useEffect(() => {
-    if (!sessionId) {
-      setState('missing');
-      return;
-    }
-    const key = offlineKey(sessionId);
-    const raw = localStorage.getItem(key);
-    if (!raw) {
-      setState('missing');
-      return;
-    }
-    try {
-      const parsed = JSON.parse(raw) as OfflineSnapshot;
-      if (Date.now() - parsed.savedAt > EXPIRY_MS) {
-        localStorage.removeItem(key);
-        setState('expired');
-        return;
-      }
-      setSnapshot(parsed);
-      setState('ok');
-    } catch {
-      localStorage.removeItem(key);
-      setState('missing');
-    }
-  }, [sessionId]);
-
-  if (state === 'loading') return null;
+  const [{ state, snapshot }] = useState<LoadedSnapshot>(() => loadSnapshot(sessionId));
 
   if (state !== 'ok' || !snapshot) {
     return (
