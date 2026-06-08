@@ -75,6 +75,16 @@ export interface Cycle {
   trainerEmail?: string;
 }
 
+// ── Cycle weeks ───────────────────────────────────────────────────────────────
+
+/** Sub-collection: cycles/{cycleId}/weeks/{weekId}. One doc per "Começar Semana X" tap. */
+export interface CycleWeek {
+  id: string;
+  cycleId: string;
+  weekNumber: number;
+  startedAt: Timestamp;
+}
+
 // ── Sessions ──────────────────────────────────────────────────────────────────
 
 export interface Session {
@@ -83,18 +93,22 @@ export interface Session {
   studentUid: string;
   workspaceId: string;
   tabName: string;
+  /** Number of the cycle week this session belongs to — copied from the active CycleWeek at creation time. */
+  weekNumber: number;
   status: 'in_progress' | 'completed';
   date: Timestamp;
   startedAt: Timestamp;
   finishedAt?: Timestamp;
   preWorkout?: {
     energyLevel: 1 | 2 | 3 | 4 | 5;
-    feeling: 'bem' | 'mal';
+    feeling: 'Bem' | 'Não estou muito legal';
   };
   postWorkout?: {
     energyLevel: 1 | 2 | 3 | 4 | 5;
-    feeling: 'igual' | 'melhor' | 'pior';
+    feeling: 'Mantenho a resposta anterior' | 'Um pouco melhor' | 'Um pouco pior';
   };
+  /** Student-filled per-exercise notes, keyed by exercise name — written back to sheet columns F/G on finish. */
+  exerciseEntries?: Record<string, { observations: string; rpe: number }>;
   driveFolderId?: string;
   driveFolderUrl?: string;
   hasVideos: boolean;
@@ -190,6 +204,8 @@ export interface PlannedSetGroup {
   rest: string;           // rest time string or ''
   observations: string;   // trainer notes inline in the cell
   rpe: number | string;   // number, 'PREENCHER' (student fills), or '--'
+  /** 1-based row index in the sheet — used to write Observações/RPE back to columns F/G. */
+  rowNumber?: number;
 }
 
 /** A single exercise entry from the sheet, with all its set-group rows. */
@@ -206,10 +222,15 @@ export interface ParsedSheetTab {
   preWorkout: {
     energyLevel: number | null;  // 1–5, or null if not filled
     feeling: string | null;      // "Bem" / "Mal" / "-" / null
+    /** 1-based row indices of the marker rows — used to write answers back to column B. */
+    energyLevelRow?: number;
+    feelingRow?: number;
   };
   postWorkout: {
     energyLevel: number | null;
     feeling: string | null;
+    energyLevelRow?: number;
+    feelingRow?: number;
   };
 }
 

@@ -14,8 +14,8 @@ import {
   where,
 } from 'firebase/firestore';
 import {
-  ChevronDown,
-  ChevronRight,
+  CheckCircle2,
+  Download,
   MessageSquare,
   PlusCircle,
   Upload,
@@ -25,13 +25,33 @@ import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { useVideoCompress } from '../../hooks/useVideoCompress';
 import { Layout } from '../../components/Layout';
+import { StarRating } from '../../components/student/StarRating';
+import { ChoiceButtons } from '../../components/student/ChoiceButtons';
+import { WorkoutPlan } from '../../components/student/WorkoutPlan';
+import type { ExerciseEntry } from '../../components/student/WorkoutPlan';
 import {
   getCycleWeekLabel,
   getOrCreateSessionFolder,
   uploadFileToDrive,
 } from '../../services/driveService';
-import { getExerciseNames, parseTrainingTab } from '../../services/sheetsService';
-import type { Cycle, ParsedSheetTab, PlannedExercise, Session, SessionVideo } from '../../types';
+import {
+  cellRange,
+  getExerciseNames,
+  parseTrainingTab,
+  rowRange,
+  writeCells,
+} from '../../services/sheetsService';
+import { notifyTrainer } from '../../services/notifyService';
+import type { Cycle, ParsedSheetTab, Session, SessionVideo } from '../../types';
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const PRE_FEELING_OPTIONS = ['Bem', 'Não estou muito legal'] as const;
+const POST_FEELING_OPTIONS = [
+  'Mantenho a resposta anterior',
+  'Um pouco melhor',
+  'Um pouco pior',
+] as const;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -43,16 +63,8 @@ function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function fmtLoad(load: number | string): string {
-  if (load === 'ESCOLHER') return 'a definir';
-  if (load === '--' || !load) return '—';
-  return `${load} kg`;
-}
-
-function fmtRpe(rpe: number | string): string {
-  if (rpe === 'PREENCHER') return 'preencher';
-  if (rpe === '--' || !rpe) return '—';
-  return `RPE ${rpe}`;
+function offlineKey(sessionId: string): string {
+  return `offline_session_${sessionId}`;
 }
 
 // ── Upload state per video ────────────────────────────────────────────────────
@@ -69,7 +81,7 @@ interface UploadState {
 
 export function SessionDetail() {
   const { cycleId, sessionId } = useParams<{ cycleId: string; sessionId: string }>();
-  const { currentUser, userProfile, getAccessToken } = useAuth();
+  const { currentUser, getAccessToken } = useAuth();
   const navigate = useNavigate();
   const { compress } = useVideoCompress();
 
@@ -81,7 +93,6 @@ export function SessionDetail() {
   // Parsed sheet data for this session's tab
   const [parsedTab, setParsedTab] = useState<ParsedSheetTab | null>(null);
   const [parsedTabLoading, setParsedTabLoading] = useState(false);
-  const [showWorkoutPlan, setShowWorkoutPlan] = useState(false);
 
   // Exercise options for the video tag dropdown
   const [exerciseOptions, setExerciseOptions] = useState<string[]>([]);
@@ -95,8 +106,40 @@ export function SessionDetail() {
   const [customExercise, setCustomExercise] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Notification state
+  // Notification state (video-ready notification)
   const [notifying, setNotifying] = useState(false);
+
+  // Pre-workout form state
+  const [preEnergy, setPreEnergy] = useState<1 | 2 | 3 | 4 | 5 | null>(null);
+  const [preFeeling, setPreFeeling] = useState<typeof PRE_FEELING_OPTIONS[number] | null>(null);
+  const [preSubmitting, setPreSubmitting] = useState(false);
+  const [preError, setPreError] = useState('');
+
+  // Per-exercise entries (Observações + RPE), debounced-autosaved
+  const [exerciseEntries, setExerciseEntries] = useState<Record<string, ExerciseEntry>>({});
+  const entriesInitialized = useRef(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Finish-session / post-workout form state
+  const [showFinishForm, setShowFinishForm] = useState(false);
+  const [postEnergy, setPostEnergy] = useState<1 | 2 | 3 | 4 | 5 | null>(null);
+  const [postFeeling, setPostFeeling] = useState<typeof POST_FEELING_OPTIONS[number] | null>(null);
+  const [finishing, setFinishing] = useState(false);
+  const [finishError, setFinishError] = useState('');
+
+  // Offline export
+  const [savingOffline, setSavingOffline] = useState(false);
+
+  const dateLabel = session?.date instanceof Timestamp
+    ? session.date.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
+    : '';
+
+  // ── Phase derivation ────────────────────────────────────────────────────────
+  // No new status enum needed — phase is derived from existing fields.
+  const phase: 'pre' | 'training' | 'done' =
+    !session?.preWorkout ? 'pre'
+    : session.status === 'completed' ? 'done'
+    : 'training';
 
   // ── Load cycle + session ────────────────────────────────────────────────────
 
@@ -131,6 +174,20 @@ export function SessionDetail() {
       .finally(() => setParsedTabLoading(false));
   }, [cycle?.googleSheetId, session?.tabName]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Seed exercise entries from Firestore once (avoid clobbering local edits) ─
+
+  useEffect(() => {
+    if (entriesInitialized.current || !session) return;
+    if (session.exerciseEntries) {
+      const seeded: Record<string, ExerciseEntry> = {};
+      for (const [name, e] of Object.entries(session.exerciseEntries)) {
+        seeded[name] = { observations: e.observations, rpe: e.rpe };
+      }
+      setExerciseEntries(seeded);
+    }
+    entriesInitialized.current = true;
+  }, [session]);
+
   // ── Real-time videos listener ───────────────────────────────────────────────
 
   useEffect(() => {
@@ -159,6 +216,146 @@ export function SessionDetail() {
       () => setLoading(false),
     );
   }, [sessionId]);
+
+  // ── Pre-workout submit ──────────────────────────────────────────────────────
+
+  const handleSubmitPreWorkout = async () => {
+    if (!session || !cycle || !preEnergy || !preFeeling) return;
+    setPreError('');
+    setPreSubmitting(true);
+    const preWorkout = { energyLevel: preEnergy, feeling: preFeeling };
+    try {
+      await updateDoc(doc(db, 'sessions', session.id), { preWorkout });
+      setSession((prev) => (prev ? { ...prev, preWorkout } : prev));
+
+      // Best-effort write-back into the trainer's sheet — never blocks the flow.
+      if (parsedTab) {
+        const updates: { range: string; values: (string | number | boolean)[][] }[] = [];
+        if (parsedTab.preWorkout.energyLevelRow) {
+          updates.push({ range: cellRange(session.tabName, 'B', parsedTab.preWorkout.energyLevelRow), values: [[preEnergy]] });
+        }
+        if (parsedTab.preWorkout.feelingRow) {
+          updates.push({ range: cellRange(session.tabName, 'B', parsedTab.preWorkout.feelingRow), values: [[preFeeling]] });
+        }
+        if (updates.length > 0) {
+          getAccessToken()
+            .then((token) => writeCells(cycle.googleSheetId, updates, token))
+            .catch(() => {/* best-effort sync — Firestore remains canonical */});
+        }
+      }
+    } catch {
+      setPreError('Não foi possível salvar suas respostas. Tente novamente.');
+    } finally {
+      setPreSubmitting(false);
+    }
+  };
+
+  // ── Exercise entry change (debounced autosave) ──────────────────────────────
+
+  const handleEntryChange = (exerciseName: string, entry: ExerciseEntry) => {
+    setExerciseEntries((prev) => {
+      const next = { ...prev, [exerciseName]: entry };
+
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => {
+        if (!sessionId) return;
+        const toSave: Record<string, { observations: string; rpe: number }> = {};
+        for (const [name, e] of Object.entries(next)) {
+          toSave[name] = { observations: e.observations, rpe: e.rpe === '' ? 0 : e.rpe };
+        }
+        updateDoc(doc(db, 'sessions', sessionId), { exerciseEntries: toSave }).catch(() => {/* retried on next change */});
+      }, 800);
+
+      return next;
+    });
+  };
+
+  // ── Finish session ──────────────────────────────────────────────────────────
+
+  const handleFinishSession = async () => {
+    if (!session || !cycle || !postEnergy || !postFeeling) return;
+    setFinishError('');
+    setFinishing(true);
+
+    const postWorkout = { energyLevel: postEnergy, feeling: postFeeling };
+    const finalEntries: Record<string, { observations: string; rpe: number }> = {};
+    for (const [name, e] of Object.entries(exerciseEntries)) {
+      if (e.observations.trim() || e.rpe !== '') {
+        finalEntries[name] = { observations: e.observations.trim(), rpe: e.rpe === '' ? 0 : e.rpe };
+      }
+    }
+
+    try {
+      await updateDoc(doc(db, 'sessions', session.id), {
+        postWorkout,
+        exerciseEntries: finalEntries,
+        status: 'completed',
+        finishedAt: serverTimestamp(),
+      });
+      setSession((prev) => (prev ? { ...prev, postWorkout, exerciseEntries: finalEntries, status: 'completed' } : prev));
+
+      // Single batched, best-effort write-back: post-workout answers, every
+      // exercise's Observações/RPE, and the "FINAL DO TREINO" checkbox at H2.
+      if (parsedTab) {
+        const updates: { range: string; values: (string | number | boolean)[][] }[] = [];
+        if (parsedTab.postWorkout.energyLevelRow) {
+          updates.push({ range: cellRange(session.tabName, 'B', parsedTab.postWorkout.energyLevelRow), values: [[postEnergy]] });
+        }
+        if (parsedTab.postWorkout.feelingRow) {
+          updates.push({ range: cellRange(session.tabName, 'B', parsedTab.postWorkout.feelingRow), values: [[postFeeling]] });
+        }
+        for (const ex of parsedTab.exercises) {
+          const entry = finalEntries[ex.exerciseName];
+          const row = ex.setGroups[0]?.rowNumber;
+          if (entry && row) {
+            updates.push({ range: rowRange(session.tabName, 'F', 'G', row), values: [[entry.observations, entry.rpe]] });
+          }
+        }
+        updates.push({ range: cellRange(session.tabName, 'H', 2), values: [[true]] });
+
+        getAccessToken()
+          .then((token) => writeCells(cycle.googleSheetId, updates, token))
+          .catch(() => {/* best-effort sync — Firestore remains canonical */});
+      }
+
+      // Notify trainer the workout is finished.
+      notifyTrainer(
+        cycle.workspaceId,
+        `🏁 Terminei o treino *${session.tabName}* de ${dateLabel}.`,
+      ).catch(() => {/* notification is a convenience, never a blocker */});
+
+      // The offline snapshot is no longer useful once the session is done.
+      localStorage.removeItem(offlineKey(session.id));
+
+      setShowFinishForm(false);
+    } catch {
+      setFinishError('Não foi possível concluir a sessão. Tente novamente.');
+    } finally {
+      setFinishing(false);
+    }
+  };
+
+  // ── Offline export ──────────────────────────────────────────────────────────
+
+  const handleSaveOffline = () => {
+    if (!session || !cycle || !parsedTab) return;
+    setSavingOffline(true);
+    try {
+      const snapshot = {
+        savedAt: Date.now(),
+        cycleTitle: cycle.title,
+        tabName: session.tabName,
+        dateLabel,
+        parsedTab,
+        preWorkout: session.preWorkout ?? null,
+        exerciseEntries,
+      };
+      localStorage.setItem(offlineKey(session.id), JSON.stringify(snapshot));
+      window.open(`/offline/${session.id}`, '_blank');
+    } finally {
+      setSavingOffline(false);
+    }
+  };
 
   // ── File selected ───────────────────────────────────────────────────────────
 
@@ -206,7 +403,11 @@ export function SessionDetail() {
         const cycleStartDate = cycle.startDate instanceof Timestamp
           ? cycle.startDate.toDate()
           : sessionDate;
-        const weekLabel = getCycleWeekLabel(cycleStartDate, sessionDate);
+        // Prefer the explicit week number from "Começar Semana X" — falls back
+        // to date-derived calculation only for legacy sessions without it.
+        const weekLabel = session.weekNumber
+          ? `Semana ${session.weekNumber}`
+          : getCycleWeekLabel(cycleStartDate, sessionDate);
         const sessionLabel = `${session.tabName} — ${dateStr}`;
         const folder = await getOrCreateSessionFolder(
           cycle.trainerName ?? 'Treinador',
@@ -269,26 +470,16 @@ export function SessionDetail() {
     }
   };
 
-  // ── Notify trainer via WhatsApp ─────────────────────────────────────────────
+  // ── Notify trainer about new videos via WhatsApp ─────────────────────────────
 
   const handleNotify = () => {
-    if (!session || !cycle || !userProfile) return;
+    if (!session || !cycle) return;
     setNotifying(true);
-    const dateStr = session.date instanceof Timestamp
-      ? session.date.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
-      : '';
-    const appUrl = window.location.origin;
-    const msg = encodeURIComponent(
-      `📹 Enviei ${videos.length} vídeo(s) do treino *${session.tabName}* de ${dateStr}.\n` +
-      `Aguardo seu feedback: ${appUrl}/trainer/sessions/${session.id}`,
-    );
-    getDoc(doc(db, 'workspaces', cycle.workspaceId)).then((ws) => {
-      const phone = (ws.data() as { whatsappPhone?: string })?.whatsappPhone ?? '';
-      window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
-      updateDoc(doc(db, 'sessions', session.id), {
-        videosNotifiedAt: serverTimestamp(),
-      });
-    }).finally(() => setNotifying(false));
+    const msg = `📹 Enviei ${videos.length} vídeo(s) do treino *${session.tabName}* de ${dateLabel}.\n` +
+      `Aguardo seu feedback: ${window.location.origin}/trainer/sessions/${session.id}`;
+    notifyTrainer(cycle.workspaceId, msg)
+      .then(() => updateDoc(doc(db, 'sessions', session.id), { videosNotifiedAt: serverTimestamp() }))
+      .finally(() => setNotifying(false));
   };
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -303,10 +494,6 @@ export function SessionDetail() {
     );
   }
 
-  const dateLabel = session?.date instanceof Timestamp
-    ? session.date.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
-    : '';
-
   return (
     <Layout title={session?.tabName ?? 'Sessão'}>
       {/* Session header */}
@@ -316,6 +503,7 @@ export function SessionDetail() {
         </h1>
         <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
           {cycle?.title} · {dateLabel}
+          {session?.weekNumber ? ` · Semana ${session.weekNumber}` : ''}
         </p>
       </div>
 
@@ -337,122 +525,230 @@ export function SessionDetail() {
         </button>
       )}
 
-      {/* ── Workout plan from sheet ───────────────────────────────────── */}
-      {(parsedTabLoading || parsedTab) && (
-        <div className="mb-5">
-          <button
-            onClick={() => setShowWorkoutPlan((v) => !v)}
-            className="mb-2 flex w-full items-center justify-between rounded-xl bg-slate-100/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-100 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-slate-800"
-          >
-            <span className="flex items-center gap-2">
-              📋 Plano de treino
-              {parsedTabLoading && (
-                <span className="h-3 w-3 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-              )}
-            </span>
-            {showWorkoutPlan
-              ? <ChevronDown className="h-4 w-4" />
-              : <ChevronRight className="h-4 w-4" />}
-          </button>
-
-          {showWorkoutPlan && parsedTab && (
-            <WorkoutPlan tab={parsedTab} />
+      {/* ── Reading mode: workout plan, always expanded ─────────────────── */}
+      <div className="mb-5">
+        <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          📋 Plano de treino
+          {parsedTabLoading && (
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
           )}
+        </p>
+        {parsedTab ? (
+          <WorkoutPlan
+            tab={parsedTab}
+            entries={phase === 'training' ? exerciseEntries : undefined}
+            onEntryChange={phase === 'training' ? handleEntryChange : undefined}
+          />
+        ) : !parsedTabLoading ? (
+          <p className="text-xs text-slate-400 dark:text-slate-500 px-1">
+            Não foi possível carregar o plano desta aba.
+          </p>
+        ) : null}
+      </div>
+
+      {/* ── Phase A: pre-workout form ────────────────────────────────────── */}
+      {phase === 'pre' && (
+        <div className="glass-premium mb-5 rounded-2xl p-4">
+          <p className="mb-3 text-sm font-bold text-slate-900 dark:text-white">
+            Preencha abaixo (INÍCIO DO TREINO)
+          </p>
+
+          <div className="mb-4 flex flex-col gap-1.5">
+            <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              Qual o seu nível de ânimo?
+            </label>
+            <StarRating value={preEnergy} onChange={setPreEnergy} disabled={preSubmitting} />
+          </div>
+
+          <div className="mb-4 flex flex-col gap-1.5">
+            <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              Como está se sentindo?
+            </label>
+            <ChoiceButtons
+              options={PRE_FEELING_OPTIONS}
+              value={preFeeling}
+              onChange={setPreFeeling}
+              disabled={preSubmitting}
+            />
+          </div>
+
+          {preError && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{preError}</p>}
+
+          <button
+            onClick={handleSubmitPreWorkout}
+            disabled={!preEnergy || !preFeeling || preSubmitting}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {preSubmitting ? 'Salvando…' : 'Começar treino'}
+          </button>
         </div>
       )}
 
-      {/* Active upload progress */}
-      {uploadState && (
-        <div className="mb-4 rounded-2xl bg-indigo-50 p-4 dark:bg-indigo-900/20">
-          <p className="mb-1.5 text-sm font-semibold text-indigo-800 dark:text-indigo-300">
-            {uploadState.phase === 'compressing' && 'Comprimindo vídeo…'}
-            {uploadState.phase === 'uploading' && 'Enviando para o Drive…'}
-            {uploadState.phase === 'done' && '✅ Vídeo enviado com sucesso!'}
-            {uploadState.phase === 'error' && '❌ Erro no envio'}
-          </p>
-          {uploadState.phase !== 'done' && uploadState.phase !== 'error' && (
-            <>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-indigo-200 dark:bg-indigo-800">
-                <div
-                  className="h-full rounded-full bg-indigo-600 transition-all duration-300"
-                  style={{ width: `${Math.round(uploadState.progress * 100)}%` }}
+      {/* ── Phase B: training in progress ────────────────────────────────── */}
+      {phase === 'training' && (
+        <div className="mb-5 flex flex-col gap-3">
+          <button
+            onClick={handleSaveOffline}
+            disabled={!parsedTab || savingOffline}
+            className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
+            <Download className="h-4 w-4" />
+            Salvar para acesso offline
+          </button>
+
+          {!showFinishForm ? (
+            <button
+              onClick={() => setShowFinishForm(true)}
+              className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-95"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              Finalizar treino
+            </button>
+          ) : (
+            <div className="glass-premium rounded-2xl p-4">
+              <p className="mb-3 text-sm font-bold text-slate-900 dark:text-white">
+                Preencha abaixo (FINAL DO TREINO)
+              </p>
+
+              <div className="mb-4 flex flex-col gap-1.5">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  Qual o seu nível de ânimo?
+                </label>
+                <StarRating value={postEnergy} onChange={setPostEnergy} disabled={finishing} />
+              </div>
+
+              <div className="mb-4 flex flex-col gap-1.5">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  Como está se sentindo?
+                </label>
+                <ChoiceButtons
+                  options={POST_FEELING_OPTIONS}
+                  value={postFeeling}
+                  onChange={setPostFeeling}
+                  disabled={finishing}
                 />
               </div>
-              <p className="mt-1 text-xs text-indigo-600 dark:text-indigo-400">
-                {Math.round(uploadState.progress * 100)}%
-                {uploadState.phase === 'compressing' &&
-                  ` · Original: ${fmtBytes(uploadState.originalMB)}`}
-              </p>
-            </>
-          )}
-          {uploadState.phase === 'error' && (
-            <p className="text-xs text-red-600 dark:text-red-400">{uploadState.error}</p>
+
+              {finishError && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{finishError}</p>}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowFinishForm(false)}
+                  disabled={finishing}
+                  className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                >
+                  Voltar
+                </button>
+                <button
+                  onClick={handleFinishSession}
+                  disabled={!postEnergy || !postFeeling || finishing}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {finishing ? 'Concluindo…' : 'Concluir treino'}
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}
 
-      {/* Video list */}
-      {videos.length > 0 && (
-        <ul className="mb-5 flex flex-col gap-2">
-          {videos.map((v) => (
-            <li
-              key={v.id}
-              className="glass-premium flex items-center gap-3 rounded-xl p-3"
+      {/* ── Phase C: completed — video feedback flow ─────────────────────── */}
+      {phase === 'done' && (
+        <>
+          {/* Active upload progress */}
+          {uploadState && (
+            <div className="mb-4 rounded-2xl bg-indigo-50 p-4 dark:bg-indigo-900/20">
+              <p className="mb-1.5 text-sm font-semibold text-indigo-800 dark:text-indigo-300">
+                {uploadState.phase === 'compressing' && 'Comprimindo vídeo…'}
+                {uploadState.phase === 'uploading' && 'Enviando para o Drive…'}
+                {uploadState.phase === 'done' && '✅ Vídeo enviado com sucesso!'}
+                {uploadState.phase === 'error' && '❌ Erro no envio'}
+              </p>
+              {uploadState.phase !== 'done' && uploadState.phase !== 'error' && (
+                <>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-indigo-200 dark:bg-indigo-800">
+                    <div
+                      className="h-full rounded-full bg-indigo-600 transition-all duration-300"
+                      style={{ width: `${Math.round(uploadState.progress * 100)}%` }}
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-indigo-600 dark:text-indigo-400">
+                    {Math.round(uploadState.progress * 100)}%
+                    {uploadState.phase === 'compressing' &&
+                      ` · Original: ${fmtBytes(uploadState.originalMB)}`}
+                  </p>
+                </>
+              )}
+              {uploadState.phase === 'error' && (
+                <p className="text-xs text-red-600 dark:text-red-400">{uploadState.error}</p>
+              )}
+            </div>
+          )}
+
+          {/* Video list */}
+          {videos.length > 0 && (
+            <ul className="mb-5 flex flex-col gap-2">
+              {videos.map((v) => (
+                <li
+                  key={v.id}
+                  className="glass-premium flex items-center gap-3 rounded-xl p-3"
+                >
+                  <Video className="h-5 w-5 flex-shrink-0 text-indigo-500" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-slate-800 dark:text-white">
+                      {v.exerciseName ?? 'Vídeo geral'}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {fmtBytes(v.compressedSizeMB)} comprimido
+                      {v.originalSizeMB > 0 && ` (original: ${fmtBytes(v.originalSizeMB)})`}
+                    </p>
+                  </div>
+                  <a
+                    href={v.driveFileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+                  >
+                    Ver
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Actions */}
+          <div className="flex flex-col gap-3">
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="video/*"
+              capture="environment"
+              className="hidden"
+              onChange={handleFileSelected}
+            />
+
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!!uploadState && uploadState.phase !== 'done' && uploadState.phase !== 'error'}
+              className="flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-white py-3 text-sm font-semibold text-indigo-700 shadow-sm transition-all hover:bg-indigo-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-800 dark:bg-slate-800 dark:text-indigo-300 dark:hover:bg-slate-700"
             >
-              <Video className="h-5 w-5 flex-shrink-0 text-indigo-500" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-slate-800 dark:text-white">
-                  {v.exerciseName ?? 'Vídeo geral'}
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {fmtBytes(v.compressedSizeMB)} comprimido
-                  {v.originalSizeMB > 0 && ` (original: ${fmtBytes(v.originalSizeMB)})`}
-                </p>
-              </div>
-              <a
-                href={v.driveFileUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+              <PlusCircle className="h-4 w-4" />
+              Adicionar vídeo
+            </button>
+
+            {videos.length > 0 && (
+              <button
+                onClick={handleNotify}
+                disabled={notifying}
+                className="flex items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-green-700 active:scale-95 disabled:opacity-60"
               >
-                Ver
-              </a>
-            </li>
-          ))}
-        </ul>
+                📱 Notificar treinador
+              </button>
+            )}
+          </div>
+        </>
       )}
-
-      {/* Actions */}
-      <div className="flex flex-col gap-3">
-        {/* Hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="video/*"
-          capture="environment"
-          className="hidden"
-          onChange={handleFileSelected}
-        />
-
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={!!uploadState && uploadState.phase !== 'done' && uploadState.phase !== 'error'}
-          className="flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-white py-3 text-sm font-semibold text-indigo-700 shadow-sm transition-all hover:bg-indigo-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-800 dark:bg-slate-800 dark:text-indigo-300 dark:hover:bg-slate-700"
-        >
-          <PlusCircle className="h-4 w-4" />
-          Adicionar vídeo
-        </button>
-
-        {videos.length > 0 && (
-          <button
-            onClick={handleNotify}
-            disabled={notifying}
-            className="flex items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-green-700 active:scale-95 disabled:opacity-60"
-          >
-            📱 Notificar treinador
-          </button>
-        )}
-      </div>
 
       {/* ── Preview / exercise-label sheet ────────────────────────────── */}
       {pendingFile && (
@@ -516,63 +812,5 @@ export function SessionDetail() {
         </div>
       )}
     </Layout>
-  );
-}
-
-// ── WorkoutPlan sub-component ─────────────────────────────────────────────────
-
-function WorkoutPlan({ tab }: { tab: ParsedSheetTab }) {
-  // Group exercises by section
-  const sections = new Map<string, PlannedExercise[]>();
-  for (const ex of tab.exercises) {
-    const list = sections.get(ex.section) ?? [];
-    list.push(ex);
-    sections.set(ex.section, list);
-  }
-
-  if (sections.size === 0) {
-    return (
-      <p className="text-xs text-slate-400 dark:text-slate-500 px-1">
-        Nenhum exercício encontrado nesta aba.
-      </p>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      {[...sections.entries()].map(([sectionName, exercises]) => (
-        <div key={sectionName} className="rounded-xl border border-slate-200 bg-white/60 dark:border-slate-700 dark:bg-slate-800/60">
-          <p className="rounded-t-xl bg-slate-100/80 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-slate-600 dark:bg-slate-700/80 dark:text-slate-300">
-            {sectionName}
-          </p>
-          <div className="divide-y divide-slate-100 dark:divide-slate-700">
-            {exercises.map((ex) => (
-              <div key={ex.exerciseName} className="px-3 py-2.5">
-                <p className="mb-1.5 text-sm font-semibold text-slate-800 dark:text-white">
-                  {ex.exerciseName}
-                </p>
-                <div className="flex flex-col gap-0.5">
-                  {ex.setGroups.map((sg, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                      <span className="min-w-[1.5rem] font-medium text-slate-700 dark:text-slate-300">
-                        {sg.sets}×{sg.reps}
-                      </span>
-                      <span>{fmtLoad(sg.load)}</span>
-                      {sg.rpe !== '--' && <span className="text-emerald-600 dark:text-emerald-400">{fmtRpe(sg.rpe)}</span>}
-                      {sg.rest && <span>⏱ {sg.rest}</span>}
-                      {sg.observations && (
-                        <span className="ml-auto italic text-amber-600 dark:text-amber-400">
-                          {sg.observations}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
   );
 }

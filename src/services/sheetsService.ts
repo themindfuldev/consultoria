@@ -1,20 +1,27 @@
 /**
  * sheetsService.ts
  *
- * Google Sheets API v4 helpers for reading and parsing training session tabs.
+ * Google Sheets API v4 helpers for reading, parsing, and writing back to
+ * training session tabs.
  *
  * Template column layout (A–H):
  *   A  Exercício      — exercise name (empty = continuation of previous)
- *   B  Séries         — number of sets in this row group
+ *   B  Séries         — number of sets in this row group; also holds the
+ *                        student's pre/post-workout answers on marker rows
  *   C  Repetições     — reps (number or range string)
  *   D  Carga          — load in kg, 'ESCOLHER' (student picks), or '--'
  *   E  Descanso       — rest time string
- *   F  Observações    — trainer notes (inline cell text)
- *   G  RPE            — RPE target, 'PREENCHER' (student fills), or '--'
- *   H  ADMIN          — trainer-only column (ignored by parser)
+ *   F  Observações    — trainer notes; overwritten with the student's actual
+ *                        observations per exercise on session finish
+ *   G  RPE            — RPE target, 'PREENCHER' (student fills); overwritten
+ *                        with the student's actual RPE per exercise on finish
+ *   H2 ADMIN checkbox — fixed cell checked (TRUE) when the session is finished
  *
  * Tabs to ignore: "Template", "Dados", "Celular"
  * All other tabs are training sessions.
+ *
+ * The student's answers are written directly into these cells (the trainer's
+ * layout/columns are never restructured) via `writeCells` — see below.
  */
 
 import type { ParsedSheetTab, PlannedExercise, PlannedSetGroup } from '../types';
@@ -87,7 +94,10 @@ function _parseRows(tabName: string, rows: string[][]): ParsedSheetTab {
     feeling: null,
   };
 
-  for (const rawRow of rows) {
+  for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+    const rawRow = rows[rowIdx];
+    // 1-based row number, matching the sheet's own row numbering — used for write-back.
+    const rowNumber = rowIdx + 1;
     // Pad to 8 cells and trim whitespace
     const row = Array.from({ length: 8 }, (_, i) => (rawRow[i] ?? '').trim());
     const [colA, colB, colC, colD, colE, colF, colG] = row;
@@ -117,9 +127,10 @@ function _parseRows(tabName: string, rows: string[][]): ParsedSheetTab {
     // ── Energy level row ────────────────────────────────────────────────────
     if (colA.includes('nível de ânimo')) {
       const level = parseInt(colB);
+      const block = postWorkoutSection ? postWorkout : preWorkout;
+      block.energyLevelRow = rowNumber;
       if (!isNaN(level) && level >= 1 && level <= 5) {
-        if (!postWorkoutSection) preWorkout.energyLevel = level;
-        else postWorkout.energyLevel = level;
+        block.energyLevel = level;
       }
       continue;
     }
@@ -127,8 +138,9 @@ function _parseRows(tabName: string, rows: string[][]): ParsedSheetTab {
     // ── Feeling row ─────────────────────────────────────────────────────────
     if (colA.includes('Como está se sentindo')) {
       const feeling = colB && colB !== '-' ? colB : null;
-      if (!postWorkoutSection) preWorkout.feeling = feeling;
-      else postWorkout.feeling = feeling;
+      const block = postWorkoutSection ? postWorkout : preWorkout;
+      block.feelingRow = rowNumber;
+      block.feeling = feeling;
       continue;
     }
 
@@ -161,7 +173,7 @@ function _parseRows(tabName: string, rows: string[][]): ParsedSheetTab {
 
       // Add set-group data (even for continuation rows)
       if (currentExercise && (colB || colC || colD)) {
-        currentExercise.setGroups.push(_parseSetGroup(colB, colC, colD, colE, colF, colG));
+        currentExercise.setGroups.push(_parseSetGroup(colB, colC, colD, colE, colF, colG, rowNumber));
       }
     }
   }
@@ -178,6 +190,7 @@ function _parseSetGroup(
   rawRest: string,
   rawObs: string,
   rawRpe: string,
+  rowNumber: number,
 ): PlannedSetGroup {
   const sets = parseInt(rawSets) || 1;
 
@@ -201,7 +214,51 @@ function _parseSetGroup(
     rest: rawRest ?? '',
     observations: rawObs ?? '',
     rpe,
+    rowNumber,
   };
+}
+
+// ── Write-back ────────────────────────────────────────────────────────────────
+
+/**
+ * Writes one or more cell ranges back into the spreadsheet in a single batch
+ * request. Used to record the student's pre/post-workout answers, per-exercise
+ * Observações/RPE, and the "FINAL DO TREINO" checkbox directly into the
+ * trainer's existing tabs (the trainer's layout/columns are never altered —
+ * only specific cells are overwritten with student-entered values).
+ *
+ * Best-effort: callers should treat failures as non-fatal — Firestore remains
+ * the canonical record regardless of whether the sheet sync succeeds.
+ */
+export async function writeCells(
+  spreadsheetId: string,
+  updates: { range: string; values: (string | number | boolean)[][] }[],
+  token: string,
+): Promise<void> {
+  if (updates.length === 0) return;
+
+  const res = await fetch(`${SHEETS_API}/${spreadsheetId}/values:batchUpdate`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      valueInputOption: 'USER_ENTERED',
+      data: updates.map((u) => ({ range: u.range, values: u.values })),
+    }),
+  });
+  if (!res.ok) throw new Error(`Sheets API ${res.status}: ${await res.text()}`);
+}
+
+/** Builds an `A1`-style range string for a single row span within a tab, e.g. `Terça!F3:G3`. */
+export function rowRange(tabName: string, startCol: string, endCol: string, row: number): string {
+  return `${tabName}!${startCol}${row}:${endCol}${row}`;
+}
+
+/** Builds an `A1`-style range string for a single cell within a tab, e.g. `Terça!B5`. */
+export function cellRange(tabName: string, col: string, row: number): string {
+  return `${tabName}!${col}${row}`;
 }
 
 // ── Convenience: get unique exercise names from a parsed tab ──────────────────

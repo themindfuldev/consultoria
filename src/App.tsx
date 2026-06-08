@@ -3,6 +3,7 @@ import { useAuth } from './hooks/useAuth';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { Landing } from './pages/Landing';
+import { OfflineSession } from './pages/OfflineSession';
 import { Onboarding } from './pages/Onboarding';
 import { TrainerDashboard } from './pages/trainer/TrainerDashboard';
 import { TrainerFeedbackView } from './pages/trainer/TrainerFeedbackView';
@@ -25,6 +26,8 @@ export default function App() {
     <Routes>
       {/* ── Public ─────────────────────────────────────────────────────── */}
       <Route path="/" element={<Landing />} />
+      {/* Standalone static snapshot viewer — outside auth, survives logout/timeout */}
+      <Route path="/offline/:sessionId" element={<OfflineSession />} />
 
       {/* ── Onboarding: auth required, NO profile required ─────────────── */}
       <Route

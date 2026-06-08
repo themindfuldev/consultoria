@@ -12,13 +12,17 @@ import {
   serverTimestamp,
   setDoc,
   Timestamp,
+  updateDoc,
   where,
 } from 'firebase/firestore';
 import {
   CalendarDays,
   CheckCircle2,
   ExternalLink,
+  Lock,
   MessageSquare,
+  Pencil,
+  Play,
   PlusCircle,
   RefreshCw,
   Trash2,
@@ -26,11 +30,13 @@ import {
 } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
+import { useActiveSession } from '../../hooks/useActiveSession';
 import { Layout } from '../../components/Layout';
 import { getTrainingTabs } from '../../services/sheetsService';
-import type { Cycle, Session } from '../../types';
+import { notifyTrainer } from '../../services/notifyService';
+import type { Cycle, CycleWeek, Session } from '../../types';
 
-// ── Date helpers ──────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmtDate(ts: Timestamp): string {
   return ts.toDate().toLocaleDateString('pt-BR', {
@@ -40,34 +46,62 @@ function fmtDate(ts: Timestamp): string {
   });
 }
 
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Extracts the spreadsheet ID from a Google Sheets URL. Returns null if invalid. */
+function extractSheetId(url: string): string | null {
+  const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  return match ? match[1] : null;
+}
+
+/** Removes every cached offline-export snapshot — "when any new training
+ * session starts, we also must delete all local storage JSON". */
+function clearOfflineSnapshots() {
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (key?.startsWith('offline_session_')) localStorage.removeItem(key);
+  }
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function CycleDetail() {
   const { cycleId } = useParams<{ cycleId: string }>();
   const { currentUser, getAccessToken } = useAuth();
   const navigate = useNavigate();
+  const activeSession = useActiveSession();
 
   const [cycle, setCycle] = useState<Cycle | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Cycle weeks
+  const [weeks, setWeeks] = useState<CycleWeek[]>([]);
+  const [startingWeek, setStartingWeek] = useState(false);
 
   // Sheet tabs (training days defined by trainer)
   const [sheetTabs, setSheetTabs] = useState<string[]>([]);
   const [sheetTabsLoading, setSheetTabsLoading] = useState(false);
   const [sheetTabsError, setSheetTabsError] = useState('');
 
-  // Session creation modal state
-  const [showModal, setShowModal] = useState(false);
-  const [tabName, setTabName] = useState('');
-  const [sessionDate, setSessionDate] = useState(
-    () => new Date().toISOString().slice(0, 10),
-  );
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState('');
+  // Immediate session start
+  const [startingTab, setStartingTab] = useState<string | null>(null);
+  const [startError, setStartError] = useState('');
 
   // Session deletion state
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState('');
+
+  // Replace spreadsheet
+  const [showReplaceSheet, setShowReplaceSheet] = useState(false);
+  const [replaceUrl, setReplaceUrl] = useState('');
+  const [replaceError, setReplaceError] = useState('');
+  const [replacing, setReplacing] = useState(false);
+
+  const currentWeek = weeks[0] ?? null;
+  const nextWeekNumber = (currentWeek?.weekNumber ?? 0) + 1;
 
   // ── Load cycle doc ──────────────────────────────────────────────────────────
 
@@ -75,6 +109,16 @@ export function CycleDetail() {
     if (!cycleId) return;
     getDoc(doc(db, 'cycles', cycleId)).then((snap) => {
       if (snap.exists()) setCycle(snap.data() as Cycle);
+    });
+  }, [cycleId]);
+
+  // ── Real-time weeks listener ────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!cycleId) return;
+    const q = query(collection(db, 'cycles', cycleId, 'weeks'), orderBy('weekNumber', 'desc'));
+    return onSnapshot(q, (snap) => {
+      setWeeks(snap.docs.map((d) => d.data() as CycleWeek));
     });
   }, [cycleId]);
 
@@ -120,43 +164,96 @@ export function CycleDetail() {
     );
   }, [currentUser, cycleId]);
 
-  // ── Create session ──────────────────────────────────────────────────────────
+  // ── Start week ──────────────────────────────────────────────────────────────
 
-  const handleCreate = async () => {
-    if (!currentUser || !cycle) return;
-    const trimmedTabName = tabName.trim();
-    if (!trimmedTabName) { setCreateError('Selecione ou informe o dia/treino.'); return; }
+  const handleStartWeek = async () => {
+    if (!cycleId || startingWeek) return;
+    setStartingWeek(true);
+    try {
+      const weekRef = doc(collection(db, 'cycles', cycleId, 'weeks'));
+      await setDoc(weekRef, {
+        id: weekRef.id,
+        cycleId,
+        weekNumber: nextWeekNumber,
+        startedAt: serverTimestamp(),
+      });
+    } finally {
+      setStartingWeek(false);
+    }
+  };
 
-    // Max 1 session per spreadsheet training tab.
-    if (sessions.some((s) => s.tabName === trimmedTabName)) {
-      setCreateError('Já existe uma sessão para este treino. Veja o histórico abaixo.');
+  // ── Start session immediately from a tab button ─────────────────────────────
+
+  const handleStartSession = async (trimmedTabName: string) => {
+    if (!currentUser || !cycle || !currentWeek || startingTab) return;
+
+    // One active session at a time, controlled in the browser — redirect
+    // straight into the existing one instead of starting a second.
+    if (activeSession) {
+      setStartError('Você já tem um treino em andamento — abrindo…');
+      setTimeout(() => {
+        navigate(`/student/cycles/${activeSession.cycleId}/sessions/${activeSession.id}`);
+      }, 900);
       return;
     }
 
-    setCreateError('');
-    setCreating(true);
+    setStartError('');
+    setStartingTab(trimmedTabName);
     try {
+      // Starting a new session invalidates any cached offline snapshot.
+      clearOfflineSnapshots();
+
       const sessionRef = doc(collection(db, 'sessions'));
-      const [year, month, day] = sessionDate.split('-').map(Number);
       await setDoc(sessionRef, {
         id: sessionRef.id,
         cycleId: cycle.id,
         studentUid: currentUser.uid,
         workspaceId: cycle.workspaceId,
         tabName: trimmedTabName,
+        weekNumber: currentWeek.weekNumber,
         status: 'in_progress',
-        date: Timestamp.fromDate(new Date(year, month - 1, day)),
+        date: Timestamp.fromDate(new Date(`${todayStr()}T00:00:00`)),
         startedAt: serverTimestamp(),
         hasVideos: false,
         feedbackStatus: 'none',
       });
-      setShowModal(false);
-      setTabName('');
+
+      notifyTrainer(
+        cycle.workspaceId,
+        `🏋️ Comecei o treino *${trimmedTabName}* (Semana ${currentWeek.weekNumber}).`,
+      ).catch(() => {/* notification is a convenience, never a blocker */});
+
       navigate(`/student/cycles/${cycle.id}/sessions/${sessionRef.id}`);
     } catch {
-      setCreateError('Não foi possível criar a sessão. Tente novamente.');
+      setStartError('Não foi possível iniciar a sessão. Tente novamente.');
+      setStartingTab(null);
+    }
+  };
+
+  // ── Replace spreadsheet ─────────────────────────────────────────────────────
+
+  const handleReplaceSheet = async () => {
+    if (!cycle) return;
+    const trimmed = replaceUrl.trim();
+    const sheetId = extractSheetId(trimmed);
+    if (!sheetId) {
+      setReplaceError('Cole um link válido do Google Sheets.');
+      return;
+    }
+    setReplaceError('');
+    setReplacing(true);
+    try {
+      await updateDoc(doc(db, 'cycles', cycle.id), {
+        googleSheetId: sheetId,
+        googleSheetUrl: trimmed,
+      });
+      setCycle((prev) => (prev ? { ...prev, googleSheetId: sheetId, googleSheetUrl: trimmed } : prev));
+      setShowReplaceSheet(false);
+      setReplaceUrl('');
+    } catch {
+      setReplaceError('Não foi possível atualizar a planilha. Tente novamente.');
     } finally {
-      setCreating(false);
+      setReplacing(false);
     }
   };
 
@@ -208,10 +305,11 @@ export function CycleDetail() {
     );
   };
 
-  // Names of training-sheet tabs that already have a session created — used to
-  // grey-out / disable the "create session" buttons for tabs already in use
-  // (max 1 session per spreadsheet training tab).
-  const usedTabNames = new Set(sessions.map((s) => s.tabName));
+  // Names of training-sheet tabs that already have a session created THIS WEEK
+  // — the same tab can be repeated each new week, but at most once per week.
+  const usedTabNames = new Set(
+    sessions.filter((s) => s.weekNumber === currentWeek?.weekNumber).map((s) => s.tabName),
+  );
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -238,7 +336,33 @@ export function CycleDetail() {
               <ExternalLink className="h-3 w-3" /> Planilha
             </a>
           )}
+          <button
+            onClick={() => { setShowReplaceSheet(true); setReplaceUrl(cycle?.googleSheetUrl ?? ''); setReplaceError(''); }}
+            className="flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-indigo-600 hover:underline dark:text-slate-500 dark:hover:text-indigo-400"
+          >
+            <Pencil className="h-3 w-3" /> Trocar planilha
+          </button>
         </div>
+      </div>
+
+      {/* ── Week control ─────────────────────────────────────────────────── */}
+      <div className="glass-premium mb-5 flex items-center justify-between gap-3 rounded-2xl p-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            {currentWeek ? `Semana atual` : 'Ciclo ainda não iniciado'}
+          </p>
+          <p className="text-lg font-bold text-slate-900 dark:text-white">
+            {currentWeek ? `Semana ${currentWeek.weekNumber}` : 'Comece a primeira semana'}
+          </p>
+        </div>
+        <button
+          onClick={handleStartWeek}
+          disabled={startingWeek}
+          className="flex flex-shrink-0 items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Play className="h-4 w-4" />
+          {startingWeek ? 'Iniciando…' : `Começar Semana ${nextWeekNumber}`}
+        </button>
       </div>
 
       {/* Training days from the sheet */}
@@ -265,33 +389,44 @@ export function CycleDetail() {
             </div>
           ) : sheetTabsError ? (
             <p className="text-xs text-red-500 dark:text-red-400">{sheetTabsError}</p>
+          ) : !currentWeek ? (
+            <p className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
+              <Lock className="h-3.5 w-3.5" />
+              Comece a Semana 1 para liberar os treinos.
+            </p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {sheetTabs.map((tab) => {
                 const alreadyUsed = usedTabNames.has(tab);
+                const isStarting = startingTab === tab;
                 return (
                   <button
                     key={tab}
-                    disabled={alreadyUsed}
-                    title={alreadyUsed ? 'Já existe uma sessão para este treino' : undefined}
-                    onClick={() => {
-                      if (alreadyUsed) return;
-                      setTabName(tab);
-                      setSessionDate(new Date().toISOString().slice(0, 10));
-                      setShowModal(true);
-                    }}
+                    disabled={alreadyUsed || !!startingTab}
+                    title={alreadyUsed ? 'Já existe uma sessão para este treino nesta semana' : undefined}
+                    onClick={() => handleStartSession(tab)}
                     className={
                       alreadyUsed
                         ? 'flex cursor-not-allowed items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-400 dark:bg-slate-800 dark:text-slate-500'
-                        : 'flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95'
+                        : 'flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-60'
                     }
                   >
-                    {alreadyUsed ? <CheckCircle2 className="h-3.5 w-3.5" /> : <PlusCircle className="h-3.5 w-3.5" />}
+                    {isStarting ? (
+                      <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    ) : alreadyUsed ? (
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    ) : (
+                      <PlusCircle className="h-3.5 w-3.5" />
+                    )}
                     {tab}
                   </button>
                 );
               })}
             </div>
+          )}
+
+          {startError && (
+            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{startError}</p>
           )}
         </div>
       )}
@@ -351,6 +486,12 @@ export function CycleDetail() {
                       <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
                         <CalendarDays className="h-3 w-3" />
                         {fmtDate(s.date)}
+                        {s.weekNumber ? ` · Semana ${s.weekNumber}` : ''}
+                        {s.status === 'in_progress' && (
+                          <span className="ml-1 rounded-full bg-indigo-100 px-1.5 py-0.5 font-semibold text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+                            Em andamento
+                          </span>
+                        )}
                       </p>
                     </div>
                     <div className="flex flex-shrink-0 flex-col items-end gap-1.5 pr-7">
@@ -391,65 +532,49 @@ export function CycleDetail() {
         </>
       )}
 
-      {/* ── New session modal ─────────────────────────────────────────── */}
-      {showModal && (
+      {/* ── Replace spreadsheet sheet ─────────────────────────────────── */}
+      {showReplaceSheet && (
         <div className="fixed inset-0 z-50 flex items-end bg-black/40 backdrop-blur-sm">
           <div className="glass-premium w-full rounded-t-2xl p-6 shadow-2xl">
             <h2 className="mb-1 text-lg font-bold text-slate-900 dark:text-white">
-              Nova sessão
+              Trocar planilha
             </h2>
             <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-              {tabName}
+              Cole o link da nova planilha do Google Sheets para este ciclo.
             </p>
 
             <div className="flex flex-col gap-4">
-              {/* If no tab pre-selected, show a text input */}
-              {sheetTabs.length === 0 && (
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                    Dia de treino
-                  </label>
-                  <input
-                    type="text"
-                    value={tabName}
-                    onChange={(e) => { setTabName(e.target.value); setCreateError(''); }}
-                    placeholder="ex: Terça, Treino A, Peito e Tríceps…"
-                    autoFocus
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
-                  />
-                </div>
-              )}
-
-              {/* Date */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                  Data
+                  Link da planilha
                 </label>
                 <input
-                  type="date"
-                  value={sessionDate}
-                  onChange={(e) => setSessionDate(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  type="text"
+                  value={replaceUrl}
+                  onChange={(e) => { setReplaceUrl(e.target.value); setReplaceError(''); }}
+                  placeholder="https://docs.google.com/spreadsheets/d/…"
+                  autoFocus
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
                 />
               </div>
 
-              {createError && (
-                <p className="text-xs text-red-600 dark:text-red-400">{createError}</p>
+              {replaceError && (
+                <p className="text-xs text-red-600 dark:text-red-400">{replaceError}</p>
               )}
 
               <div className="flex gap-3 pt-1">
                 <button
-                  onClick={() => { setShowModal(false); setTabName(''); setCreateError(''); }}
+                  onClick={() => { setShowReplaceSheet(false); setReplaceUrl(''); setReplaceError(''); }}
                   className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                 >
                   Cancelar
                 </button>
                 <button
-                  onClick={handleCreate}
-                  disabled={creating}
+                  onClick={handleReplaceSheet}
+                  disabled={replacing}
                   className="flex-1 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {creating ? 'Iniciando…' : 'Iniciar sessão'}
+                  {replacing ? 'Salvando…' : 'Salvar'}
                 </button>
               </div>
             </div>

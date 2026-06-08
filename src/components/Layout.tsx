@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { LogOut, Moon, Sun } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Dumbbell, LogOut, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { useActiveSession } from '../hooks/useActiveSession';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { Avatar } from './Avatar';
 
@@ -25,6 +26,8 @@ export function Layout({ children, title, maxWidth = '2xl' }: LayoutProps) {
   const { currentUser, userProfile, logOut } = useAuth();
   const { isDark, toggle } = useDarkMode();
   const navigate = useNavigate();
+  const location = useLocation();
+  const activeSession = useActiveSession();
 
   const handleLogOut = async () => {
     await logOut();
@@ -33,6 +36,11 @@ export function Layout({ children, title, maxWidth = '2xl' }: LayoutProps) {
 
   const homeHref = userProfile?.role === 'trainer' ? '/trainer' : '/student';
   const mw = MAX_WIDTH_CLASSES[maxWidth];
+
+  const activeSessionHref = activeSession
+    ? `/student/cycles/${activeSession.cycleId}/sessions/${activeSession.id}`
+    : null;
+  const showActiveSessionBanner = !!activeSessionHref && location.pathname !== activeSessionHref;
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-950">
@@ -84,6 +92,17 @@ export function Layout({ children, title, maxWidth = '2xl' }: LayoutProps) {
           </div>
         </div>
       </header>
+
+      {/* ── Active-session banner ──────────────────────────────────────────── */}
+      {showActiveSessionBanner && activeSessionHref && (
+        <Link
+          to={activeSessionHref}
+          className="sticky top-14 z-30 flex items-center justify-center gap-2 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition-colors hover:bg-indigo-700"
+        >
+          <Dumbbell className="h-4 w-4" />
+          Ver treino atual
+        </Link>
+      )}
 
       {/* ── Page content ───────────────────────────────────────────────────── */}
       <main className="flex-1">
