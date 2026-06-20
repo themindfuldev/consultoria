@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { doc, deleteField, Timestamp, updateDoc } from 'firebase/firestore';
-import { Archive, ExternalLink, MoreVertical, RotateCcw, Video } from 'lucide-react';
+import { Archive, ExternalLink, MoreVertical, RotateCcw } from 'lucide-react';
 import { db } from '../../firebase';
+import { useCycleWeek } from '../../hooks/useCycleWeek';
+import { CycleWeekPanel } from './CycleWeekPanel';
 import type { Cycle, Modality } from '../../types';
 
 // ── Modality badge colours ────────────────────────────────────────────────────
@@ -28,6 +30,9 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
   const [busy, setBusy] = useState(false);
 
   const isArchived = cycle.status === 'archived';
+
+  // Archived cycles don't need the week/sessions panel — skip its listeners.
+  const cycleWeek = useCycleWeek(isArchived ? null : cycle);
 
   const modalityLabel =
     cycle.modality === 'Outro' && cycle.modalityCustom
@@ -72,8 +77,11 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
     <div className={`glass-premium relative rounded-2xl p-4 transition-opacity ${busy ? 'opacity-60' : ''} ${isArchived ? 'opacity-75' : ''}`}>
       {/* ── Header row ─────────────────────────────────────────────────── */}
       <div className="mb-2 flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-base font-bold text-slate-900 dark:text-white">
+        <button
+          onClick={() => navigate(`/student/cycles/${cycle.id}`)}
+          className="min-w-0 flex-1 text-left"
+        >
+          <h3 className="truncate text-base font-bold text-slate-900 hover:underline dark:text-white">
             {cycle.title}
           </h3>
           {cycle.trainerName && (
@@ -81,7 +89,7 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
               Treinador: {cycle.trainerName}
             </p>
           )}
-        </div>
+        </button>
 
         {/* ⋯ menu */}
         <div className="relative flex-shrink-0">
@@ -137,29 +145,24 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
         </span>
       </div>
 
+      {/* ── Week + this week's sessions (active cycles only) ─────────────── */}
+      {!isArchived && (
+        <div className="mb-3 border-t border-slate-200/70 pt-3 dark:border-slate-700/50">
+          <CycleWeekPanel cycleWeek={cycleWeek} />
+        </div>
+      )}
+
       {/* ── Action buttons ──────────────────────────────────────────────── */}
       <div className="flex gap-2">
-        {/* Sessions / video feedback (active cycles only) */}
-        {!isArchived && (
-          <button
-            onClick={() => navigate(`/student/cycles/${cycle.id}`)}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 active:scale-95"
-          >
-            <Video className="h-3.5 w-3.5" />
-            Enviar vídeos
-          </button>
-        )}
-
-        {/* Open spreadsheet */}
         <a
           href={cycle.googleSheetUrl}
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className={`flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white/60 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-slate-700 ${isArchived ? 'flex-1' : 'px-3'}`}
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white/60 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-slate-700"
         >
           <ExternalLink className="h-3.5 w-3.5" />
-          {isArchived ? 'Abrir planilha' : ''}
+          Abrir planilha
         </a>
       </div>
     </div>

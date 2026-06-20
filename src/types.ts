@@ -95,10 +95,11 @@ export interface Session {
   tabName: string;
   /** Number of the cycle week this session belongs to — copied from the active CycleWeek at creation time. */
   weekNumber: number;
-  status: 'in_progress' | 'completed';
+  status: 'in_progress' | 'completed' | 'skipped';
   date: Timestamp;
   startedAt: Timestamp;
   finishedAt?: Timestamp;
+  skippedAt?: Timestamp;
   preWorkout?: {
     energyLevel: 1 | 2 | 3 | 4 | 5;
     feeling: 'Bem' | 'Não estou muito legal';

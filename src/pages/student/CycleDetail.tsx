@@ -6,35 +6,24 @@ import {
   doc,
   getDoc,
   getDocs,
-  onSnapshot,
-  orderBy,
   query,
-  serverTimestamp,
-  setDoc,
   Timestamp,
   updateDoc,
   where,
 } from 'firebase/firestore';
 import {
   CalendarDays,
-  CheckCircle2,
   ExternalLink,
-  Lock,
   MessageSquare,
   Pencil,
-  Play,
-  PlusCircle,
-  RefreshCw,
   Trash2,
   Video,
 } from 'lucide-react';
 import { db } from '../../firebase';
-import { useAuth } from '../../hooks/useAuth';
-import { useActiveSession } from '../../hooks/useActiveSession';
 import { Layout } from '../../components/Layout';
-import { getTrainingTabs } from '../../services/sheetsService';
-import { notifyTrainer } from '../../services/notifyService';
-import type { Cycle, CycleWeek, Session } from '../../types';
+import { useCycleWeek } from '../../hooks/useCycleWeek';
+import { CycleWeekPanel } from '../../components/student/CycleWeekPanel';
+import type { Cycle, Session } from '../../types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -46,49 +35,22 @@ function fmtDate(ts: Timestamp): string {
   });
 }
 
-function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 /** Extracts the spreadsheet ID from a Google Sheets URL. Returns null if invalid. */
 function extractSheetId(url: string): string | null {
   const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
   return match ? match[1] : null;
 }
 
-/** Removes every cached offline-export snapshot — "when any new training
- * session starts, we also must delete all local storage JSON". */
-function clearOfflineSnapshots() {
-  for (let i = localStorage.length - 1; i >= 0; i--) {
-    const key = localStorage.key(i);
-    if (key?.startsWith('offline_session_')) localStorage.removeItem(key);
-  }
-}
-
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function CycleDetail() {
   const { cycleId } = useParams<{ cycleId: string }>();
-  const { currentUser, getAccessToken } = useAuth();
   const navigate = useNavigate();
-  const activeSession = useActiveSession();
 
   const [cycle, setCycle] = useState<Cycle | null>(null);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  // Cycle weeks
-  const [weeks, setWeeks] = useState<CycleWeek[]>([]);
-  const [startingWeek, setStartingWeek] = useState(false);
-
-  // Sheet tabs (training days defined by trainer)
-  const [sheetTabs, setSheetTabs] = useState<string[]>([]);
-  const [sheetTabsLoading, setSheetTabsLoading] = useState(false);
-  const [sheetTabsError, setSheetTabsError] = useState('');
-
-  // Immediate session start
-  const [startingTab, setStartingTab] = useState<string | null>(null);
-  const [startError, setStartError] = useState('');
+  const cycleWeek = useCycleWeek(cycle);
+  const { sessions, sessionsLoading: loading } = cycleWeek;
 
   // Session deletion state
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -100,9 +62,6 @@ export function CycleDetail() {
   const [replaceError, setReplaceError] = useState('');
   const [replacing, setReplacing] = useState(false);
 
-  const currentWeek = weeks[0] ?? null;
-  const nextWeekNumber = (currentWeek?.weekNumber ?? 0) + 1;
-
   // ── Load cycle doc ──────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -111,129 +70,6 @@ export function CycleDetail() {
       if (snap.exists()) setCycle(snap.data() as Cycle);
     });
   }, [cycleId]);
-
-  // ── Real-time weeks listener ────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (!cycleId) return;
-    const q = query(collection(db, 'cycles', cycleId, 'weeks'), orderBy('weekNumber', 'desc'));
-    return onSnapshot(q, (snap) => {
-      setWeeks(snap.docs.map((d) => d.data() as CycleWeek));
-    });
-  }, [cycleId]);
-
-  // ── Load sheet tabs ─────────────────────────────────────────────────────────
-
-  const loadSheetTabs = async (spreadsheetId: string) => {
-    setSheetTabsLoading(true);
-    setSheetTabsError('');
-    try {
-      const token = await getAccessToken();
-      const tabs = await getTrainingTabs(spreadsheetId, token);
-      setSheetTabs(tabs);
-    } catch {
-      setSheetTabsError('Não foi possível carregar as abas da planilha.');
-    } finally {
-      setSheetTabsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!cycle?.googleSheetId) return;
-    // `loadSheetTabs` is shared with the "Tentar novamente" retry button and
-    // necessarily sets `sheetTabsLoading`/`sheetTabsError` up front — the
-    // standard fetch-with-retry shape, intentionally not split in two.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadSheetTabs(cycle.googleSheetId);
-  }, [cycle?.googleSheetId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Real-time sessions listener ─────────────────────────────────────────────
-
-  useEffect(() => {
-    if (!currentUser || !cycleId) return;
-    // `loading` already starts `true` — the snapshot/error callbacks below
-    // are what flip it to `false` once the first page of data arrives.
-    const q = query(
-      collection(db, 'sessions'),
-      where('cycleId', '==', cycleId),
-      where('studentUid', '==', currentUser.uid),
-      orderBy('date', 'desc'),
-    );
-    return onSnapshot(
-      q,
-      (snap) => {
-        setSessions(snap.docs.map((d) => d.data() as Session));
-        setLoading(false);
-      },
-      () => setLoading(false),
-    );
-  }, [currentUser, cycleId]);
-
-  // ── Start week ──────────────────────────────────────────────────────────────
-
-  const handleStartWeek = async () => {
-    if (!cycleId || startingWeek) return;
-    setStartingWeek(true);
-    try {
-      const weekRef = doc(collection(db, 'cycles', cycleId, 'weeks'));
-      await setDoc(weekRef, {
-        id: weekRef.id,
-        cycleId,
-        weekNumber: nextWeekNumber,
-        startedAt: serverTimestamp(),
-      });
-    } finally {
-      setStartingWeek(false);
-    }
-  };
-
-  // ── Start session immediately from a tab button ─────────────────────────────
-
-  const handleStartSession = async (trimmedTabName: string) => {
-    if (!currentUser || !cycle || !currentWeek || startingTab) return;
-
-    // One active session at a time, controlled in the browser — redirect
-    // straight into the existing one instead of starting a second.
-    if (activeSession) {
-      setStartError('Você já tem um treino em andamento — abrindo…');
-      setTimeout(() => {
-        navigate(`/student/cycles/${activeSession.cycleId}/sessions/${activeSession.id}`);
-      }, 900);
-      return;
-    }
-
-    setStartError('');
-    setStartingTab(trimmedTabName);
-    try {
-      // Starting a new session invalidates any cached offline snapshot.
-      clearOfflineSnapshots();
-
-      const sessionRef = doc(collection(db, 'sessions'));
-      await setDoc(sessionRef, {
-        id: sessionRef.id,
-        cycleId: cycle.id,
-        studentUid: currentUser.uid,
-        workspaceId: cycle.workspaceId,
-        tabName: trimmedTabName,
-        weekNumber: currentWeek.weekNumber,
-        status: 'in_progress',
-        date: Timestamp.fromDate(new Date(`${todayStr()}T00:00:00`)),
-        startedAt: serverTimestamp(),
-        hasVideos: false,
-        feedbackStatus: 'none',
-      });
-
-      notifyTrainer(
-        cycle.workspaceId,
-        `🏋️ Comecei o treino *${trimmedTabName}* (Semana ${currentWeek.weekNumber}).`,
-      ).catch(() => {/* notification is a convenience, never a blocker */});
-
-      navigate(`/student/cycles/${cycle.id}/sessions/${sessionRef.id}`);
-    } catch {
-      setStartError('Não foi possível iniciar a sessão. Tente novamente.');
-      setStartingTab(null);
-    }
-  };
 
   // ── Replace spreadsheet ─────────────────────────────────────────────────────
 
@@ -310,12 +146,6 @@ export function CycleDetail() {
     );
   };
 
-  // Names of training-sheet tabs that already have a session created THIS WEEK
-  // — the same tab can be repeated each new week, but at most once per week.
-  const usedTabNames = new Set(
-    sessions.filter((s) => s.weekNumber === currentWeek?.weekNumber).map((s) => s.tabName),
-  );
-
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -350,89 +180,10 @@ export function CycleDetail() {
         </div>
       </div>
 
-      {/* ── Week control ─────────────────────────────────────────────────── */}
-      <div className="glass-premium mb-5 flex items-center justify-between gap-3 rounded-2xl p-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            {currentWeek ? `Semana atual` : 'Ciclo ainda não iniciado'}
-          </p>
-          <p className="text-lg font-bold text-slate-900 dark:text-white">
-            {currentWeek ? `Semana ${currentWeek.weekNumber}` : 'Comece a primeira semana'}
-          </p>
-        </div>
-        <button
-          onClick={handleStartWeek}
-          disabled={startingWeek}
-          className="flex flex-shrink-0 items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <Play className="h-4 w-4" />
-          {startingWeek ? 'Iniciando…' : `Começar Semana ${nextWeekNumber}`}
-        </button>
-      </div>
-
-      {/* Training days from the sheet */}
-      {(sheetTabsLoading || sheetTabs.length > 0 || sheetTabsError) && (
-        <div className="mb-5">
-          <div className="mb-2 flex items-center gap-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Treinos da planilha
-            </p>
-            {sheetTabsError && (
-              <button
-                onClick={() => cycle?.googleSheetId && loadSheetTabs(cycle.googleSheetId)}
-                className="ml-auto flex items-center gap-1 text-xs text-indigo-600 hover:underline dark:text-indigo-400"
-              >
-                <RefreshCw className="h-3 w-3" /> Tentar novamente
-              </button>
-            )}
-          </div>
-
-          {sheetTabsLoading ? (
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-              Carregando abas da planilha…
-            </div>
-          ) : sheetTabsError ? (
-            <p className="text-xs text-red-500 dark:text-red-400">{sheetTabsError}</p>
-          ) : !currentWeek ? (
-            <p className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
-              <Lock className="h-3.5 w-3.5" />
-              Comece a Semana 1 para liberar os treinos.
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {sheetTabs.map((tab) => {
-                const alreadyUsed = usedTabNames.has(tab);
-                const isStarting = startingTab === tab;
-                return (
-                  <button
-                    key={tab}
-                    disabled={alreadyUsed || !!startingTab}
-                    title={alreadyUsed ? 'Já existe uma sessão para este treino nesta semana' : undefined}
-                    onClick={() => handleStartSession(tab)}
-                    className={
-                      alreadyUsed
-                        ? 'flex cursor-not-allowed items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-400 dark:bg-slate-800 dark:text-slate-500'
-                        : 'flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-60'
-                    }
-                  >
-                    {isStarting ? (
-                      <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                    ) : alreadyUsed ? (
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                    ) : (
-                      <PlusCircle className="h-3.5 w-3.5" />
-                    )}
-                    {tab}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {startError && (
-            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{startError}</p>
-          )}
+      {/* ── Week control + this week's sessions ──────────────────────────── */}
+      {cycle && (
+        <div className="glass-premium mb-5 rounded-2xl p-4">
+          <CycleWeekPanel cycleWeek={cycleWeek} />
         </div>
       )}
 
