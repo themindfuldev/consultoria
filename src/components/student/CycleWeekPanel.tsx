@@ -8,7 +8,6 @@ import {
   Lock,
   Play,
   RefreshCw,
-  RotateCcw,
 } from 'lucide-react';
 import type { useCycleWeek } from '../../hooks/useCycleWeek';
 import type { TabSessionRow } from '../../hooks/useCycleWeek';
@@ -26,14 +25,15 @@ type SessionStatus = Session['status'];
 
 // ── Status column meta ────────────────────────────────────────────────────────
 
-const STATUS_META: Record<SessionStatus, { label: string; dot: string; text: string }> = {
-  pending:     { label: 'Não iniciado', dot: 'bg-slate-400',   text: 'text-slate-500 dark:text-slate-400' },
-  in_progress: { label: 'Em andamento', dot: 'bg-indigo-500',  text: 'text-indigo-600 dark:text-indigo-400' },
-  skipped:     { label: 'Pulado',       dot: 'bg-amber-500',   text: 'text-amber-600 dark:text-amber-400' },
-  completed:   { label: 'Concluído',    dot: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' },
+const STATUS_META: Record<SessionStatus, { label: string; badge: string }> = {
+  pending:     { label: 'Não iniciado', badge: 'bg-slate-100 text-slate-600 dark:bg-slate-700/60 dark:text-slate-300' },
+  in_progress: { label: 'Em andamento', badge: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' },
+  skipped:     { label: 'Pulado',       badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
+  completed:   { label: 'Concluído',    badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
 };
 
-function StatusCell({ session }: { session: Session | null }) {
+/** Status pill rendered inline next to the session name (caps, colored bg). */
+function StatusBadge({ session }: { session: Session | null }) {
   const status: SessionStatus = session?.status ?? 'pending';
   const meta = STATUS_META[status];
   let label = meta.label;
@@ -42,9 +42,8 @@ function StatusCell({ session }: { session: Session | null }) {
     label = `Concluído em ${d}`;
   }
   return (
-    <span className={`flex items-center gap-1.5 text-[11px] font-semibold ${meta.text}`}>
-      <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${meta.dot}`} />
-      <span className="truncate">{label}</span>
+    <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${meta.badge}`}>
+      {label}
     </span>
   );
 }
@@ -76,22 +75,23 @@ function SessionRows({
         return (
           <li
             key={row.tab}
-            className="grid grid-cols-[1.25rem_minmax(0,1fr)_8rem_10rem] items-center gap-2 rounded-xl bg-white/50 px-2.5 py-2 dark:bg-slate-800/40"
+            className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-2 rounded-xl bg-white/50 px-2.5 py-2 dark:bg-slate-800/40"
           >
             <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-[11px] font-bold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
               {idx + 1}
             </span>
 
-            {/* Tapping the name opens the session, just like "Abrir". */}
-            <button
-              onClick={() => onOpen(row)}
-              disabled={busy}
-              className="min-w-0 truncate text-left text-sm font-medium text-slate-800 hover:underline disabled:opacity-60 dark:text-slate-100"
-            >
-              {row.tab}
-            </button>
-
-            <StatusCell session={row.session} />
+            {/* Name + inline status pill. Tapping the name opens the session. */}
+            <div className="flex min-w-0 items-center gap-2">
+              <button
+                onClick={() => onOpen(row)}
+                disabled={busy}
+                className="min-w-0 truncate text-left text-sm font-medium text-slate-800 hover:underline disabled:opacity-60 dark:text-slate-100"
+              >
+                {row.tab}
+              </button>
+              <StatusBadge session={row.session} />
+            </div>
 
             {/* Actions — "Abrir" is always last so it stays right-aligned. */}
             <div className="flex items-center justify-end gap-1.5">
@@ -108,9 +108,8 @@ function SessionRows({
                 <button
                   onClick={() => onUnskip(row.session!)}
                   disabled={busy}
-                  className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                  className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
                 >
-                  <RotateCcw className="h-3 w-3" />
                   Despular
                 </button>
               )}
