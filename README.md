@@ -3,7 +3,7 @@
 A mobile-first web app that fills two gaps in the personal training workflow:
 
 1. **Enhanced Google Sheets experience** — a beautiful, phone-friendly interface so students can view and log their weekly training session without fighting Google's mobile Sheets app.
-2. **Structured video feedback loop** — students upload compressed session videos; trainers deliver per-exercise text and audio/video feedback; both parties are notified via WhatsApp.
+2. **Structured video feedback loop** — students upload compressed session videos; trainers deliver per-exercise text feedback; both parties are notified via WhatsApp.
 
 > **Scope**: Consultoria does **not** replace Google Sheets for program creation. The trainer keeps authoring cycles in their existing spreadsheet; Consultoria reads it for display and writes student responses to a dedicated `Respostas` tab.
 
@@ -11,12 +11,13 @@ A mobile-first web app that fills two gaps in the personal training workflow:
 
 ## ✨ Key Features
 
-- **Session view** — parses the trainer's spreadsheet tab into an interactive exercise list with planned values shown read-only and input fields for actual reps, load, RPE, and observations.
-- **Pre/post workout check-in** — energy level (1–5 stars) and feeling selectors before and after training.
+- **Weekly training flow** — students start a week (which re-reads the spreadsheet and creates a session per tab), then open, skip, or complete each session, and finally conclude the week to lock it read-only. Concluded weeks stay viewable as accordions.
+- **Session view** — parses the trainer's spreadsheet tab into an interactive exercise list with planned values shown read-only and input fields for actual reps, load, a color-coded 1–10 RPE picker, and observations.
+- **Pre/post workout check-in** — energy level (1–5 stars) and feeling selectors before and after training. Filling the pre-workout form is what starts the session (and notifies the trainer).
 - **Spreadsheet write-back** — on session completion, student actuals are appended to a `Respostas` tab (created automatically if absent). The trainer's layout is never modified.
 - **WhatsApp notifications** — `wa.me` deep links sent at session start, finish, video upload, and feedback completion. No WhatsApp Business API, no cost.
 - **Video upload with compression** — ffmpeg.wasm compresses phone videos client-side (≈ 100 MB → 10–15 MB) before uploading to the student's Google Drive. No server required.
-- **Trainer feedback** — per-exercise text feedback + audio/video file uploads stored in the trainer's Drive; student receives a WhatsApp link when feedback is ready.
+- **Trainer feedback** — per-exercise text feedback; student receives a WhatsApp link when feedback is ready.
 - **Historical feedback** — "💬 Feedback anterior" chip on each exercise shows trainer notes from the last 5 sessions.
 - **Progress photos** — dated Drive subfolders; chronological thumbnail timeline with side-by-side comparison.
 - **Progress charts** — load, RPE, and volume over time per exercise (Recharts).

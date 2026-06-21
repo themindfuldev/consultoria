@@ -212,7 +212,7 @@ export function TrainerFeedbackView() {
       const dateStr = session.date instanceof Timestamp ? fmtDate(session.date) : '';
       const appUrl = window.location.origin;
       const msg = encodeURIComponent(
-        `📝 Seu feedback do treino *${session.tabName}* de ${dateStr} está pronto!\n` +
+        `Seu feedback do treino *${session.tabName}* de ${dateStr} está pronto!\n` +
         `${appUrl}/student/sessions/${sessionId}/feedback`,
       );
       window.open(

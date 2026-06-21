@@ -9,6 +9,43 @@ This document defines the architecture, data models, integration flows, and impl
 
 ---
 
+## 🆕 Recent Decisions — Week Lifecycle & Session Flow
+
+Changes shipped after the initial v2 build (these supersede the older wording in
+the sections below where they conflict):
+
+- **Week lifecycle.** A cycle progresses week by week via a `cycles/{id}/weeks`
+  sub-collection. A week is *Não iniciada* → *Em andamento* → *Concluída*.
+  - **"Começar Semana N"** creates the week and **re-reads the spreadsheet**,
+    pre-creating one `pending` session per training tab. Shown only for the first
+    week, or once the current week is concluded (we can't know the next week's
+    plan until the trainer updates the sheet).
+  - **"Concluir Semana N"** appears only once **every** session is `completed`
+    or `skipped`; it marks the week `completed`, after which its sessions are
+    **read-only** (open-only; no start/skip/unskip, no video uploads).
+  - Past (concluded) weeks render below the current one as **read-only accordions**.
+- **Deferred session start.** Opening a session ("Abrir") does **not** start it.
+  It's marked `in_progress` — and the trainer's WhatsApp "started" message fires —
+  only when the student fills the two pre-workout questions and taps "Começar
+  treino". A started session counts as the *current* workout for **4 hours**.
+- **Session statuses** are now `pending | in_progress | completed | skipped`.
+  Skipped sessions can be reverted ("Despular"). Opening a skipped session is
+  read-only until un-skipped.
+- **Session list is a table**: `name · status · Abrir`. Tapping the name = Abrir;
+  Abrir is always right-aligned; completed rows show "Concluído em dd/mm".
+- **RPE input** is a color-coded 1–10 dropdown (1-3 dark green, 4-5 light green,
+  6-7 orange, 8-10 red) that still accepts typed values.
+- **Removed**: the trainer feedback media-upload feature, and the student
+  "Histórico de sessões" list (the week panel is now the single source of truth).
+- **Drive**: 4-level folder hierarchy (root → cycle → week → session); uploaded
+  files are prefixed with the session name.
+- **Auth**: Sheets/Drive/Docs scopes are now granted during the Firebase sign-in
+  popup (see OAuth section) — existing users must re-consent once.
+- **WhatsApp**: messages are plain-text (no emoji) to avoid `�` on some devices.
+- A header **back button** was added to the session and cycle pages.
+
+---
+
 ## 🎯 Project Goals
 
 - **Mobile-first UX**: Trainer and student primarily use their phones. Every screen is designed at 375px first.
@@ -56,15 +93,21 @@ graph TD
 
 ## 🔑 OAuth Token Strategy (Zero-Cost, Client-Side)
 
-Same approach as v1. Firebase Auth `signInWithPopup` returns a one-time Google OAuth access token (1-hour TTL). The GIS Token Client refreshes it silently without a popup as long as the user's Google session is active.
+Firebase Auth `signInWithPopup` returns a one-time Google OAuth access token (~1-hour TTL). The GIS Token Client refreshes it when needed.
 
 **Scopes requested:**
 - `https://www.googleapis.com/auth/spreadsheets`
 - `https://www.googleapis.com/auth/drive.file`
+- `https://www.googleapis.com/auth/documents` (feedback exported as a Google Doc)
 
 > `drive.file` grants access only to files created by the app (videos, feedback media). It does **not** grant broad Drive access. This keeps the permission footprint minimal and avoids Google's OAuth verification process for sensitive scopes.
 
 **Token storage:** In-memory React refs only. Never `localStorage` or `sessionStorage`.
+
+**Decisions (this iteration):**
+- **Scopes are requested during the Firebase sign-in popup itself** (`provider.addScope(...)`), and the OAuth access token is captured from `GoogleAuthProvider.credentialFromResult`. This means the first page load after sign-in already has a valid, correctly-scoped token and never needs to open a *second* GIS popup. Previously the sign-in only granted profile scopes, so the first Sheets/Drive call had to open a gesture-less popup that the browser blocked — producing the "Não foi possível carregar as abas da planilha" + manual "Tentar novamente" loop. Requesting these scopes triggers a one-time consent screen, so **existing users must sign out and back in once** after this change.
+- `getAccessToken()` **waits for the async-loaded GIS script** before its first call (instead of failing) and **coalesces concurrent callers** onto a single in-flight request/popup.
+- `useGoogleTokenWarmup()` proactively re-authorizes when a student opens a page with a stale token; if the silent refresh needs a popup (browser-blocked without a gesture), it opens on the student's first interaction with the page. Allowing pop-ups for the site makes the daily refresh fully hands-off.
 
 ---
 
@@ -126,12 +169,10 @@ One document per Google Sheets spreadsheet. Students create these themselves aft
 ```ts
 type Modality =
   | 'Força'
-  | 'Hipertrofia'
-  | 'Treino'
-  | 'Flexibilidade'
-  | 'Corrida'
-  | 'Handstands'
-  | 'Outro';                  // free-text fallback
+  | 'Mobilidade'
+  | 'Cardio'
+  | 'Competição'
+  | 'Outro';                  // free-text fallback (modalityCustom)
 
 interface Cycle {
   id: string;
@@ -155,8 +196,31 @@ interface Cycle {
 
 ---
 
+### `cycles/{cycleId}/weeks` Sub-collection
+One document per "Começar Semana X" tap. A cycle progresses week by week; the
+student starts a week, works through its sessions, then concludes it.
+
+```ts
+interface CycleWeek {
+  id: string;
+  cycleId: string;
+  weekNumber: number;          // 1, 2, 3…
+  startedAt: Timestamp;
+  status?: 'in_progress' | 'completed';  // absent on legacy docs → 'in_progress'
+  completedAt?: Timestamp;
+}
+```
+
+> **Week lifecycle (3 states):** *Não iniciada* (no doc yet) → *Em andamento*
+> (`in_progress`) → *Concluída* (`completed`). The "latest" week is the one with
+> the highest `weekNumber`; older weeks are shown as read-only accordions.
+
+---
+
 ### `sessions` Collection
-One document per training session instance (i.e., one occurrence of doing "Treino A" on a specific date).
+One document per training session instance (one occurrence of doing "Treino A"
+in a given week). Sessions are **pre-created as `pending`** for every spreadsheet
+tab when a week starts.
 
 ```ts
 interface Session {
@@ -165,24 +229,39 @@ interface Session {
   studentUid: string;
   workspaceId: string;
   tabName: string;             // e.g. "Treino A" — matches the sheet tab exactly
-  status: 'in_progress' | 'completed';
+  weekNumber: number;          // the CycleWeek this session belongs to
+  status: 'pending' | 'in_progress' | 'completed' | 'skipped';
+  // 'pending'     → pre-created when the week started, not opened/started yet
+  // 'in_progress' → student filled the pre-workout questions ("Começar treino")
+  // 'completed'   → student finished the workout
+  // 'skipped'     → explicitly skipped for the week (revertible via "Despular")
   date: Timestamp;             // day the session was started
-  startedAt: Timestamp;
+  startedAt?: Timestamp;       // set when first started; absent while pending
   finishedAt?: Timestamp;
+  skippedAt?: Timestamp;
   preWorkout?: {
     energyLevel: 1 | 2 | 3 | 4 | 5;
-    feeling: 'bem' | 'mal';
+    feeling: 'Bem' | 'Não estou muito legal';
   };
   postWorkout?: {
     energyLevel: 1 | 2 | 3 | 4 | 5;
-    feeling: 'igual' | 'melhor' | 'pior';
+    feeling: 'Mantenho a resposta anterior' | 'Um pouco melhor' | 'Um pouco pior';
   };
+  exerciseEntries?: Record<string, { observations: string; rpe: number }>;
   driveFolderId?: string;      // created on first video upload
   driveFolderUrl?: string;
   hasVideos: boolean;
   videosNotifiedAt?: Timestamp;  // when trainer was notified via WhatsApp
+  feedbackStatus?: 'none' | 'draft' | 'complete';  // denormalised from feedback doc
 }
 ```
+
+> **A session is only "started" (`in_progress`) when the student fills the two
+> pre-workout questions and taps "Começar treino"** — opening the page ("Abrir")
+> does not start it. The trainer's "started" WhatsApp message fires at that
+> moment too. An in-progress session is treated as the *current* workout (banner
+> + single-active guard) only for **4 hours** after it was opened (see
+> `SESSION_OPEN_TTL_MS`); after that it's considered abandoned.
 
 ---
 
@@ -514,19 +593,22 @@ After uploading one or more videos, a **"Notificar treinador"** (Notify Trainer)
 
 ## 📂 Google Drive Folder Structure
 
+Student videos use a **4-level find-or-create hierarchy** (folders are reused
+across uploads, never duplicated):
+
 ```
 [Student's My Drive]
-└── Treino A — 2026-05-21 — Ana/       ← created per session, on first video upload
-    ├── agachamento_set1.mp4            ← student's compressed videos
-    ├── agachamento_set2.mp4
-    └── extensora.mp4
-
-[Trainer's My Drive]
-└── Consultoria Feedback/               ← created on trainer registration (one-time)
-    └── Ana — Treino A — 2026-05-21/   ← created when trainer first opens feedback for a session
-        ├── feedback_agachamento.mp4    ← trainer's uploaded feedback files
-        └── feedback_geral.m4a
+└── Consultoria: <Trainer> - <Student>/      ← root, one per trainer↔student pair
+    └── <Cycle title>/                       ← one per training cycle
+        └── Semana N/                        ← one per cycle week
+            └── Treino A — 2026-05-21/       ← one per session
+                ├── Treino A - agachamento_169…​.mp4   ← compressed videos,
+                └── Treino A - extensora_169…​.mp4        prefixed with the session name
 ```
+
+> Trainers no longer upload feedback media (the "Adicionar áudio/vídeo" feature
+> was removed), so there is no longer a trainer-side Drive feedback folder for
+> uploads. Feedback is text only, optionally exported to a Google Doc.
 
 - Student videos → **student's Drive** (no special sharing permissions required)
 - Trainer feedback files → **trainer's Drive** (no special sharing permissions required)
@@ -548,7 +630,8 @@ For each session, the trainer sees:
 2. **Per-exercise sections**: one card per exercise that has at least one video
    - Video player (streams from Drive via shareable URL)
    - Text feedback field
-   - **"Adicionar arquivo"** button — opens device file picker (audio/video only). Uploaded to trainer's Drive feedback folder, stored as `FeedbackMediaFile` in the `feedback.exerciseFeedback` array.
+   - (Trainer media attachments were removed — feedback is text only. Any media on
+     pre-existing feedback docs still renders read-only.)
 3. **Notas gerais** (General Notes): free-form text field for the whole session
 
 ### "Feedback Completo" button
@@ -610,12 +693,19 @@ All WhatsApp interactions use `wa.me` deep links. On mobile, tapping opens Whats
 
 | Trigger | Sender | Recipient | Message template |
 |---|---|---|---|
-| "Iniciar Treino" | Student → Trainer | trainer's `whatsappPhone` | `🏋️ Iniciei o treino *{tabName}* em {date}` |
-| "Finalizar Treino" | Student → Trainer | trainer's `whatsappPhone` | `✅ Finalizei o treino *{tabName}* em {date}. {videoCount} vídeo(s) disponível(eis): {appDeepLink}` |
-| "Notificar treinador" (after video upload) | Student → Trainer | trainer's `whatsappPhone` | `📹 Enviei {n} vídeo(s) do treino *{tabName}* de {date}. Aguardo seu feedback: {appDeepLink}` |
-| "Feedback Completo" | Trainer → Student | student's `whatsappPhone` | `📝 Seu feedback do treino *{tabName}* de {date} está pronto: {appDeepLink}` |
+| "Começar treino" (pre-workout submitted) | Student → Trainer | trainer's `whatsappPhone` | `Comecei o treino *{tabName}* (Semana {n}).` |
+| "Concluir treino" (finished) | Student → Trainer | trainer's `whatsappPhone` | `Terminei o treino *{tabName}* de {date}.` |
+| "Notificar treinador" (after video upload) | Student → Trainer | trainer's `whatsappPhone` | `Enviei {n} vídeo(s) do treino *{tabName}* de {date}. Aguardo seu feedback: {appDeepLink}` |
+| "Feedback Completo" | Trainer → Student | student's `whatsappPhone` | `Seu feedback do treino *{tabName}* de {date} está pronto: {appDeepLink}` |
 
 `appDeepLink` is a direct URL to the relevant session or feedback page in the app.
+
+> **No emoji in `wa.me` messages.** The message bytes are sent as correct UTF-8
+> (verified in source and bundle), but some recipient devices/WhatsApp versions
+> render even universal emoji (e.g. 💪) as a replacement character `�`. Since the
+> emoji aren't essential, message strings are kept plain-text to guarantee they
+> always display correctly. Emoji in the in-app UI (rendered by the browser) are
+> unaffected and retained.
 
 ---
 
