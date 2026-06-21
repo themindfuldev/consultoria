@@ -16,6 +16,7 @@ import { useAuth } from './useAuth';
 import { useActiveSession } from './useActiveSession';
 import { getTrainingTabs } from '../services/sheetsService';
 import { notifyTrainer } from '../services/notifyService';
+import { isSessionOpen } from '../utils/session';
 import type { Cycle, CycleWeek, Session } from '../types';
 
 function todayStr(): string {
@@ -63,6 +64,7 @@ export function useCycleWeek(cycle: Cycle | null) {
 
   const [weeks, setWeeks] = useState<CycleWeek[]>([]);
   const [startingWeek, setStartingWeek] = useState(false);
+  const [weekError, setWeekError] = useState('');
 
   const [sheetTabs, setSheetTabs] = useState<string[]>([]);
   const [sheetTabsLoading, setSheetTabsLoading] = useState(false);
@@ -138,34 +140,81 @@ export function useCycleWeek(cycle: Cycle | null) {
 
   const sessionByTab = new Map(sessionsThisWeek.map((s) => [s.tabName, s] as const));
 
-  const rows: TabSessionRow[] = sheetTabs.map((tab) => ({
+  // Rows are driven by the sessions persisted for this week (created up-front
+  // when the week starts), ordered to match the spreadsheet's tab order when
+  // it's available — so a transient Sheets load error never hides the week's
+  // already-saved sessions.
+  const orderedTabs: string[] = [];
+  const seenTabs = new Set<string>();
+  for (const tab of [...sheetTabs, ...sessionsThisWeek.map((s) => s.tabName)]) {
+    if (!seenTabs.has(tab)) { seenTabs.add(tab); orderedTabs.push(tab); }
+  }
+  const rows: TabSessionRow[] = orderedTabs.map((tab) => ({
     tab,
     session: sessionByTab.get(tab) ?? null,
   }));
 
   // The next week can only start once every training day of the current week
-  // has reached a terminal state (finalized or skipped) — never while one is
-  // still in progress, and never while some tab hasn't been touched at all.
-  // A spreadsheet we couldn't load (or week 1, with no current week yet) never
-  // blocks progress.
+  // has reached a terminal state (completed or skipped) — never while one is
+  // still pending or in progress. We gate on the persisted session docs (not
+  // the live sheet) so the button only shows when we actually *know* the week
+  // is done. Week 1 (no current week yet) is always startable.
   const canStartNextWeek =
     !currentWeek ||
-    sheetTabsError !== '' ||
-    (sheetTabs.length > 0 && rows.every((r) => r.session?.status === 'completed' || r.session?.status === 'skipped'));
+    (sessionsThisWeek.length > 0 &&
+      sessionsThisWeek.every((s) => s.status === 'completed' || s.status === 'skipped'));
 
   // ── Start week ───────────────────────────────────────────────────────────────
 
   const startWeek = async () => {
-    if (!cycleId || startingWeek) return;
+    if (!cycleId || !cycle || !currentUser || startingWeek) return;
     setStartingWeek(true);
+    setWeekError('');
     try {
+      // We pre-create one session per training tab, so we need the tab list up
+      // front. Use what's already loaded; otherwise fetch it fresh so we never
+      // create an empty week.
+      let tabs = sheetTabs;
+      if (tabs.length === 0 && cycle.googleSheetId) {
+        const token = await getAccessToken();
+        tabs = await getTrainingTabs(cycle.googleSheetId, token);
+      }
+      if (tabs.length === 0) {
+        setWeekError('Não foi possível carregar os treinos da planilha. Tente novamente.');
+        return;
+      }
+
+      const weekNumber = nextWeekNumber;
       const weekRef = doc(collection(db, 'cycles', cycleId, 'weeks'));
       await setDoc(weekRef, {
         id: weekRef.id,
         cycleId,
-        weekNumber: nextWeekNumber,
+        weekNumber,
         startedAt: serverTimestamp(),
       });
+
+      // Save every training tab as a pending session under the new week, so the
+      // student sees the full week's plan with Iniciar/Pular actions right away.
+      const today = Timestamp.fromDate(new Date(`${todayStr()}T00:00:00`));
+      await Promise.all(
+        tabs.map((tab) => {
+          const sessionRef = doc(collection(db, 'sessions'));
+          return setDoc(sessionRef, {
+            id: sessionRef.id,
+            cycleId: cycle.id,
+            studentUid: currentUser!.uid,
+            workspaceId: cycle.workspaceId,
+            tabName: tab,
+            weekNumber,
+            status: 'pending',
+            date: today,
+            hasVideos: false,
+            feedbackStatus: 'none',
+          });
+        }),
+      );
+    } catch {
+      setWeekError('Não foi possível começar a semana. Tente novamente.');
     } finally {
       setStartingWeek(false);
     }
@@ -177,14 +226,16 @@ export function useCycleWeek(cycle: Cycle | null) {
     if (!currentUser || !cycle || !currentWeek || pendingAction) return null;
 
     const existing = sessionByTab.get(tabName);
-    if (existing) {
-      // Already started (or finished) — just point at it, no write needed.
+
+    // Resuming a session that is already open elsewhere — just navigate into it,
+    // no write needed.
+    if (existing && existing.status === 'in_progress' && isSessionOpen(existing)) {
       return { cycleId: cycle.id, sessionId: existing.id, redirected: false };
     }
 
     // One active session at a time, controlled in the browser — redirect
-    // straight into the existing one instead of starting a second.
-    if (activeSession) {
+    // straight into the existing open one instead of starting a second.
+    if (activeSession && activeSession.id !== existing?.id) {
       setActionError('Você já tem um treino em andamento — abrindo…');
       await new Promise((r) => setTimeout(r, 900));
       return { cycleId: activeSession.cycleId, sessionId: activeSession.id, redirected: true };
@@ -193,9 +244,29 @@ export function useCycleWeek(cycle: Cycle | null) {
     setActionError('');
     setPendingAction({ tab: tabName, kind: 'start' });
     try {
-      // Starting a new session invalidates any cached offline snapshot.
+      // Opening a session invalidates any cached offline snapshot.
       clearOfflineSnapshots();
+      const today = Timestamp.fromDate(new Date(`${todayStr()}T00:00:00`));
 
+      if (existing) {
+        // Pre-created (pending) — or an expired in-progress session being
+        // reopened. Open it now: this (re)starts the 4h window from `startedAt`.
+        await updateDoc(doc(db, 'sessions', existing.id), {
+          status: 'in_progress',
+          date: today,
+          startedAt: serverTimestamp(),
+        });
+        if (existing.status === 'pending') {
+          notifyTrainer(
+            cycle.workspaceId,
+            `🏋️ Comecei o treino *${tabName}* (Semana ${currentWeek.weekNumber}).`,
+          ).catch(() => {/* notification is a convenience, never a blocker */});
+        }
+        return { cycleId: cycle.id, sessionId: existing.id, redirected: false };
+      }
+
+      // No session for this tab yet (e.g. a tab added to the sheet after the
+      // week started) — create one straight into in_progress.
       const sessionRef = doc(collection(db, 'sessions'));
       await setDoc(sessionRef, {
         id: sessionRef.id,
@@ -205,7 +276,7 @@ export function useCycleWeek(cycle: Cycle | null) {
         tabName,
         weekNumber: currentWeek.weekNumber,
         status: 'in_progress',
-        date: Timestamp.fromDate(new Date(`${todayStr()}T00:00:00`)),
+        date: today,
         startedAt: serverTimestamp(),
         hasVideos: false,
         feedbackStatus: 'none',
@@ -275,6 +346,7 @@ export function useCycleWeek(cycle: Cycle | null) {
     currentWeek,
     nextWeekNumber,
     startingWeek,
+    weekError,
     startWeek,
 
     sheetTabs,

@@ -22,9 +22,9 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
     currentWeek,
     nextWeekNumber,
     startingWeek,
+    weekError,
     startWeek,
     canStartNextWeek,
-    sheetTabs,
     sheetTabsLoading,
     sheetTabsError,
     retryLoadSheetTabs,
@@ -64,35 +64,20 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
         )}
       </div>
 
-      {!canStartNextWeek && !sheetTabsLoading && (
+      {currentWeek && !canStartNextWeek && (
         <p className="mt-1.5 text-xs text-slate-400 dark:text-slate-500">
           Finalize ou pule os treinos desta semana para liberar a próxima.
         </p>
       )}
 
+      {weekError && (
+        <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">{weekError}</p>
+      )}
+
       {/* ── This week's sessions ─────────────────────────────────────────── */}
       {currentWeek ? (
         <div className="mt-3">
-          {sheetTabsLoading ? (
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-              Carregando treinos da planilha…
-            </div>
-          ) : sheetTabsError ? (
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-xs text-red-500 dark:text-red-400">{sheetTabsError}</p>
-              <button
-                onClick={retryLoadSheetTabs}
-                className="flex flex-shrink-0 items-center gap-1 text-xs text-indigo-600 hover:underline dark:text-indigo-400"
-              >
-                <RefreshCw className="h-3 w-3" /> Tentar novamente
-              </button>
-            </div>
-          ) : sheetTabs.length === 0 ? (
-            <p className="text-xs text-slate-400 dark:text-slate-500">
-              Nenhum treino encontrado na planilha.
-            </p>
-          ) : (
+          {rows.length > 0 ? (
             <ol className="flex flex-col gap-1.5">
               {rows.map((row, idx) => {
                 const isPendingStart = pendingAction?.tab === row.tab && pendingAction.kind === 'start';
@@ -119,14 +104,16 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
                         <SkipForward className="h-3.5 w-3.5" /> Pulado
                       </span>
                     )}
-                    {(!row.session || row.session.status === 'in_progress') && (
+                    {(!row.session
+                      || row.session.status === 'pending'
+                      || row.session.status === 'in_progress') && (
                       <div className="flex flex-shrink-0 gap-1.5">
                         <button
                           onClick={() => handleStart(row.tab)}
                           disabled={!!pendingAction}
                           className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-60"
                         >
-                          {isPendingStart ? '…' : row.session ? 'Continuar' : 'Iniciar'}
+                          {isPendingStart ? '…' : row.session?.status === 'in_progress' ? 'Continuar' : 'Iniciar'}
                         </button>
                         <button
                           onClick={() => skipSession(row.tab)}
@@ -141,6 +128,25 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
                 );
               })}
             </ol>
+          ) : sheetTabsLoading ? (
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+              Carregando treinos da planilha…
+            </div>
+          ) : sheetTabsError ? (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-red-500 dark:text-red-400">{sheetTabsError}</p>
+              <button
+                onClick={retryLoadSheetTabs}
+                className="flex flex-shrink-0 items-center gap-1 text-xs text-indigo-600 hover:underline dark:text-indigo-400"
+              >
+                <RefreshCw className="h-3 w-3" /> Tentar novamente
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              Nenhum treino encontrado na planilha.
+            </p>
           )}
 
           {actionError && (

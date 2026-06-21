@@ -95,9 +95,16 @@ export interface Session {
   tabName: string;
   /** Number of the cycle week this session belongs to — copied from the active CycleWeek at creation time. */
   weekNumber: number;
-  status: 'in_progress' | 'completed' | 'skipped';
+  /**
+   * 'pending'     — pre-created when the week starts, not opened yet.
+   * 'in_progress' — opened by the student (resumable for 4h, see SESSION_OPEN_TTL_MS).
+   * 'completed'   — finished.
+   * 'skipped'     — explicitly skipped for the week.
+   */
+  status: 'pending' | 'in_progress' | 'completed' | 'skipped';
   date: Timestamp;
-  startedAt: Timestamp;
+  /** Set when the session is first opened (pending → in_progress); absent while still pending. */
+  startedAt?: Timestamp;
   finishedAt?: Timestamp;
   skippedAt?: Timestamp;
   preWorkout?: {

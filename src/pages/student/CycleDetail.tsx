@@ -146,6 +146,11 @@ export function CycleDetail() {
     );
   };
 
+  // Pending sessions are pre-created when a week starts and shown in the week
+  // panel above with Iniciar/Pular actions — the history list only shows
+  // sessions the student has actually engaged with (started, finished, skipped).
+  const historySessions = sessions.filter((s) => s.status !== 'pending');
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -192,7 +197,7 @@ export function CycleDetail() {
         <div className="flex justify-center py-12">
           <div className="h-7 w-7 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
         </div>
-      ) : sessions.length === 0 ? (
+      ) : historySessions.length === 0 ? (
         <div className="rounded-2xl border-2 border-dashed border-slate-200 px-4 py-12 text-center dark:border-slate-700">
           <div className="mb-3 text-4xl">🎬</div>
           <h2 className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -211,7 +216,7 @@ export function CycleDetail() {
             <p className="mb-2 text-xs text-red-600 dark:text-red-400">{deleteError}</p>
           )}
           <ul className="flex flex-col gap-3">
-            {sessions.map((s) => (
+            {historySessions.map((s) => (
               <li key={s.id} className="relative">
                 <div
                   role="button"
