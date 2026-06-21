@@ -101,6 +101,9 @@ export interface Session {
   studentUid: string;
   workspaceId: string;
   tabName: string;
+  /** Position of this tab in the spreadsheet at week-start time — used to order
+   *  the week's sessions stably without waiting for a live Sheets fetch. */
+  order?: number;
   /** Number of the cycle week this session belongs to — copied from the active CycleWeek at creation time. */
   weekNumber: number;
   /**

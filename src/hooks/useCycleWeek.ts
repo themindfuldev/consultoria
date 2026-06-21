@@ -110,6 +110,21 @@ export function useCycleWeek(cycle: Cycle | null) {
     );
   }, [currentUser, cycleId]);
 
+  // ── Backfill `order` on legacy sessions ─────────────────────────────────────
+  // Sessions created before the `order` field existed would otherwise reshuffle
+  // each time the slower live Sheets fetch lands. Stamp them once (no-ops as
+  // soon as every session has an order), using the current sheet position.
+
+  useEffect(() => {
+    const week = weeks[0];
+    if (!week || sheetTabs.length === 0) return;
+    for (const s of sessions) {
+      if (s.weekNumber !== week.weekNumber || typeof s.order === 'number') continue;
+      const idx = sheetTabs.indexOf(s.tabName);
+      if (idx >= 0) updateDoc(doc(db, 'sessions', s.id), { order: idx }).catch(() => {/* best-effort */});
+    }
+  }, [sheetTabs, sessions, weeks]);
+
   // ── Derived state ────────────────────────────────────────────────────────────
 
   const currentWeek = weeks[0] ?? null;
@@ -126,18 +141,28 @@ export function useCycleWeek(cycle: Cycle | null) {
 
   const sessionByTab = new Map(sessionsThisWeek.map((s) => [s.tabName, s] as const));
 
-  // Current-week rows are driven by the sessions persisted for this week,
-  // ordered to match the spreadsheet's tab order when available — so a transient
-  // Sheets load error never hides the week's already-saved sessions.
-  const orderedTabs: string[] = [];
-  const seenTabs = new Set<string>();
-  for (const tab of [...sheetTabs, ...sessionsThisWeek.map((s) => s.tabName)]) {
-    if (!seenTabs.has(tab)) { seenTabs.add(tab); orderedTabs.push(tab); }
-  }
-  const rows: TabSessionRow[] = orderedTabs.map((tab) => ({
-    tab,
-    session: sessionByTab.get(tab) ?? null,
-  }));
+  // Stable order index for a session: prefer the `order` baked in at creation
+  // (so rows don't reshuffle when the slower live Sheets fetch arrives); fall
+  // back to the current sheet position for legacy sessions created before that.
+  const tabOrder = (tabName: string): number => {
+    const i = sheetTabs.indexOf(tabName);
+    return i >= 0 ? i : Number.MAX_SAFE_INTEGER;
+  };
+  const sessionOrder = (s: Session): number =>
+    typeof s.order === 'number' ? s.order : tabOrder(s.tabName);
+
+  // Current-week rows are driven by the sessions persisted for this week, sorted
+  // by their stable order. Any sheet tabs that don't have a session yet (new
+  // tabs) are appended at the end.
+  const sortedThisWeek = [...sessionsThisWeek].sort((a, b) => {
+    const d = sessionOrder(a) - sessionOrder(b);
+    return d !== 0 ? d : a.tabName.localeCompare(b.tabName);
+  });
+  const tabsWithSession = new Set(sessionsThisWeek.map((s) => s.tabName));
+  const rows: TabSessionRow[] = [
+    ...sortedThisWeek.map((s) => ({ tab: s.tabName, session: s })),
+    ...sheetTabs.filter((t) => !tabsWithSession.has(t)).map((t) => ({ tab: t, session: null })),
+  ];
 
   // Past weeks (everything below the latest) shown as read-only accordions, each
   // built from that week's own session docs (the live sheet may have changed).
@@ -145,7 +170,10 @@ export function useCycleWeek(cycle: Cycle | null) {
     week: w,
     rows: sessions
       .filter((s) => s.weekNumber === w.weekNumber)
-      .sort((a, b) => a.tabName.localeCompare(b.tabName))
+      .sort((a, b) => {
+        const d = (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER);
+        return d !== 0 ? d : a.tabName.localeCompare(b.tabName);
+      })
       .map((s) => ({ tab: s.tabName, session: s })),
   }));
 
@@ -196,7 +224,7 @@ export function useCycleWeek(cycle: Cycle | null) {
       // student sees the full week's plan with Abrir/Pular actions right away.
       const today = Timestamp.fromDate(new Date(`${todayStr()}T00:00:00`));
       await Promise.all(
-        tabs.map((tab) => {
+        tabs.map((tab, index) => {
           const sessionRef = doc(collection(db, 'sessions'));
           return setDoc(sessionRef, {
             id: sessionRef.id,
@@ -204,6 +232,7 @@ export function useCycleWeek(cycle: Cycle | null) {
             studentUid: currentUser.uid,
             workspaceId: cycle.workspaceId,
             tabName: tab,
+            order: index,
             weekNumber,
             status: 'pending',
             date: today,
@@ -263,6 +292,7 @@ export function useCycleWeek(cycle: Cycle | null) {
         studentUid: currentUser.uid,
         workspaceId: cycle.workspaceId,
         tabName,
+        order: tabOrder(tabName),
         weekNumber: currentWeek.weekNumber,
         status: 'pending',
         date: Timestamp.fromDate(new Date(`${todayStr()}T00:00:00`)),
@@ -326,6 +356,7 @@ export function useCycleWeek(cycle: Cycle | null) {
           studentUid: currentUser.uid,
           workspaceId: cycle.workspaceId,
           tabName,
+          order: tabOrder(tabName),
           weekNumber: currentWeek.weekNumber,
           status: 'skipped',
           date: Timestamp.fromDate(new Date(`${todayStr()}T00:00:00`)),
