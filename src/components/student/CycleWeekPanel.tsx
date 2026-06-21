@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Timestamp } from 'firebase/firestore';
 import {
   CheckCircle2,
   ChevronDown,
@@ -32,17 +33,23 @@ const STATUS_META: Record<SessionStatus, { label: string; dot: string; text: str
   completed:   { label: 'Concluído',    dot: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' },
 };
 
-function StatusCell({ status }: { status: SessionStatus }) {
+function StatusCell({ session }: { session: Session | null }) {
+  const status: SessionStatus = session?.status ?? 'pending';
   const meta = STATUS_META[status];
+  let label = meta.label;
+  if (status === 'completed' && session?.finishedAt instanceof Timestamp) {
+    const d = session.finishedAt.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    label = `Concluído em ${d}`;
+  }
   return (
-    <span className={`flex w-[104px] flex-shrink-0 items-center gap-1.5 text-[11px] font-semibold ${meta.text}`}>
+    <span className={`flex items-center gap-1.5 text-[11px] font-semibold ${meta.text}`}>
       <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${meta.dot}`} />
-      {meta.label}
+      <span className="truncate">{label}</span>
     </span>
   );
 }
 
-// ── One week's session rows (table-like) ──────────────────────────────────────
+// ── One week's session rows (table) ───────────────────────────────────────────
 
 function SessionRows({
   rows,
@@ -69,25 +76,25 @@ function SessionRows({
         return (
           <li
             key={row.tab}
-            className="flex items-center gap-2 rounded-xl bg-white/50 px-2.5 py-2 dark:bg-slate-800/40"
+            className="grid grid-cols-[1.25rem_minmax(0,1fr)_8rem_10rem] items-center gap-2 rounded-xl bg-white/50 px-2.5 py-2 dark:bg-slate-800/40"
           >
             <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-[11px] font-bold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
               {idx + 1}
             </span>
-            <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800 dark:text-slate-100">
+
+            {/* Tapping the name opens the session, just like "Abrir". */}
+            <button
+              onClick={() => onOpen(row)}
+              disabled={busy}
+              className="min-w-0 truncate text-left text-sm font-medium text-slate-800 hover:underline disabled:opacity-60 dark:text-slate-100"
+            >
               {row.tab}
-            </span>
+            </button>
 
-            <StatusCell status={status} />
+            <StatusCell session={row.session} />
 
-            <div className="flex flex-shrink-0 gap-1.5">
-              <button
-                onClick={() => onOpen(row)}
-                disabled={busy}
-                className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-60"
-              >
-                {busy ? '…' : 'Abrir'}
-              </button>
+            {/* Actions — "Abrir" is always last so it stays right-aligned. */}
+            <div className="flex items-center justify-end gap-1.5">
               {canSkip && (
                 <button
                   onClick={() => onSkip(row.tab)}
@@ -107,6 +114,13 @@ function SessionRows({
                   Despular
                 </button>
               )}
+              <button
+                onClick={() => onOpen(row)}
+                disabled={busy}
+                className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-60"
+              >
+                {busy ? '…' : 'Abrir'}
+              </button>
             </div>
           </li>
         );

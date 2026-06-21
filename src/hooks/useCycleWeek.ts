@@ -286,7 +286,8 @@ export function useCycleWeek(cycle: Cycle | null) {
     setPendingAction({ tab: session.tabName, kind: 'unskip' });
     try {
       await updateDoc(doc(db, 'sessions', session.id), {
-        status: 'pending',
+        // Return to where it was before being skipped.
+        status: session.preWorkout ? 'in_progress' : 'pending',
         skippedAt: deleteField(),
       });
     } catch {

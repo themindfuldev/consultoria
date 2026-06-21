@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -21,6 +22,7 @@ import {
   Lock,
   MessageSquare,
   PlusCircle,
+  RotateCcw,
   SkipForward,
   Upload,
   Video,
@@ -123,6 +125,7 @@ export function SessionDetail() {
   const [preSubmitting, setPreSubmitting] = useState(false);
   const [preError, setPreError] = useState('');
   const [skipping, setSkipping] = useState(false);
+  const [unskipping, setUnskipping] = useState(false);
 
   // Per-exercise entries (Observações + RPE), debounced-autosaved
   const [exerciseEntries, setExerciseEntries] = useState<Record<string, ExerciseEntry>>({});
@@ -149,6 +152,11 @@ export function SessionDetail() {
     !session?.preWorkout ? 'pre'
     : session.status === 'completed' ? 'done'
     : 'training';
+
+  // A skipped session opens read-only (Despular to revert) regardless of how far
+  // it had progressed before being skipped.
+  const isSkipped = session?.status === 'skipped';
+  const readOnly = weekConcluded || isSkipped;
 
   // ── Load cycle + session ────────────────────────────────────────────────────
 
@@ -309,6 +317,28 @@ export function SessionDetail() {
     } catch {
       setPreError('Não foi possível pular o treino. Tente novamente.');
       setSkipping(false);
+    }
+  };
+
+  // ── Un-skip session (revert a skipped session back to "Não iniciado") ───────
+
+  const handleUnskipSession = async () => {
+    if (!session) return;
+    setPreError('');
+    setUnskipping(true);
+    // Revert to where it was before being skipped: a session that had already
+    // started (pre-workout filled) returns to in_progress; otherwise pending.
+    const revertStatus = session.preWorkout ? 'in_progress' : 'pending';
+    try {
+      await updateDoc(doc(db, 'sessions', session.id), {
+        status: revertStatus,
+        skippedAt: deleteField(),
+      });
+      setSession((prev) => (prev ? { ...prev, status: revertStatus } : prev));
+    } catch {
+      setPreError('Não foi possível desfazer. Tente novamente.');
+    } finally {
+      setUnskipping(false);
     }
   };
 
@@ -610,7 +640,7 @@ export function SessionDetail() {
             // when the week is concluded, so the student can review what they
             // filled in.
             entries={phase === 'pre' ? undefined : exerciseEntries}
-            onEntryChange={phase === 'training' && !weekConcluded ? handleEntryChange : undefined}
+            onEntryChange={phase === 'training' && !readOnly ? handleEntryChange : undefined}
           />
         ) : !parsedTabLoading ? (
           <p className="text-xs text-slate-400 dark:text-slate-500 px-1">
@@ -619,8 +649,30 @@ export function SessionDetail() {
         ) : null}
       </div>
 
+      {/* ── Phase A0: skipped — read-only until un-skipped ───────────────── */}
+      {isSkipped && !weekConcluded && (
+        <div className="glass-premium mb-5 rounded-2xl p-4">
+          <div className="mb-2 flex items-center gap-2 text-sm font-bold text-amber-600 dark:text-amber-400">
+            <SkipForward className="h-4 w-4" />
+            Treino pulado
+          </div>
+          <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+            Este treino foi pulado. Despule para preencher as respostas e começar.
+          </p>
+          {preError && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{preError}</p>}
+          <button
+            onClick={handleUnskipSession}
+            disabled={unskipping}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RotateCcw className="h-4 w-4" />
+            {unskipping ? 'Despulando…' : 'Despular'}
+          </button>
+        </div>
+      )}
+
       {/* ── Phase A: pre-workout form ────────────────────────────────────── */}
-      {phase === 'pre' && !weekConcluded && (
+      {phase === 'pre' && !readOnly && (
         <div className="glass-premium mb-5 rounded-2xl p-4">
           <p className="mb-3 text-sm font-bold text-slate-900 dark:text-white">
             Preencha abaixo (INÍCIO DO TREINO)
@@ -667,7 +719,7 @@ export function SessionDetail() {
       )}
 
       {/* ── Phase B: training in progress ────────────────────────────────── */}
-      {phase === 'training' && !weekConcluded && (
+      {phase === 'training' && !readOnly && (
         <div className="mb-5 flex flex-col gap-3">
           <button
             onClick={handleSaveOffline}
@@ -798,8 +850,8 @@ export function SessionDetail() {
             </ul>
           )}
 
-          {/* Actions (hidden once the week is concluded — read-only) */}
-          {!weekConcluded && (
+          {/* Actions (hidden when read-only — concluded week or skipped) */}
+          {!readOnly && (
             <div className="flex flex-col gap-3">
               {/* Hidden file input */}
               <input
