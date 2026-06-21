@@ -11,10 +11,17 @@ export interface AuthContextValue {
   logOut: () => Promise<void>;
   /**
    * Returns a valid Google OAuth access token for Sheets/Drive API calls.
-   * Uses the cached token when still valid; otherwise performs a silent GIS
-   * token refresh (no popup as long as the user's Google session is active).
+   * Uses the cached token when still valid; otherwise performs a GIS token
+   * refresh, showing Google's authorization UI only when one is needed.
+   * Concurrent callers share a single in-flight request.
    */
   getAccessToken: () => Promise<string>;
+  /**
+   * Synchronously reports whether a non-expired Google access token is cached.
+   * Lets a page decide, on open, whether it needs to proactively re-authorize
+   * (see `useGoogleTokenWarmup`) instead of waiting for a data call to fail.
+   */
+  isGoogleTokenValid: () => boolean;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

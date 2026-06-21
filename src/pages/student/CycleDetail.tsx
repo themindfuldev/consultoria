@@ -22,6 +22,7 @@ import {
 import { db } from '../../firebase';
 import { Layout } from '../../components/Layout';
 import { useCycleWeek } from '../../hooks/useCycleWeek';
+import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
 import { CycleWeekPanel } from '../../components/student/CycleWeekPanel';
 import type { Cycle, Session } from '../../types';
 
@@ -46,6 +47,9 @@ function extractSheetId(url: string): string | null {
 export function CycleDetail() {
   const { cycleId } = useParams<{ cycleId: string }>();
   const navigate = useNavigate();
+
+  // Re-authorize Google on open if the (daily-expiring) token is stale.
+  useGoogleTokenWarmup();
 
   const [cycle, setCycle] = useState<Cycle | null>(null);
 

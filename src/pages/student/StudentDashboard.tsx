@@ -4,6 +4,7 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { ArchiveRestore, PlusCircle } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
+import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
 import { Layout } from '../../components/Layout';
 import { CycleCard } from '../../components/student/CycleCard';
 import type { Cycle, StudentWorkspace } from '../../types';
@@ -11,6 +12,10 @@ import type { Cycle, StudentWorkspace } from '../../types';
 export function StudentDashboard() {
   const { currentUser, userProfile } = useAuth();
   const navigate = useNavigate();
+
+  // On open, re-authorize Google up front if the token has expired (daily),
+  // so the sheet loads don't fail and force a manual "Tentar novamente".
+  useGoogleTokenWarmup();
 
   // Connection status guard
   const [connectionStatus, setConnectionStatus] = useState<'loading' | 'none' | 'pending' | 'active'>('loading');
