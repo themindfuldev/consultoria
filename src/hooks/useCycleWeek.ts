@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   collection,
+  deleteField,
   doc,
   onSnapshot,
   orderBy,
@@ -13,23 +14,11 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './useAuth';
-import { useActiveSession } from './useActiveSession';
 import { getTrainingTabs } from '../services/sheetsService';
-import { notifyTrainer } from '../services/notifyService';
-import { isSessionOpen } from '../utils/session';
 import type { Cycle, CycleWeek, Session } from '../types';
 
 function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-/** Removes every cached offline-export snapshot — starting a new session
- * invalidates whatever was cached for offline use. */
-function clearOfflineSnapshots() {
-  for (let i = localStorage.length - 1; i >= 0; i--) {
-    const key = localStorage.key(i);
-    if (key?.startsWith('offline_session_')) localStorage.removeItem(key);
-  }
 }
 
 export interface TabSessionRow {
@@ -37,17 +26,9 @@ export interface TabSessionRow {
   session: Session | null;
 }
 
-export interface StartSessionResult {
-  cycleId: string;
-  sessionId: string;
-  /** True if this points at a different session than the one just requested — the
-   * single-active-session guard redirected the student to their existing workout. */
-  redirected: boolean;
-}
-
 interface PendingAction {
   tab: string;
-  kind: 'start' | 'skip';
+  kind: 'open' | 'skip' | 'unskip';
 }
 
 /**
@@ -58,7 +39,6 @@ interface PendingAction {
  */
 export function useCycleWeek(cycle: Cycle | null) {
   const { currentUser, getAccessToken } = useAuth();
-  const activeSession = useActiveSession();
 
   const cycleId = cycle?.id ?? null;
 
@@ -220,53 +200,25 @@ export function useCycleWeek(cycle: Cycle | null) {
     }
   };
 
-  // ── Start (or continue) a session for a given tab ───────────────────────────
+  // ── Open a session for a given tab (without starting it) ────────────────────
 
-  const startSession = async (tabName: string): Promise<StartSessionResult | null> => {
-    if (!currentUser || !cycle || !currentWeek || pendingAction) return null;
+  /**
+   * Returns the id of the session for `tabName` so the caller can navigate to
+   * its page — *without* marking it started. Opening just views the session;
+   * it's only marked `in_progress` (and the trainer notified) once the student
+   * fills the pre-workout questions and taps "Começar treino" on the session
+   * page. Creates a pending session on the fly if one doesn't exist yet (legacy
+   * weeks, or a tab added to the sheet after the week started).
+   */
+  const openSession = async (tabName: string): Promise<string | null> => {
+    if (!currentUser || !cycle || !currentWeek) return null;
 
     const existing = sessionByTab.get(tabName);
-
-    // Resuming a session that is already open elsewhere — just navigate into it,
-    // no write needed.
-    if (existing && existing.status === 'in_progress' && isSessionOpen(existing)) {
-      return { cycleId: cycle.id, sessionId: existing.id, redirected: false };
-    }
-
-    // One active session at a time, controlled in the browser — redirect
-    // straight into the existing open one instead of starting a second.
-    if (activeSession && activeSession.id !== existing?.id) {
-      setActionError('Você já tem um treino em andamento — abrindo…');
-      await new Promise((r) => setTimeout(r, 900));
-      return { cycleId: activeSession.cycleId, sessionId: activeSession.id, redirected: true };
-    }
+    if (existing) return existing.id;
 
     setActionError('');
-    setPendingAction({ tab: tabName, kind: 'start' });
+    setPendingAction({ tab: tabName, kind: 'open' });
     try {
-      // Opening a session invalidates any cached offline snapshot.
-      clearOfflineSnapshots();
-      const today = Timestamp.fromDate(new Date(`${todayStr()}T00:00:00`));
-
-      if (existing) {
-        // Pre-created (pending) — or an expired in-progress session being
-        // reopened. Open it now: this (re)starts the 4h window from `startedAt`.
-        await updateDoc(doc(db, 'sessions', existing.id), {
-          status: 'in_progress',
-          date: today,
-          startedAt: serverTimestamp(),
-        });
-        if (existing.status === 'pending') {
-          notifyTrainer(
-            cycle.workspaceId,
-            `🏋️ Comecei o treino *${tabName}* (Semana ${currentWeek.weekNumber}).`,
-          ).catch(() => {/* notification is a convenience, never a blocker */});
-        }
-        return { cycleId: cycle.id, sessionId: existing.id, redirected: false };
-      }
-
-      // No session for this tab yet (e.g. a tab added to the sheet after the
-      // week started) — create one straight into in_progress.
       const sessionRef = doc(collection(db, 'sessions'));
       await setDoc(sessionRef, {
         id: sessionRef.id,
@@ -275,22 +227,33 @@ export function useCycleWeek(cycle: Cycle | null) {
         workspaceId: cycle.workspaceId,
         tabName,
         weekNumber: currentWeek.weekNumber,
-        status: 'in_progress',
-        date: today,
-        startedAt: serverTimestamp(),
+        status: 'pending',
+        date: Timestamp.fromDate(new Date(`${todayStr()}T00:00:00`)),
         hasVideos: false,
         feedbackStatus: 'none',
       });
-
-      notifyTrainer(
-        cycle.workspaceId,
-        `🏋️ Comecei o treino *${tabName}* (Semana ${currentWeek.weekNumber}).`,
-      ).catch(() => {/* notification is a convenience, never a blocker */});
-
-      return { cycleId: cycle.id, sessionId: sessionRef.id, redirected: false };
+      return sessionRef.id;
     } catch {
-      setActionError('Não foi possível iniciar a sessão. Tente novamente.');
+      setActionError('Não foi possível abrir a sessão. Tente novamente.');
       return null;
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  // ── Un-skip a session (revert a skipped tab back to pending) ─────────────────
+
+  const unskipSession = async (session: Session): Promise<void> => {
+    if (pendingAction) return;
+    setActionError('');
+    setPendingAction({ tab: session.tabName, kind: 'unskip' });
+    try {
+      await updateDoc(doc(db, 'sessions', session.id), {
+        status: 'pending',
+        skippedAt: deleteField(),
+      });
+    } catch {
+      setActionError('Não foi possível desfazer. Tente novamente.');
     } finally {
       setPendingAction(null);
     }
@@ -362,7 +325,8 @@ export function useCycleWeek(cycle: Cycle | null) {
 
     pendingAction,
     actionError,
-    startSession,
+    openSession,
     skipSession,
+    unskipSession,
   };
 }

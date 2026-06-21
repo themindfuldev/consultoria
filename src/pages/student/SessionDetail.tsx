@@ -18,6 +18,7 @@ import {
   Download,
   MessageSquare,
   PlusCircle,
+  SkipForward,
   Upload,
   Video,
 } from 'lucide-react';
@@ -42,6 +43,7 @@ import {
   writeCells,
 } from '../../services/sheetsService';
 import { notifyTrainer } from '../../services/notifyService';
+import { clearOfflineSnapshots } from '../../utils/session';
 import type { Cycle, ParsedSheetTab, Session, SessionVideo } from '../../types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -114,6 +116,7 @@ export function SessionDetail() {
   const [preFeeling, setPreFeeling] = useState<typeof PRE_FEELING_OPTIONS[number] | null>(null);
   const [preSubmitting, setPreSubmitting] = useState(false);
   const [preError, setPreError] = useState('');
+  const [skipping, setSkipping] = useState(false);
 
   // Per-exercise entries (Observações + RPE), debounced-autosaved
   const [exerciseEntries, setExerciseEntries] = useState<Record<string, ExerciseEntry>>({});
@@ -225,8 +228,23 @@ export function SessionDetail() {
     setPreSubmitting(true);
     const preWorkout = { energyLevel: preEnergy, feeling: preFeeling };
     try {
-      await updateDoc(doc(db, 'sessions', session.id), { preWorkout });
-      setSession((prev) => (prev ? { ...prev, preWorkout } : prev));
+      // Filling the pre-workout questions is what actually *starts* the session:
+      // only now do we mark it in_progress, stamp the start time, and notify the
+      // trainer — opening the page beforehand ("Abrir") does none of this.
+      clearOfflineSnapshots();
+      await updateDoc(doc(db, 'sessions', session.id), {
+        preWorkout,
+        status: 'in_progress',
+        date: Timestamp.fromDate(new Date(`${todayStr()}T00:00:00`)),
+        startedAt: serverTimestamp(),
+      });
+      setSession((prev) => (prev ? { ...prev, preWorkout, status: 'in_progress' } : prev));
+
+      notifyTrainer(
+        cycle.workspaceId,
+        `🏋️ Comecei o treino *${session.tabName}*` +
+          (session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.'),
+      ).catch(() => {/* notification is a convenience, never a blocker */});
 
       // Best-effort write-back into the trainer's sheet — never blocks the flow.
       if (parsedTab) {
@@ -247,6 +265,26 @@ export function SessionDetail() {
       setPreError('Não foi possível salvar suas respostas. Tente novamente.');
     } finally {
       setPreSubmitting(false);
+    }
+  };
+
+  // ── Skip session (from the pre-workout screen, before starting) ─────────────
+
+  const handleSkipSession = async () => {
+    if (!session) return;
+    const confirmed = window.confirm(`Pular o treino "${session.tabName}"?`);
+    if (!confirmed) return;
+    setPreError('');
+    setSkipping(true);
+    try {
+      await updateDoc(doc(db, 'sessions', session.id), {
+        status: 'skipped',
+        skippedAt: serverTimestamp(),
+      });
+      navigate(`/student/cycles/${cycleId}`);
+    } catch {
+      setPreError('Não foi possível pular o treino. Tente novamente.');
+      setSkipping(false);
     }
   };
 
@@ -576,10 +614,19 @@ export function SessionDetail() {
 
           <button
             onClick={handleSubmitPreWorkout}
-            disabled={!preEnergy || !preFeeling || preSubmitting}
+            disabled={!preEnergy || !preFeeling || preSubmitting || skipping}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {preSubmitting ? 'Salvando…' : 'Começar treino'}
+          </button>
+
+          <button
+            onClick={handleSkipSession}
+            disabled={preSubmitting || skipping}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-600 transition-all hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+          >
+            <SkipForward className="h-4 w-4" />
+            {skipping ? 'Pulando…' : 'Pular treino'}
           </button>
         </div>
       )}

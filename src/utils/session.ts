@@ -23,3 +23,14 @@ export function isSessionOpen(session: Session, now: number = Date.now()): boole
   if (!startedMs) return true; // just opened — server time not resolved yet
   return now - startedMs < SESSION_OPEN_TTL_MS;
 }
+
+/**
+ * Removes every cached offline-export snapshot from localStorage. Starting a
+ * new workout invalidates whatever was cached for offline use.
+ */
+export function clearOfflineSnapshots(): void {
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (key?.startsWith('offline_session_')) localStorage.removeItem(key);
+  }
+}

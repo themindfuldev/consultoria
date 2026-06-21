@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import type { ParsedSheetTab, PlannedExercise } from '../../types';
 
 // ── Display helpers ───────────────────────────────────────────────────────────
@@ -124,20 +126,93 @@ function ExerciseEntryFields({
         placeholder="Observações…"
         className="w-full flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
       />
+      <RpeSelect
+        value={entry.rpe}
+        onChange={(rpe) => onChange({ ...entry, rpe })}
+      />
+    </div>
+  );
+}
+
+// ── RPE select (color-coded 1–10 dropdown, still type-able) ───────────────────
+
+/** Background/text classes for an RPE value, dark-mode friendly:
+ *  1–3 dark green · 4–5 light green · 6–7 orange · 8–10 red. */
+function rpeChipClasses(n: number): string {
+  if (n <= 3) return 'bg-emerald-700 text-white';
+  if (n <= 5) return 'bg-emerald-400 text-emerald-950';
+  if (n <= 7) return 'bg-orange-500 text-white';
+  return 'bg-red-600 text-white';
+}
+
+const RPE_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+
+function RpeSelect({
+  value,
+  onChange,
+}: {
+  value: number | '';
+  onChange: (rpe: number | '') => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close the dropdown when clicking/tapping outside it.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [open]);
+
+  const colored = typeof value === 'number';
+  const inputClasses = colored
+    ? `border-transparent font-bold ${rpeChipClasses(value)} placeholder-white/70`
+    : 'border-slate-200 bg-white text-slate-900 placeholder-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500';
+
+  return (
+    <div ref={ref} className="relative w-full sm:w-20">
       <input
         type="number"
         inputMode="numeric"
         min={1}
         max={10}
-        value={entry.rpe}
+        value={value}
+        onFocus={() => setOpen(true)}
         onChange={(e) => {
           const raw = e.target.value;
           const n = raw === '' ? '' : Math.min(10, Math.max(1, parseInt(raw) || 1));
-          onChange({ ...entry, rpe: n });
+          onChange(n);
         }}
         placeholder="RPE"
-        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 sm:w-20"
+        className={`w-full rounded-lg border px-3 py-2 pr-7 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/40 ${inputClasses}`}
       />
+      <ChevronDown
+        className={`pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${colored ? 'text-white/80' : 'text-slate-400'}`}
+      />
+
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1 grid w-max grid-cols-5 gap-1.5 rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+          {RPE_VALUES.map((n) => (
+            <button
+              key={n}
+              type="button"
+              // pointerdown (not click) so the input doesn't blur and re-close
+              // the menu before the selection registers.
+              onPointerDown={(e) => {
+                e.preventDefault();
+                onChange(n);
+                setOpen(false);
+              }}
+              className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-transform hover:scale-110 ${rpeChipClasses(n)} ${value === n ? 'ring-2 ring-indigo-500 ring-offset-1 dark:ring-offset-slate-800' : ''}`}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, Lock, Play, RefreshCw, SkipForward } from 'lucide-react';
+import { CheckCircle2, Lock, Play, RefreshCw, RotateCcw, SkipForward } from 'lucide-react';
 import type { useCycleWeek } from '../../hooks/useCycleWeek';
 
 interface CycleWeekPanelProps {
@@ -31,13 +31,16 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
     rows,
     pendingAction,
     actionError,
-    startSession,
+    openSession,
     skipSession,
+    unskipSession,
   } = cycleWeek;
 
-  const handleStart = async (tab: string) => {
-    const result = await startSession(tab);
-    if (result) navigate(`/student/cycles/${result.cycleId}/sessions/${result.sessionId}`);
+  const handleOpen = async (tab: string) => {
+    const sessionId = await openSession(tab);
+    if (sessionId && currentWeek) {
+      navigate(`/student/cycles/${currentWeek.cycleId}/sessions/${sessionId}`);
+    }
   };
 
   return (
@@ -80,8 +83,9 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
           {rows.length > 0 ? (
             <ol className="flex flex-col gap-1.5">
               {rows.map((row, idx) => {
-                const isPendingStart = pendingAction?.tab === row.tab && pendingAction.kind === 'start';
+                const isPendingOpen = pendingAction?.tab === row.tab && pendingAction.kind === 'open';
                 const isPendingSkip = pendingAction?.tab === row.tab && pendingAction.kind === 'skip';
+                const isPendingUnskip = pendingAction?.tab === row.tab && pendingAction.kind === 'unskip';
                 return (
                   <li
                     key={row.tab}
@@ -100,20 +104,30 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
                       </span>
                     )}
                     {row.session?.status === 'skipped' && (
-                      <span className="flex flex-shrink-0 items-center gap-1 text-xs font-semibold text-slate-400 dark:text-slate-500">
-                        <SkipForward className="h-3.5 w-3.5" /> Pulado
-                      </span>
+                      <div className="flex flex-shrink-0 items-center gap-2">
+                        <span className="flex items-center gap-1 text-xs font-semibold text-slate-400 dark:text-slate-500">
+                          <SkipForward className="h-3.5 w-3.5" /> Pulado
+                        </span>
+                        <button
+                          onClick={() => unskipSession(row.session!)}
+                          disabled={!!pendingAction}
+                          className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                        >
+                          <RotateCcw className="h-3 w-3" />
+                          {isPendingUnskip ? '…' : 'Despular'}
+                        </button>
+                      </div>
                     )}
                     {(!row.session
                       || row.session.status === 'pending'
                       || row.session.status === 'in_progress') && (
                       <div className="flex flex-shrink-0 gap-1.5">
                         <button
-                          onClick={() => handleStart(row.tab)}
+                          onClick={() => handleOpen(row.tab)}
                           disabled={!!pendingAction}
                           className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-60"
                         >
-                          {isPendingStart ? '…' : row.session?.status === 'in_progress' ? 'Continuar' : 'Iniciar'}
+                          {isPendingOpen ? '…' : 'Abrir'}
                         </button>
                         <button
                           onClick={() => skipSession(row.tab)}
