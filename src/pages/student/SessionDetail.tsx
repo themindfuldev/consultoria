@@ -524,7 +524,7 @@ export function SessionDetail() {
 
   if (loading && !session) {
     return (
-      <Layout title="Sessão">
+      <Layout title="Sessão" backTo={cycleId ? `/student/cycles/${cycleId}` : '/student'}>
         <div className="flex justify-center py-20">
           <div className="h-7 w-7 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
         </div>
@@ -533,7 +533,7 @@ export function SessionDetail() {
   }
 
   return (
-    <Layout title={session?.tabName ?? 'Sessão'}>
+    <Layout title={session?.tabName ?? 'Sessão'} backTo={cycleId ? `/student/cycles/${cycleId}` : '/student'}>
       {/* Session header */}
       <div className="mb-5">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
@@ -574,7 +574,9 @@ export function SessionDetail() {
         {parsedTab ? (
           <WorkoutPlan
             tab={parsedTab}
-            entries={phase === 'training' ? exerciseEntries : undefined}
+            // Editable while training; read-only (but still shown) once done so
+            // the student can review the Observações/RPE they filled in.
+            entries={phase === 'pre' ? undefined : exerciseEntries}
             onEntryChange={phase === 'training' ? handleEntryChange : undefined}
           />
         ) : !parsedTabLoading ? (

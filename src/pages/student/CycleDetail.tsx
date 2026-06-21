@@ -158,7 +158,7 @@ export function CycleDetail() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <Layout title={cycle?.title ?? 'Sessões'}>
+    <Layout title={cycle?.title ?? 'Sessões'} backTo="/student">
       {/* Header */}
       <div className="mb-5">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Dumbbell, LogOut, Moon, Sun } from 'lucide-react';
+import { ArrowLeft, Dumbbell, LogOut, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useActiveSession } from '../hooks/useActiveSession';
 import { useDarkMode } from '../hooks/useDarkMode';
@@ -10,6 +10,8 @@ interface LayoutProps {
   children: ReactNode;
   /** Optional page title rendered centred in the header. */
   title?: string;
+  /** When set, renders a back arrow in the header that navigates to this path. */
+  backTo?: string;
   /** Maximum content width. Defaults to "2xl" (672px). */
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
 }
@@ -22,7 +24,7 @@ const MAX_WIDTH_CLASSES: Record<NonNullable<LayoutProps['maxWidth']>, string> = 
   '2xl': 'max-w-2xl',
 };
 
-export function Layout({ children, title, maxWidth = '2xl' }: LayoutProps) {
+export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProps) {
   const { currentUser, userProfile, logOut } = useAuth();
   const { isDark, toggle } = useDarkMode();
   const navigate = useNavigate();
@@ -47,14 +49,25 @@ export function Layout({ children, title, maxWidth = '2xl' }: LayoutProps) {
       {/* ── Sticky top nav ─────────────────────────────────────────────────── */}
       <header className="glass sticky top-0 z-40 border-b border-slate-200 dark:border-slate-800">
         <div className={`mx-auto flex h-14 ${mw} items-center justify-between px-4`}>
-          {/* Logo / home link */}
-          <Link
-            to={homeHref}
-            className="flex items-center gap-1.5 text-base font-black text-slate-900 dark:text-white"
-          >
-            <span className="text-indigo-600 dark:text-indigo-400">⚡</span>
-            Consultoria
-          </Link>
+          {/* Back button + logo / home link */}
+          <div className="flex items-center gap-1">
+            {backTo && (
+              <button
+                onClick={() => navigate(backTo)}
+                aria-label="Voltar"
+                className="-ml-1.5 rounded-full p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+            )}
+            <Link
+              to={homeHref}
+              className="flex items-center gap-1.5 text-base font-black text-slate-900 dark:text-white"
+            >
+              <span className="text-indigo-600 dark:text-indigo-400">⚡</span>
+              Consultoria
+            </Link>
+          </div>
 
           {/* Centred page title */}
           {title && (

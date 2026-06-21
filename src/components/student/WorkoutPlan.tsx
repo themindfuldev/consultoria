@@ -91,12 +91,16 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                   ))}
                 </div>
 
-                {editable && (
+                {editable ? (
                   <ExerciseEntryFields
                     exerciseName={ex.exerciseName}
                     entry={entries?.[ex.exerciseName] ?? { observations: '', rpe: '' }}
                     onChange={(entry) => onEntryChange!(ex.exerciseName, entry)}
                   />
+                ) : (
+                  entries?.[ex.exerciseName] && (
+                    <ExerciseEntryReadOnly entry={entries[ex.exerciseName]} />
+                  )
                 )}
               </div>
             ))}
@@ -130,6 +134,28 @@ function ExerciseEntryFields({
         value={entry.rpe}
         onChange={(rpe) => onChange({ ...entry, rpe })}
       />
+    </div>
+  );
+}
+
+// ── Read-only entry summary (filled Observações + RPE, shown after finishing) ─
+
+function ExerciseEntryReadOnly({ entry }: { entry: ExerciseEntry }) {
+  const hasObs = entry.observations.trim() !== '';
+  const hasRpe = entry.rpe !== '' && entry.rpe !== 0;
+  if (!hasObs && !hasRpe) return null;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      {hasObs && (
+        <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200">
+          📝 {entry.observations}
+        </span>
+      )}
+      {hasRpe && (
+        <span className={`rounded-full px-2 py-0.5 font-bold ${rpeChipClasses(entry.rpe as number)}`}>
+          RPE {entry.rpe}
+        </span>
+      )}
     </div>
   );
 }
