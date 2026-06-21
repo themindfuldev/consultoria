@@ -242,7 +242,7 @@ export function SessionDetail() {
 
       notifyTrainer(
         cycle.workspaceId,
-        `🏋️ Comecei o treino *${session.tabName}*` +
+        `💪 Comecei o treino *${session.tabName}*` +
           (session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.'),
       ).catch(() => {/* notification is a convenience, never a blocker */});
 
@@ -359,7 +359,7 @@ export function SessionDetail() {
       // Notify trainer the workout is finished.
       notifyTrainer(
         cycle.workspaceId,
-        `🏁 Terminei o treino *${session.tabName}* de ${dateLabel}.`,
+        `✅ Terminei o treino *${session.tabName}* de ${dateLabel}.`,
       ).catch(() => {/* notification is a convenience, never a blocker */});
 
       // The offline snapshot is no longer useful once the session is done.
@@ -513,7 +513,7 @@ export function SessionDetail() {
   const handleNotify = () => {
     if (!session || !cycle) return;
     setNotifying(true);
-    const msg = `📹 Enviei ${videos.length} vídeo(s) do treino *${session.tabName}* de ${dateLabel}.\n` +
+    const msg = `🎥 Enviei ${videos.length} vídeo(s) do treino *${session.tabName}* de ${dateLabel}.\n` +
       `Aguardo seu feedback: ${window.location.origin}/trainer/sessions/${session.id}`;
     notifyTrainer(cycle.workspaceId, msg)
       .then(() => updateDoc(doc(db, 'sessions', session.id), { videosNotifiedAt: serverTimestamp() }))
