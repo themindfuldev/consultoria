@@ -83,6 +83,14 @@ export interface CycleWeek {
   cycleId: string;
   weekNumber: number;
   startedAt: Timestamp;
+  /**
+   * 'in_progress' once started; 'completed' once the student concludes it
+   * (after which its sessions are read-only). Absent on legacy docs → treated
+   * as 'in_progress'. A week that hasn't been started yet simply has no doc
+   * ("Não iniciada").
+   */
+  status?: 'in_progress' | 'completed';
+  completedAt?: Timestamp;
 }
 
 // ── Sessions ──────────────────────────────────────────────────────────────────

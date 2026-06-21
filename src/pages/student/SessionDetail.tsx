@@ -4,6 +4,8 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -16,6 +18,7 @@ import {
 import {
   CheckCircle2,
   Download,
+  Lock,
   MessageSquare,
   PlusCircle,
   SkipForward,
@@ -44,7 +47,7 @@ import {
 } from '../../services/sheetsService';
 import { notifyTrainer } from '../../services/notifyService';
 import { clearOfflineSnapshots } from '../../utils/session';
-import type { Cycle, ParsedSheetTab, Session, SessionVideo } from '../../types';
+import type { Cycle, CycleWeek, ParsedSheetTab, Session, SessionVideo } from '../../types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -91,6 +94,9 @@ export function SessionDetail() {
   const [session, setSession] = useState<Session | null>(null);
   const [videos, setVideos] = useState<SessionVideo[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Whether this session's week has been concluded → everything read-only.
+  const [weekConcluded, setWeekConcluded] = useState(false);
 
   // Parsed sheet data for this session's tab
   const [parsedTab, setParsedTab] = useState<ParsedSheetTab | null>(null);
@@ -156,6 +162,24 @@ export function SessionDetail() {
       if (s.exists()) setSession(s.data() as Session);
     });
   }, [cycleId, sessionId]);
+
+  // ── Is this session's week concluded? (locks the session read-only) ─────────
+
+  useEffect(() => {
+    if (!cycleId || !session?.weekNumber) return;
+    getDocs(
+      query(
+        collection(db, 'cycles', cycleId, 'weeks'),
+        where('weekNumber', '==', session.weekNumber),
+        limit(1),
+      ),
+    )
+      .then((snap) => {
+        const week = snap.docs[0]?.data() as CycleWeek | undefined;
+        setWeekConcluded((week?.status ?? 'in_progress') === 'completed');
+      })
+      .catch(() => {/* default: not concluded */});
+  }, [cycleId, session?.weekNumber]);
 
   // ── Load parsed sheet tab for this session ──────────────────────────────────
 
@@ -545,6 +569,14 @@ export function SessionDetail() {
         </p>
       </div>
 
+      {/* Read-only notice for sessions in a concluded week */}
+      {weekConcluded && (
+        <div className="mb-5 flex items-center gap-2 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+          <Lock className="h-4 w-4 flex-shrink-0" />
+          Semana concluída — esta sessão é somente leitura.
+        </div>
+      )}
+
       {/* Feedback available banner */}
       {session?.feedbackStatus === 'complete' && (
         <button
@@ -574,10 +606,11 @@ export function SessionDetail() {
         {parsedTab ? (
           <WorkoutPlan
             tab={parsedTab}
-            // Editable while training; read-only (but still shown) once done so
-            // the student can review the Observações/RPE they filled in.
+            // Editable while training; read-only (but still shown) once done or
+            // when the week is concluded, so the student can review what they
+            // filled in.
             entries={phase === 'pre' ? undefined : exerciseEntries}
-            onEntryChange={phase === 'training' ? handleEntryChange : undefined}
+            onEntryChange={phase === 'training' && !weekConcluded ? handleEntryChange : undefined}
           />
         ) : !parsedTabLoading ? (
           <p className="text-xs text-slate-400 dark:text-slate-500 px-1">
@@ -587,7 +620,7 @@ export function SessionDetail() {
       </div>
 
       {/* ── Phase A: pre-workout form ────────────────────────────────────── */}
-      {phase === 'pre' && (
+      {phase === 'pre' && !weekConcluded && (
         <div className="glass-premium mb-5 rounded-2xl p-4">
           <p className="mb-3 text-sm font-bold text-slate-900 dark:text-white">
             Preencha abaixo (INÍCIO DO TREINO)
@@ -634,7 +667,7 @@ export function SessionDetail() {
       )}
 
       {/* ── Phase B: training in progress ────────────────────────────────── */}
-      {phase === 'training' && (
+      {phase === 'training' && !weekConcluded && (
         <div className="mb-5 flex flex-col gap-3">
           <button
             onClick={handleSaveOffline}
@@ -765,37 +798,39 @@ export function SessionDetail() {
             </ul>
           )}
 
-          {/* Actions */}
-          <div className="flex flex-col gap-3">
-            {/* Hidden file input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="video/*"
-              capture="environment"
-              className="hidden"
-              onChange={handleFileSelected}
-            />
+          {/* Actions (hidden once the week is concluded — read-only) */}
+          {!weekConcluded && (
+            <div className="flex flex-col gap-3">
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleFileSelected}
+              />
 
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={!!uploadState && uploadState.phase !== 'done' && uploadState.phase !== 'error'}
-              className="flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-white py-3 text-sm font-semibold text-indigo-700 shadow-sm transition-all hover:bg-indigo-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-800 dark:bg-slate-800 dark:text-indigo-300 dark:hover:bg-slate-700"
-            >
-              <PlusCircle className="h-4 w-4" />
-              Adicionar vídeo
-            </button>
-
-            {videos.length > 0 && (
               <button
-                onClick={handleNotify}
-                disabled={notifying}
-                className="flex items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-green-700 active:scale-95 disabled:opacity-60"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!!uploadState && uploadState.phase !== 'done' && uploadState.phase !== 'error'}
+                className="flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-white py-3 text-sm font-semibold text-indigo-700 shadow-sm transition-all hover:bg-indigo-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-800 dark:bg-slate-800 dark:text-indigo-300 dark:hover:bg-slate-700"
               >
-                📱 Notificar treinador
+                <PlusCircle className="h-4 w-4" />
+                Adicionar vídeo
               </button>
-            )}
-          </div>
+
+              {videos.length > 0 && (
+                <button
+                  onClick={handleNotify}
+                  disabled={notifying}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-green-700 active:scale-95 disabled:opacity-60"
+                >
+                  📱 Notificar treinador
+                </button>
+              )}
+            </div>
+          )}
         </>
       )}
 
