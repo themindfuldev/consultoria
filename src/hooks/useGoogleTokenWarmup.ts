@@ -1,32 +1,44 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useAuth } from './useAuth';
 
 /**
- * Proactively re-authorizes Google when a student opens a page that needs
- * Sheets/Drive access.
+ * Keeps Google authorization fresh on student pages that need Sheets/Drive.
  *
- * The GIS access token only lives ~1h, so by the next day it's expired. Without
- * this, the page would fire a background data load, fail the silent refresh,
- * and leave the student to click "Tentar novamente" (the gesture that finally
- * lets Google's popup open). Here we instead detect the stale token on open and
- * kick off the authorization right away.
+ * The OAuth access token only lives ~1h, so it's commonly expired on a return
+ * visit. When that happens we must re-authorize — but browsers only let the
+ * Google popup open from a user gesture, so a gesture-less page load can't open
+ * it on its own (which is why the old flow left you to click "Tentar novamente").
  *
- * Note: browsers only allow the Google popup to open from a user gesture, so on
- * a hard page reload it may still be blocked — the retry action remains as a
- * fallback. Allowing pop-ups for this site makes the refresh fully automatic.
+ * Strategy:
+ *  1. Try immediately — succeeds with no popup when the token can be refreshed
+ *     silently (or when the browser happens to allow the popup).
+ *  2. If a popup is still needed, open it on the *first* interaction anywhere on
+ *     the page, so you never have to hunt for the retry link.
  *
- * Safe to call unconditionally; it no-ops for non-students and when a valid
- * token is already cached, and only fires once per mount.
+ * No-ops for non-students and whenever a valid token is already cached (e.g.
+ * right after sign-in, which now captures the token with the right scopes).
  */
 export function useGoogleTokenWarmup(): void {
   const { userProfile, getAccessToken, isGoogleTokenValid } = useAuth();
-  const triedRef = useRef(false);
 
   useEffect(() => {
     if (userProfile?.role !== 'student') return;
-    if (triedRef.current || isGoogleTokenValid()) return;
-    triedRef.current = true;
-    // Errors here are surfaced by the actual data calls (and their retry UI).
+    if (isGoogleTokenValid()) return;
+
+    // 1. Attempt right away (silent refresh, or popup if the browser allows it).
     getAccessToken().catch(() => {});
+
+    // 2. Fallback: the first user gesture provides what the popup needs.
+    const onFirstGesture = () => {
+      if (isGoogleTokenValid()) {
+        window.removeEventListener('pointerdown', onFirstGesture, true);
+        return;
+      }
+      getAccessToken()
+        .then(() => window.removeEventListener('pointerdown', onFirstGesture, true))
+        .catch(() => {/* keep listening so a later gesture can retry */});
+    };
+    window.addEventListener('pointerdown', onFirstGesture, true);
+    return () => window.removeEventListener('pointerdown', onFirstGesture, true);
   }, [userProfile, getAccessToken, isGoogleTokenValid]);
 }

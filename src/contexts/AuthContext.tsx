@@ -101,7 +101,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = useCallback(async () => {
     const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    // Request the Sheets/Drive/Docs scopes during the sign-in popup itself, so
+    // the consent is granted by the same user gesture. Otherwise the first page
+    // load has to open a *second* (gesture-less, browser-blocked) GIS popup to
+    // get these scopes — which is what forced the manual "Tentar novamente".
+    provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+    provider.addScope('https://www.googleapis.com/auth/drive.file');
+    provider.addScope('https://www.googleapis.com/auth/documents');
+
+    const result = await signInWithPopup(auth, provider);
+
+    // Cache the OAuth access token returned by the sign-in so the first
+    // Sheets/Drive call reuses it instead of triggering another popup.
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (credential?.accessToken) {
+      accessTokenRef.current = credential.accessToken;
+      // Google OAuth access tokens last ~1h; assume 55min to stay clear of expiry.
+      tokenExpiryRef.current = Date.now() + 55 * 60 * 1_000;
+    }
     // Auth state propagates via onAuthStateChanged — no manual state update needed.
   }, []);
 
