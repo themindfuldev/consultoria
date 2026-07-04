@@ -58,6 +58,13 @@ service cloud.firestore {
       allow create: if isOwner(request.resource.data.studentUid);
       allow update, delete: if isOwner(resource.data.studentUid);
 
+      // Cycle weeks — student manages; trainer may read.
+      match /weeks/{weekId} {
+        allow read: if isOwner(cycleData().studentUid)
+          || isTrainerFor(cycleData().trainerEmail);
+        allow write: if isOwner(cycleData().studentUid);
+      }
+
       // Progress photo folders — student manages; trainer may read.
       match /progressPhotoFolders/{folderId} {
         allow read: if isOwner(cycleData().studentUid)
