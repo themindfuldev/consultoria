@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Timestamp } from 'firebase/firestore';
 import {
   CheckCircle2,
   ChevronDown,
   Flag,
   Lock,
+  MessageSquare,
   Play,
   RefreshCw,
+  RotateCcw,
+  SkipForward,
 } from 'lucide-react';
 import type { useCycleWeek } from '../../hooks/useCycleWeek';
 import type { TabSessionRow } from '../../hooks/useCycleWeek';
@@ -32,18 +34,13 @@ const STATUS_META: Record<SessionStatus, { label: string; badge: string }> = {
   completed:   { label: 'Concluído',    badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
 };
 
-/** Status pill rendered inline next to the session name (caps, colored bg). */
+/** Status pill for the fixed status column (caps, colored bg). */
 function StatusBadge({ session }: { session: Session | null }) {
   const status: SessionStatus = session?.status ?? 'pending';
   const meta = STATUS_META[status];
-  let label = meta.label;
-  if (status === 'completed' && session?.finishedAt instanceof Timestamp) {
-    const d = session.finishedAt.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-    label = `Concluído em ${d}`;
-  }
   return (
-    <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${meta.badge}`}>
-      {label}
+    <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${meta.badge}`}>
+      {meta.label}
     </span>
   );
 }
@@ -65,6 +62,7 @@ function SessionRows({
   onSkip: (tab: string) => void;
   onUnskip: (session: Session) => void;
 }) {
+  const navigate = useNavigate();
   return (
     <ol className="flex flex-col gap-1.5">
       {rows.map((row, idx) => {
@@ -72,53 +70,67 @@ function SessionRows({
         const busy = pendingActionTab === row.tab;
         const canSkip = !readOnly && (status === 'pending' || status === 'in_progress');
         const canUnskip = !readOnly && status === 'skipped';
+        const hasFeedback = row.session?.feedbackStatus === 'complete';
         return (
           <li
             key={row.tab}
-            className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-2 rounded-xl bg-white/50 px-2.5 py-2 dark:bg-slate-800/40"
+            className="grid grid-cols-[1.25rem_minmax(0,1fr)_6.5rem_auto] items-center gap-2 rounded-xl bg-white/50 px-2.5 py-2 dark:bg-slate-800/40"
           >
             <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-[11px] font-bold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
               {idx + 1}
             </span>
 
-            {/* Name + inline status pill. Tapping the name opens the session. */}
-            <div className="flex min-w-0 items-center gap-2">
-              <button
-                onClick={() => onOpen(row)}
-                disabled={busy}
-                className="min-w-0 truncate text-left text-sm font-medium text-slate-800 hover:underline disabled:opacity-60 dark:text-slate-100"
-              >
-                {row.tab}
-              </button>
+            {/* Name — tapping it opens the session. */}
+            <button
+              onClick={() => onOpen(row)}
+              disabled={busy}
+              className="min-w-0 truncate text-left text-sm font-medium text-slate-800 hover:underline disabled:opacity-60 dark:text-slate-100"
+            >
+              {row.tab}
+            </button>
+
+            {/* Status — fixed-width middle column, left-aligned. */}
+            <div className="overflow-hidden">
               <StatusBadge session={row.session} />
             </div>
 
-            {/* Actions — "Abrir" is always last so it stays right-aligned. */}
-            <div className="flex items-center justify-end gap-1.5">
+            {/* Actions — icon buttons; Feedback always shows (disabled if none). */}
+            <div className="flex items-center justify-end gap-1">
               {canSkip && (
                 <button
                   onClick={() => onSkip(row.tab)}
                   disabled={busy}
-                  className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                  aria-label="Pular" title="Pular"
+                  className="rounded-lg border border-slate-200 p-1.5 text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
                 >
-                  Pular
+                  <SkipForward className="h-4 w-4" />
                 </button>
               )}
               {canUnskip && (
                 <button
                   onClick={() => onUnskip(row.session!)}
                   disabled={busy}
-                  className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                  aria-label="Despular" title="Despular"
+                  className="rounded-lg border border-slate-200 p-1.5 text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
                 >
-                  Despular
+                  <RotateCcw className="h-4 w-4" />
                 </button>
               )}
               <button
                 onClick={() => onOpen(row)}
                 disabled={busy}
-                className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-60"
+                aria-label="Abrir" title="Abrir"
+                className="rounded-lg bg-indigo-600 p-1.5 text-white transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-60"
               >
-                {busy ? '…' : 'Abrir'}
+                <Play className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => row.session && navigate(`/student/sessions/${row.session.id}/feedback`)}
+                disabled={!hasFeedback}
+                aria-label="Feedback" title={hasFeedback ? 'Ver feedback' : 'Feedback ainda não disponível'}
+                className="rounded-lg bg-emerald-600 p-1.5 text-white transition-all hover:bg-emerald-700 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-700 dark:disabled:text-slate-500"
+              >
+                <MessageSquare className="h-4 w-4" />
               </button>
             </div>
           </li>
