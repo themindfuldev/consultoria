@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   collection,
@@ -12,7 +12,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { LayoutDashboard, Save, Send, Video } from 'lucide-react';
+import { LayoutDashboard, Video } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { openWhatsApp } from '../../services/notifyService';
@@ -161,7 +161,7 @@ export function TrainerFeedbackView() {
   // ── Save draft ──────────────────────────────────────────────────────────────
 
   const handleSaveDraft = async () => {
-    if (!currentUser || !session) return;
+    if (!currentUser || !session || completing) return;
     setSaving(true);
     setSaveError('');
     try {
@@ -192,6 +192,23 @@ export function TrainerFeedbackView() {
       setSaving(false);
     }
   };
+
+  // ── Auto-save the draft (debounced) — replaces the manual "Salvar rascunho" ──
+  // `hydratedRef` guards against saving on the initial prefill from an existing
+  // draft: it flips true one tick after loading finishes, so the prefill-driven
+  // run of the effect below is skipped and only real edits trigger a save.
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (loading) return;
+    const t = setTimeout(() => { hydratedRef.current = true; }, 0);
+    return () => clearTimeout(t);
+  }, [loading]);
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    const t = setTimeout(() => { handleSaveDraft(); }, 1000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feedbackMap, generalNotes]);
 
   // ── Complete feedback + WhatsApp + feedbackStatus ────────────────────────────
 
@@ -368,28 +385,22 @@ export function TrainerFeedbackView() {
           </p>
         )}
 
-        {saveSuccess && (
-          <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-            ✅ Rascunho salvo!
-          </p>
-        )}
+        {/* Auto-save status */}
+        <p className="text-center text-xs text-slate-400 dark:text-slate-500">
+          {saving
+            ? 'Salvando rascunho…'
+            : saveSuccess
+              ? '✅ Rascunho salvo automaticamente'
+              : 'As alterações são salvas automaticamente'}
+        </p>
 
-        {/* Action buttons */}
-        <div className="flex gap-3 pb-6">
-          <button
-            onClick={handleSaveDraft}
-            disabled={saving || completing}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50 active:scale-95 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-          >
-            <Save className="h-4 w-4" />
-            {saving ? 'Salvando…' : 'Salvar rascunho'}
-          </button>
+        {/* Action button */}
+        <div className="pb-6">
           <button
             onClick={handleComplete}
             disabled={completing || saving}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-60"
           >
-            <Send className="h-4 w-4" />
             {completing ? 'Concluindo…' : '✅ Concluir'}
           </button>
         </div>
