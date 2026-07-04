@@ -210,7 +210,11 @@ Firebase Auth `signInWithPopup` returns a one-time Google OAuth access token (~1
 
 > `drive.file` grants access only to files created by the app (videos, feedback media). It does **not** grant broad Drive access. This keeps the permission footprint minimal and avoids Google's OAuth verification process for sensitive scopes.
 
-**Token storage:** In-memory React refs only. Never `localStorage` or `sessionStorage`.
+**Token storage:** In-memory React refs, mirrored to **`sessionStorage`** (key
+`googleAccessToken`, with expiry) so a page refresh reuses a still-valid token
+instead of re-opening the GIS popup. Per-tab, cleared on tab close and on
+sign-out. Never `localStorage`. (v0.3 change — previously memory-only, which
+forced a re-auth popup on every refresh.)
 
 **Decisions (this iteration):**
 - **Scopes are requested during the Firebase sign-in popup itself** (`provider.addScope(...)`), and the OAuth access token is captured from `GoogleAuthProvider.credentialFromResult`. This means the first page load after sign-in already has a valid, correctly-scoped token and never needs to open a *second* GIS popup. Previously the sign-in only granted profile scopes, so the first Sheets/Drive call had to open a gesture-less popup that the browser blocked — producing the "Não foi possível carregar as abas da planilha" + manual "Tentar novamente" loop. Requesting these scopes triggers a one-time consent screen, so **existing users must sign out and back in once** after this change.
