@@ -273,7 +273,7 @@ export function SessionDetail() {
       setSession((prev) => (prev ? { ...prev, preWorkout, status: 'in_progress' } : prev));
 
       notifyTrainer(
-        cycle.workspaceId,
+        cycle.trainerEmail,
         `Comecei o treino *${session.tabName}*` +
           (session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.'),
       ).catch(() => {/* notification is a convenience, never a blocker */});
@@ -412,7 +412,7 @@ export function SessionDetail() {
 
       // Notify trainer the workout is finished.
       notifyTrainer(
-        cycle.workspaceId,
+        cycle.trainerEmail,
         `Terminei o treino *${session.tabName}* de ${dateLabel}.`,
       ).catch(() => {/* notification is a convenience, never a blocker */});
 
@@ -537,7 +537,7 @@ export function SessionDetail() {
         sessionId: session.id,
         cycleId: cycle.id,
         studentUid: currentUser.uid,
-        workspaceId: cycle.workspaceId,
+        trainerEmail: cycle.trainerEmail ?? '',
         exerciseName: exerciseName ?? null,
         freeFormDescription: null,
         driveFileId: uploaded.id,
@@ -562,14 +562,17 @@ export function SessionDetail() {
     }
   };
 
-  // ── Notify trainer about new videos via WhatsApp ─────────────────────────────
+  // ── Send the session to the trainer for feedback (via WhatsApp) ──────────────
 
   const handleNotify = () => {
-    if (!session || !cycle) return;
+    if (!session || !cycle || !cycle.trainerEmail) return;
     setNotifying(true);
-    const msg = `Enviei ${videos.length} vídeo(s) do treino *${session.tabName}* de ${dateLabel}.\n` +
-      `Aguardo seu feedback: ${window.location.origin}/trainer/sessions/${session.id}`;
-    notifyTrainer(cycle.workspaceId, msg)
+    const videoLine = videos.length > 0
+      ? `Enviei ${videos.length} vídeo(s) do treino *${session.tabName}* de ${dateLabel}.\n`
+      : `Enviei o treino *${session.tabName}* de ${dateLabel} para feedback.\n`;
+    const msg = videoLine +
+      `Feedback: ${window.location.origin}/trainer/sessions/${session.id}`;
+    notifyTrainer(cycle.trainerEmail, msg)
       .then(() => updateDoc(doc(db, 'sessions', session.id), { videosNotifiedAt: serverTimestamp() }))
       .finally(() => setNotifying(false));
   };
@@ -872,13 +875,13 @@ export function SessionDetail() {
                 Adicionar vídeo
               </button>
 
-              {videos.length > 0 && (
+              {cycle?.trainerEmail && (
                 <button
                   onClick={handleNotify}
                   disabled={notifying}
                   className="flex items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-green-700 active:scale-95 disabled:opacity-60"
                 >
-                  📱 Notificar treinador
+                  📱 Enviar para feedback
                 </button>
               )}
             </div>

@@ -21,8 +21,17 @@
       "collectionGroup": "sessions",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "workspaceId", "order": "ASCENDING" },
+        { "fieldPath": "trainerEmail", "order": "ASCENDING" },
         { "fieldPath": "hasVideos", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "trainerEmail", "order": "ASCENDING" },
+        { "fieldPath": "feedbackStatus", "order": "ASCENDING" },
         { "fieldPath": "date", "order": "DESCENDING" }
       ]
     }

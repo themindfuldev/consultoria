@@ -16,7 +16,7 @@ import type { Session } from '../types';
 export function useActiveSession(): Session | null {
   const { currentUser, userProfile } = useAuth();
   const [activeSession, setActiveSession] = useState<Session | null>(null);
-  const isStudent = !!currentUser && userProfile?.role === 'student';
+  const isStudent = !!currentUser && !!userProfile;
 
   useEffect(() => {
     if (!isStudent || !currentUser) return;

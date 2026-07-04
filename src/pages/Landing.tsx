@@ -6,7 +6,7 @@ import { useDarkMode } from '../hooks/useDarkMode';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 
 export function Landing() {
-  const { currentUser, userProfile, loading, signInWithGoogle } = useAuth();
+  const { currentUser, userProfile, trainerProfile, loading, signInWithGoogle } = useAuth();
   const { isDark, toggle } = useDarkMode();
   const navigate = useNavigate();
   const [signingIn, setSigningIn] = useState(false);
@@ -15,13 +15,16 @@ export function Landing() {
   // Redirect once auth + profile are resolved.
   useEffect(() => {
     if (loading || !currentUser) return;
-    const dest = !userProfile
-      ? '/onboarding'
-      : userProfile.role === 'trainer'
-        ? '/trainer'
-        : '/student';
+    // Email-link users are trainers — never route them into student onboarding,
+    // even if their trainer record hasn't loaded/been created yet.
+    const isTrainerUser = currentUser.providerData.some((p) => p.providerId === 'password');
+    const dest = trainerProfile || isTrainerUser
+      ? '/trainer'
+      : userProfile
+        ? '/student'
+        : '/onboarding';
     navigate(dest, { replace: true });
-  }, [loading, currentUser, userProfile, navigate]);
+  }, [loading, currentUser, userProfile, trainerProfile, navigate]);
 
   if (loading) return <LoadingSpinner />;
   if (currentUser) return <LoadingSpinner message="Redirecionando..." />;
@@ -104,6 +107,19 @@ export function Landing() {
         {authError && (
           <p className="mt-4 text-sm text-red-600 dark:text-red-400">{authError}</p>
         )}
+
+        {/* Trainer entry point — no Google, email magic-link instead */}
+        <div className="mt-6 border-t border-slate-200 pt-5 dark:border-slate-700">
+          <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+            É treinador?
+          </p>
+          <button
+            onClick={() => navigate('/trainer/login')}
+            className="w-full rounded-2xl border border-slate-200 bg-transparent px-6 py-3 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50 active:scale-95 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Entrar por link no e-mail
+          </button>
+        </div>
 
         <p className="mt-6 text-xs text-slate-500 dark:text-slate-400">
           Ao entrar, você concorda com o uso dos seus dados para fins de acompanhamento de treino.

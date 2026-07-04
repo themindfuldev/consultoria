@@ -25,7 +25,7 @@ const MAX_WIDTH_CLASSES: Record<NonNullable<LayoutProps['maxWidth']>, string> = 
 };
 
 export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProps) {
-  const { currentUser, userProfile, logOut } = useAuth();
+  const { currentUser, userProfile, trainerProfile, logOut } = useAuth();
   const { isDark, toggle } = useDarkMode();
   const navigate = useNavigate();
   const location = useLocation();
@@ -36,7 +36,7 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
     navigate('/');
   };
 
-  const homeHref = userProfile?.role === 'trainer' ? '/trainer' : '/student';
+  const homeHref = trainerProfile ? '/trainer' : userProfile ? '/student' : '/';
   const mw = MAX_WIDTH_CLASSES[maxWidth];
 
   const activeSessionHref = activeSession

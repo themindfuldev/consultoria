@@ -5,11 +5,11 @@ import { LoadingSpinner } from './components/LoadingSpinner';
 import { Landing } from './pages/Landing';
 import { OfflineSession } from './pages/OfflineSession';
 import { Onboarding } from './pages/Onboarding';
+import { TrainerLogin } from './pages/trainer/TrainerLogin';
 import { TrainerDashboard } from './pages/trainer/TrainerDashboard';
 import { TrainerFeedbackView } from './pages/trainer/TrainerFeedbackView';
 import { StudentDashboard } from './pages/student/StudentDashboard';
-import { TrainerSelect } from './pages/student/TrainerSelect';
-import { PendingApproval } from './pages/student/PendingApproval';
+import { StudentTrainers } from './pages/student/StudentTrainers';
 import { AddCycle } from './pages/student/AddCycle';
 import { CycleDetail } from './pages/student/CycleDetail';
 import { SessionDetail } from './pages/student/SessionDetail';
@@ -28,6 +28,8 @@ export default function App() {
       <Route path="/" element={<Landing />} />
       {/* Standalone static snapshot viewer — outside auth, survives logout/timeout */}
       <Route path="/offline/:sessionId" element={<OfflineSession />} />
+      {/* Trainer email-link login (public: reachable while signed out) */}
+      <Route path="/trainer/login" element={<TrainerLogin />} />
 
       {/* ── Onboarding: auth required, NO profile required ─────────────── */}
       <Route
@@ -39,7 +41,7 @@ export default function App() {
         }
       />
 
-      {/* ── Trainer ────────────────────────────────────────────────────── */}
+      {/* ── Trainer (email-link auth) ──────────────────────────────────── */}
       <Route
         path="/trainer"
         element={
@@ -57,7 +59,7 @@ export default function App() {
         }
       />
 
-      {/* ── Student ────────────────────────────────────────────────────── */}
+      {/* ── Student (Google auth) ──────────────────────────────────────── */}
       <Route
         path="/student"
         element={
@@ -67,18 +69,10 @@ export default function App() {
         }
       />
       <Route
-        path="/student/select-trainer"
+        path="/student/trainers"
         element={
           <ProtectedRoute role="student">
-            <TrainerSelect />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/student/pending"
-        element={
-          <ProtectedRoute role="student">
-            <PendingApproval />
+            <StudentTrainers />
           </ProtectedRoute>
         }
       />

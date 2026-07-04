@@ -13,7 +13,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { Save, Send } from 'lucide-react';
+import { LayoutDashboard, Save, Send } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
@@ -24,7 +24,6 @@ import type {
   FeedbackMediaFile,
   Session,
   SessionVideo,
-  UserProfile,
 } from '../../types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -46,7 +45,6 @@ export function TrainerFeedbackView() {
 
   const [session, setSession] = useState<Session | null>(null);
   const [cycle, setCycle] = useState<Cycle | null>(null);
-  const [studentProfile, setStudentProfile] = useState<UserProfile | null>(null);
   const [videos, setVideos] = useState<SessionVideo[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -72,9 +70,8 @@ export function TrainerFeedbackView() {
         const s = sessionSnap.data() as Session;
         setSession(s);
 
-        const [cycleSnap, studentSnap, videosSnap, feedbackSnap] = await Promise.all([
+        const [cycleSnap, videosSnap, feedbackSnap] = await Promise.all([
           getDoc(doc(db, 'cycles', s.cycleId)),
-          getDoc(doc(db, 'users', s.studentUid)),
           getDocs(query(
             collection(db, 'videos'),
             where('sessionId', '==', sessionId),
@@ -84,7 +81,6 @@ export function TrainerFeedbackView() {
         ]);
 
         if (cycleSnap.exists()) setCycle(cycleSnap.data() as Cycle);
-        if (studentSnap.exists()) setStudentProfile(studentSnap.data() as UserProfile);
 
         const vids = videosSnap.docs.map((d) => d.data() as SessionVideo);
         setVideos(vids);
@@ -161,8 +157,8 @@ export function TrainerFeedbackView() {
           sessionId,
           cycleId: session.cycleId,
           studentUid: session.studentUid,
-          workspaceId: session.workspaceId,
-          trainerUid: currentUser.uid,
+          studentName: session.studentName ?? '',
+          trainerEmail: session.trainerEmail ?? currentUser.email ?? '',
           status: 'draft',
           exerciseFeedback,
           generalNotes,
@@ -184,7 +180,7 @@ export function TrainerFeedbackView() {
   // ── Complete feedback + WhatsApp + feedbackStatus ────────────────────────────
 
   const handleComplete = async () => {
-    if (!currentUser || !session || !studentProfile || !cycle) return;
+    if (!currentUser || !session || !cycle) return;
     setCompleting(true);
     setSaveError('');
     try {
@@ -196,8 +192,8 @@ export function TrainerFeedbackView() {
           sessionId,
           cycleId: session.cycleId,
           studentUid: session.studentUid,
-          workspaceId: session.workspaceId,
-          trainerUid: currentUser.uid,
+          studentName: session.studentName ?? '',
+          trainerEmail: session.trainerEmail ?? currentUser.email ?? '',
           status: 'complete',
           exerciseFeedback,
           generalNotes,
@@ -208,17 +204,16 @@ export function TrainerFeedbackView() {
       );
       await updateDoc(doc(db, 'sessions', sessionId!), { feedbackStatus: 'complete' });
 
-      // WhatsApp notification to student
-      const dateStr = session.date instanceof Timestamp ? fmtDate(session.date) : '';
-      const appUrl = window.location.origin;
-      const msg = encodeURIComponent(
-        `Seu feedback do treino *${session.tabName}* de ${dateStr} está pronto!\n` +
-        `${appUrl}/student/sessions/${sessionId}/feedback`,
-      );
-      window.open(
-        `https://wa.me/${studentProfile.whatsappPhone}?text=${msg}`,
-        '_blank',
-      );
+      // WhatsApp notification to student (number denormalised on the session).
+      if (session.studentWhatsapp) {
+        const dateStr = session.date instanceof Timestamp ? fmtDate(session.date) : '';
+        const appUrl = window.location.origin;
+        const msg = encodeURIComponent(
+          `Seu feedback do treino *${session.tabName}* de ${dateStr} está pronto!\n` +
+          `${appUrl}/student/sessions/${sessionId}/feedback`,
+        );
+        window.open(`https://wa.me/${session.studentWhatsapp}?text=${msg}`, '_blank');
+      }
 
       navigate('/trainer');
     } catch {
@@ -232,7 +227,7 @@ export function TrainerFeedbackView() {
 
   if (loading) {
     return (
-      <Layout title="Feedback">
+      <Layout title="Feedback" backTo="/trainer">
         <div className="flex justify-center py-20">
           <div className="h-7 w-7 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
         </div>
@@ -243,15 +238,24 @@ export function TrainerFeedbackView() {
   const dateLabel = session?.date instanceof Timestamp ? fmtDate(session.date) : '';
 
   return (
-    <Layout title="Dar feedback">
+    <Layout title="Dar feedback" backTo="/trainer">
       {/* Header */}
-      <div className="mb-5">
-        <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-          {studentProfile?.displayName}
-        </h1>
-        <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-          {cycle?.title} · {session?.tabName} · {dateLabel}
-        </p>
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+            {session?.studentName || 'Aluno'}
+          </h1>
+          <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+            {cycle?.title} · {session?.tabName} · {dateLabel}
+          </p>
+        </div>
+        <button
+          onClick={() => navigate('/trainer')}
+          className="flex flex-shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+        >
+          <LayoutDashboard className="h-3.5 w-3.5" />
+          Meu painel
+        </button>
       </div>
 
       {/* Exercise blocks */}

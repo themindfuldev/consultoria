@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { ArchiveRestore, PlusCircle } from 'lucide-react';
+import { ArchiveRestore, PlusCircle, Users } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
 import { Layout } from '../../components/Layout';
 import { CycleCard } from '../../components/student/CycleCard';
-import type { Cycle, StudentWorkspace } from '../../types';
+import type { Cycle } from '../../types';
 
 export function StudentDashboard() {
   const { currentUser, userProfile } = useAuth();
@@ -17,40 +17,16 @@ export function StudentDashboard() {
   // so the sheet loads don't fail and force a manual "Tentar novamente".
   useGoogleTokenWarmup();
 
-  // Connection status guard
-  const [connectionStatus, setConnectionStatus] = useState<'loading' | 'none' | 'pending' | 'active'>('loading');
-
   // Cycles state
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [cyclesLoading, setCyclesLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
   const [cardError, setCardError] = useState('');
 
-  // ── Connection status guard ─────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (!currentUser) return;
-    const q = query(
-      collection(db, 'student_workspaces'),
-      where('studentUid', '==', currentUser.uid),
-    );
-    const unsub = onSnapshot(q, (snap) => {
-      if (snap.empty) { setConnectionStatus('none'); navigate('/student/select-trainer', { replace: true }); return; }
-      const conns = snap.docs.map((d) => d.data() as StudentWorkspace);
-      if (conns.some((c) => c.status === 'active')) {
-        setConnectionStatus('active');
-      } else {
-        setConnectionStatus('pending');
-        navigate('/student/pending', { replace: true });
-      }
-    });
-    return unsub;
-  }, [currentUser, navigate]);
-
   // ── Cycles real-time listener ───────────────────────────────────────────────
 
   useEffect(() => {
-    if (!currentUser || connectionStatus !== 'active') return;
+    if (!currentUser) return;
 
     // `cyclesLoading` already starts `true` — the snapshot/error callbacks
     // below are what flip it to `false` once the first page of data arrives.
@@ -76,7 +52,7 @@ export function StudentDashboard() {
       () => setCyclesLoading(false),
     );
     return unsub;
-  }, [currentUser, connectionStatus]);
+  }, [currentUser]);
 
   // ── Derived lists ───────────────────────────────────────────────────────────
 
@@ -86,7 +62,7 @@ export function StudentDashboard() {
 
   // ── Early exits ─────────────────────────────────────────────────────────────
 
-  if (connectionStatus === 'loading' || (connectionStatus === 'active' && cyclesLoading)) {
+  if (cyclesLoading) {
     return (
       <Layout>
         <div className="flex items-center justify-center py-20">
@@ -95,8 +71,6 @@ export function StudentDashboard() {
       </Layout>
     );
   }
-
-  if (connectionStatus !== 'active') return null;
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -123,6 +97,14 @@ export function StudentDashboard() {
 
       {/* ── Toolbar: view toggle + add button ──────────────────────────── */}
       <div className="mb-4 flex items-center justify-between gap-3">
+        <button
+          onClick={() => navigate('/student/trainers')}
+          className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+        >
+          <Users className="h-3.5 w-3.5" />
+          Meus treinadores
+        </button>
+
         {archivedCycles.length > 0 && (
           <button
             onClick={() => setShowArchived((s) => !s)}

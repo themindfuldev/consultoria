@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   collection,
   doc,
@@ -14,7 +14,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
 import { MODALITIES } from '../../types';
-import type { Modality, StudentWorkspace, Workspace } from '../../types';
+import type { Modality, StudentTrainer } from '../../types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -25,9 +25,8 @@ function extractSheetId(url: string): string | null {
 }
 
 interface TrainerOption {
-  workspaceId: string;
-  trainerName: string;
-  trainerEmail: string;
+  email: string;
+  name: string;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -39,8 +38,8 @@ export function AddCycle() {
   const [trainers, setTrainers] = useState<TrainerOption[]>([]);
   const [loadingTrainers, setLoadingTrainers] = useState(true);
 
-  // Form fields
-  const [selectedTrainerId, setSelectedTrainerId] = useState('');
+  // Form fields — empty trainer email = "no trainer".
+  const [selectedTrainerEmail, setSelectedTrainerEmail] = useState('');
   const [sheetUrl, setSheetUrl] = useState('');
   const [urlError, setUrlError] = useState('');
   const [title, setTitle] = useState('');
@@ -50,45 +49,28 @@ export function AddCycle() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
-  // ── Load trainer options ────────────────────────────────────────────────────
+  // ── Load the student's registered trainers ──────────────────────────────────
 
   useEffect(() => {
     if (!currentUser) return;
 
     const loadTrainers = async () => {
       try {
-        // Fetch the student's active connections.
-        const swSnap = await getDocs(
+        const snap = await getDocs(
           query(
-            collection(db, 'student_workspaces'),
+            collection(db, 'student_trainers'),
             where('studentUid', '==', currentUser.uid),
-            where('status', '==', 'active'),
           ),
         );
-
-        if (swSnap.empty) {
-          setLoadingTrainers(false);
-          return;
-        }
-
-        const workspaceIds = swSnap.docs.map((d) => (d.data() as StudentWorkspace).workspaceId);
-
-        // Fetch the corresponding workspace docs for trainer names.
-        const wsSnap = await getDocs(
-          query(collection(db, 'workspaces'), where('id', 'in', workspaceIds)),
-        );
-
-        const options: TrainerOption[] = wsSnap.docs.map((d) => {
-          const ws = d.data() as Workspace;
-          return { workspaceId: ws.id, trainerName: ws.trainerName, trainerEmail: ws.trainerEmail };
+        const options: TrainerOption[] = snap.docs.map((d) => {
+          const link = d.data() as StudentTrainer;
+          return { email: link.trainerEmail, name: link.trainerName ?? link.trainerEmail };
         });
-
         setTrainers(options);
-
-        // Auto-select if only one trainer.
-        if (options.length === 1) setSelectedTrainerId(options[0].workspaceId);
+        // Auto-select if exactly one trainer.
+        if (options.length === 1) setSelectedTrainerEmail(options[0].email);
       } catch {
-        // Non-fatal — form will still work, just no trainer auto-fill.
+        // Non-fatal — the cycle can still be created without a trainer.
       } finally {
         setLoadingTrainers(false);
       }
@@ -118,14 +100,7 @@ export function AddCycle() {
   const handleSubmit = async () => {
     if (!currentUser || !userProfile) return;
 
-    // Validate
-    const urlOk = validateUrl();
-    if (!urlOk) return;
-
-    if (!selectedTrainerId) {
-      setSubmitError('Selecione um treinador.');
-      return;
-    }
+    if (!validateUrl()) return;
     if (!title.trim()) {
       setSubmitError('Dê um nome para este programa.');
       return;
@@ -143,14 +118,16 @@ export function AddCycle() {
     setSubmitting(true);
 
     const sheetId = extractSheetId(sheetUrl.trim())!;
-    const trainer = trainers.find((t) => t.workspaceId === selectedTrainerId);
+    const trainer = trainers.find((t) => t.email === selectedTrainerEmail);
     const cycleRef = doc(collection(db, 'cycles'));
 
     try {
       await setDoc(cycleRef, {
         id: cycleRef.id,
         studentUid: currentUser.uid,
-        workspaceId: selectedTrainerId,
+        // Denormalised student identity — lets a trainer render/notify without a users read.
+        studentName: userProfile.displayName,
+        studentWhatsapp: userProfile.whatsappPhone,
         googleSheetId: sheetId,
         googleSheetUrl: sheetUrl.trim(),
         title: title.trim(),
@@ -161,9 +138,10 @@ export function AddCycle() {
         status: 'active',
         startDate: serverTimestamp(),
         createdAt: serverTimestamp(),
-        // Denormalize trainer info for display without extra queries.
-        trainerName: trainer?.trainerName ?? '',
-        trainerEmail: trainer?.trainerEmail ?? '',
+        // Optional trainer link (denormalised for display + notifications).
+        ...(trainer
+          ? { trainerEmail: trainer.email, trainerName: trainer.name }
+          : {}),
       });
 
       navigate('/student', { replace: true });
@@ -177,7 +155,7 @@ export function AddCycle() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <Layout title="Adicionar Programa">
+    <Layout title="Adicionar Programa" backTo="/student">
       <div className="mb-6">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">Novo programa de treino</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -187,25 +165,40 @@ export function AddCycle() {
 
       <div className="flex flex-col gap-5">
 
-        {/* ── Trainer selector (hidden when only 1 trainer) ─────────────── */}
-        {!loadingTrainers && trainers.length > 1 && (
-          <Field label="Treinador">
-            <div className="relative">
-              <select
-                value={selectedTrainerId}
-                onChange={(e) => setSelectedTrainerId(e.target.value)}
-                className={selectCls}
-              >
-                <option value="">Selecione o treinador…</option>
-                {trainers.map((t) => (
-                  <option key={t.workspaceId} value={t.workspaceId}>
-                    {t.trainerName} — {t.trainerEmail}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            </div>
-          </Field>
+        {/* ── Trainer selector (optional) ────────────────────────────────── */}
+        {!loadingTrainers && (
+          trainers.length > 0 ? (
+            <Field label="Treinador (opcional)">
+              <div className="relative">
+                <select
+                  value={selectedTrainerEmail}
+                  onChange={(e) => setSelectedTrainerEmail(e.target.value)}
+                  className={selectCls}
+                >
+                  <option value="">Sem treinador</option>
+                  {trainers.map((t) => (
+                    <option key={t.email} value={t.email}>
+                      {t.name} — {t.email}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              </div>
+              {selectedTrainerEmail && (
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  Lembre-se de compartilhar esta planilha com <strong>{selectedTrainerEmail}</strong> (como leitor).
+                </p>
+              )}
+            </Field>
+          ) : (
+            <p className="rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+              Você ainda não cadastrou nenhum treinador. Você pode adicionar o
+              programa sem treinador e cadastrar um depois em{' '}
+              <Link to="/student/trainers" className="font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
+                Meus treinadores
+              </Link>.
+            </p>
+          )
         )}
 
         {/* ── Google Sheets URL ──────────────────────────────────────────── */}

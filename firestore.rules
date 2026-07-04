@@ -2,23 +2,106 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users can only read/write their own profile
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // The email verified by the trainer's passwordless sign-in link.
+    function authEmail() {
+      return isSignedIn() ? request.auth.token.email : null;
+    }
+
+    // True when the caller is the trainer identified by `email` (non-empty match
+    // against their verified email-link identity).
+    function isTrainerFor(email) {
+      return isSignedIn() && email != null && email != '' && authEmail() == email;
+    }
+
+    function isOwner(studentUid) {
+      return isSignedIn() && request.auth.uid == studentUid;
+    }
+
+    // ── Users (students only) ──────────────────────────────────────────────────
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if isOwner(uid);
     }
 
-    // Workspaces: authenticated users can read; only the trainer can write
-    match /workspaces/{workspaceId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null
-        && resource == null  // creating
-           ? request.resource.data.trainerUid == request.auth.uid
-           : resource.data.trainerUid == request.auth.uid;
+    // ── Trainers (global, keyed by email) ──────────────────────────────────────
+    match /trainers/{email} {
+      // Students need to read to check existence/status when registering.
+      allow read: if isSignedIn();
+      // A student creates a pending trainer record they own the "createdBy" of.
+      allow create: if isSignedIn()
+        && request.resource.data.createdByStudentUid == request.auth.uid
+        && request.resource.data.id == email;
+      // Only the trainer (verified email) can update their record; email is the
+      // immutable doc id, so it can never change.
+      allow update: if isTrainerFor(email);
+      allow delete: if false;
     }
 
-    // TODO: add per-collection rules for cycles, sessions, feedback before going to production
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+    // ── Student ↔ Trainer links ────────────────────────────────────────────────
+    match /student_trainers/{docId} {
+      allow read: if isOwner(resource.data.studentUid)
+        || isTrainerFor(resource.data.trainerEmail);
+      allow create: if isOwner(request.resource.data.studentUid);
+      allow update: if isOwner(resource.data.studentUid);
+      allow delete: if isOwner(resource.data.studentUid);
+    }
+
+    // ── Cycles ─────────────────────────────────────────────────────────────────
+    match /cycles/{cycleId} {
+      allow read: if isOwner(resource.data.studentUid)
+        || isTrainerFor(resource.data.trainerEmail);
+      allow create: if isOwner(request.resource.data.studentUid);
+      allow update, delete: if isOwner(resource.data.studentUid);
+
+      // Progress photo folders — student manages; trainer may read.
+      match /progressPhotoFolders/{folderId} {
+        allow read: if isOwner(cycleData().studentUid)
+          || isTrainerFor(cycleData().trainerEmail);
+        allow write: if isOwner(cycleData().studentUid);
+      }
+      function cycleData() {
+        return get(/databases/$(database)/documents/cycles/$(cycleId)).data;
+      }
+    }
+
+    // ── Sessions ───────────────────────────────────────────────────────────────
+    match /sessions/{docId} {
+      allow read: if isOwner(resource.data.studentUid)
+        || isTrainerFor(resource.data.trainerEmail);
+      allow create: if isOwner(request.resource.data.studentUid);
+      // Student owns their session; the trainer may update it (e.g. feedbackStatus).
+      allow update: if isOwner(resource.data.studentUid)
+        || isTrainerFor(resource.data.trainerEmail);
+      allow delete: if isOwner(resource.data.studentUid);
+    }
+
+    // ── Session exercises (actuals cache) ──────────────────────────────────────
+    match /session_exercises/{docId} {
+      allow read: if isOwner(resource.data.studentUid)
+        || isTrainerFor(resource.data.trainerEmail);
+      allow create: if isOwner(request.resource.data.studentUid);
+      allow update, delete: if isOwner(resource.data.studentUid);
+    }
+
+    // ── Videos ─────────────────────────────────────────────────────────────────
+    match /videos/{docId} {
+      allow read: if isOwner(resource.data.studentUid)
+        || isTrainerFor(resource.data.trainerEmail);
+      allow create: if isOwner(request.resource.data.studentUid);
+      allow update, delete: if isOwner(resource.data.studentUid);
+    }
+
+    // ── Feedback (trainer writes; student reads) ───────────────────────────────
+    match /feedback/{docId} {
+      allow read: if isOwner(resource.data.studentUid)
+        || isTrainerFor(resource.data.trainerEmail);
+      // The authoring trainer must stamp their own verified email on the doc.
+      allow create, update: if isTrainerFor(request.resource.data.trainerEmail);
     }
   }
 }

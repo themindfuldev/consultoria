@@ -2,15 +2,26 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   GoogleAuthProvider,
+  isSignInWithEmailLink,
   onAuthStateChanged,
+  sendSignInLinkToEmail,
+  signInWithEmailLink,
   signInWithPopup,
   signOut as fbSignOut,
 } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
-import type { UserProfile } from '../types';
+import type { Trainer, UserProfile } from '../types';
 import { AuthContext } from './AuthContextDef';
+
+/** localStorage key holding the email a trainer requested a sign-in link for. */
+const TRAINER_EMAIL_KEY = 'trainerEmailForSignIn';
+
+/** True when the current Firebase user signed in via an email link (a trainer). */
+function isEmailLinkUser(user: User | null): boolean {
+  return !!user?.providerData.some((p) => p.providerId === 'password');
+}
 
 /**
  * Resolves once the async-loaded GIS script (`accounts.google.com/gsi/client`)
@@ -36,12 +47,22 @@ function whenGisReady(timeoutMs = 8_000): Promise<void> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [trainerProfile, setTrainerProfile] = useState<Trainer | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   // uid the current `userProfile` snapshot corresponds to — set only inside
   // the listener callbacks below (never synchronously in the effect body), so
   // "profile loading" can be derived as `currentUser.uid !== profileUid`.
   const [profileUid, setProfileUid] = useState<string | null>(null);
+  // Same pattern for the trainer record — resolved by email, not uid.
+  const [trainerResolvedUid, setTrainerResolvedUid] = useState<string | null>(null);
+
+  // True (synchronously, on first render) while an email sign-in link is being
+  // completed — keeps the app on a loading gate so a ProtectedRoute doesn't
+  // redirect the still-signed-out trainer away before sign-in finishes.
+  const [completingLink, setCompletingLink] = useState(() =>
+    isSignInWithEmailLink(auth, window.location.href),
+  );
 
   // GIS Token Client — all state kept in refs so it never triggers re-renders.
   const tokenClientRef = useRef<GISTokenClient | null>(null);
@@ -63,11 +84,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!user) {
         setUserProfile(null);
         setProfileUid(null);
+        setTrainerProfile(null);
+        setTrainerResolvedUid(null);
         // Clear any cached token when the user signs out.
         accessTokenRef.current = null;
         tokenExpiryRef.current = 0;
         tokenClientRef.current = null;
         inFlightRef.current = null;
+      } else if (!isEmailLinkUser(user)) {
+        // A Google (student) user has no trainer record — resolve immediately so
+        // trainer loading never blocks. The dedicated effect below handles the
+        // email-link (trainer) case via a Firestore listener.
+        setTrainerProfile(null);
+        setTrainerResolvedUid(user.uid);
       }
     });
     return unsubscribe;
@@ -93,9 +122,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, [currentUser]);
 
+  // ── Trainer record listener (email-link users) ─────────────────────────────
+
+  useEffect(() => {
+    // Only email-link users are trainers; Google (student) users are resolved
+    // synchronously in the auth listener above, so skip them here.
+    if (!currentUser || !isEmailLinkUser(currentUser) || !currentUser.email) return;
+    const uid = currentUser.uid;
+    const emailKey = currentUser.email.toLowerCase();
+    const ref = doc(db, 'trainers', emailKey);
+    const unsubscribe = onSnapshot(
+      ref,
+      (snap) => {
+        if (snap.exists()) {
+          const t = snap.data() as Trainer;
+          setTrainerProfile(t);
+          // First sign-in confirms the account (email ownership is now proven).
+          if (t.status === 'pending') {
+            updateDoc(ref, { status: 'confirmed', confirmedAt: serverTimestamp() })
+              .catch(() => {/* best-effort — a stale status is non-fatal */});
+          }
+        } else {
+          setTrainerProfile(null);
+        }
+        setTrainerResolvedUid(uid);
+      },
+      () => {
+        setTrainerProfile(null);
+        setTrainerResolvedUid(uid);
+      },
+    );
+    return unsubscribe;
+  }, [currentUser]);
+
+  // ── Complete an email sign-in link, if the URL is one ──────────────────────
+
+  useEffect(() => {
+    if (!isSignInWithEmailLink(auth, window.location.href)) return;
+    let email = window.localStorage.getItem(TRAINER_EMAIL_KEY);
+    if (!email) {
+      // Opened on a different device/browser than the request — ask for it.
+      email = window.prompt('Confirme seu e-mail para entrar:') ?? '';
+    }
+
+    const run = email
+      ? signInWithEmailLink(auth, email, window.location.href).then(() => {
+          window.localStorage.removeItem(TRAINER_EMAIL_KEY);
+          // Drop the oobCode query params, keeping the path → the trainer lands
+          // back on the feedback/dashboard page they originally opened.
+          const url = new URL(window.location.href);
+          window.history.replaceState({}, '', url.pathname + url.hash);
+        })
+      : Promise.resolve();
+
+    run
+      .catch(() => {/* invalid/expired link — the login page will let them retry */})
+      .finally(() => setCompletingLink(false));
+  }, []);
+
   // True between picking up a new `currentUser` and the first profile snapshot
   // for that uid arriving — derived so no synchronous setState is needed above.
   const profileLoading = !!currentUser && profileUid !== currentUser.uid;
+  const trainerLoading = !!currentUser && trainerResolvedUid !== currentUser.uid;
 
   // ── Auth actions ────────────────────────────────────────────────────────────
 
@@ -120,6 +208,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       tokenExpiryRef.current = Date.now() + 55 * 60 * 1_000;
     }
     // Auth state propagates via onAuthStateChanged — no manual state update needed.
+  }, []);
+
+  const sendTrainerMagicLink = useCallback(async (email: string, nextPath: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    const url = `${window.location.origin}${nextPath}`;
+    window.localStorage.setItem(TRAINER_EMAIL_KEY, cleanEmail);
+    await sendSignInLinkToEmail(auth, cleanEmail, { url, handleCodeInApp: true });
   }, []);
 
   const logOut = useCallback(async () => {
@@ -193,15 +288,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return inFlightRef.current;
   }, []);
 
-  const loading = authLoading || profileLoading;
+  const loading = authLoading || profileLoading || trainerLoading || completingLink;
 
   return (
     <AuthContext.Provider
       value={{
         currentUser,
         userProfile,
+        trainerProfile,
         loading,
         signInWithGoogle,
+        sendTrainerMagicLink,
         logOut,
         getAccessToken,
         isGoogleTokenValid,

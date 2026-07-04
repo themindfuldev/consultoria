@@ -8,17 +8,21 @@
 
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import type { Workspace } from '../types';
+import type { Trainer } from '../types';
 
 /**
- * Looks up the trainer's WhatsApp number for the given workspace and opens a
- * `wa.me` deep link with the given message pre-filled. Resolves once the link
- * has been opened (or silently does nothing if the workspace/phone can't be
- * found — notifications are a convenience, never a blocker).
+ * Looks up a trainer's WhatsApp number by email and opens a `wa.me` deep link
+ * with the given message pre-filled. Resolves once the link has been opened (or
+ * silently does nothing if the trainer/phone can't be found, or `trainerEmail`
+ * is empty — notifications are a convenience, never a blocker).
  */
-export async function notifyTrainer(workspaceId: string, message: string): Promise<void> {
-  const wsSnap = await getDoc(doc(db, 'workspaces', workspaceId));
-  const phone = (wsSnap.data() as Workspace | undefined)?.whatsappPhone ?? '';
+export async function notifyTrainer(
+  trainerEmail: string | undefined,
+  message: string,
+): Promise<void> {
+  if (!trainerEmail) return;
+  const snap = await getDoc(doc(db, 'trainers', trainerEmail));
+  const phone = (snap.data() as Trainer | undefined)?.whatsappPhone ?? '';
   if (!phone) return;
   window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
 }

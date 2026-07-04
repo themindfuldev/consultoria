@@ -2,41 +2,60 @@ import type { Timestamp } from 'firebase/firestore';
 
 // ── User ──────────────────────────────────────────────────────────────────────
 
+/**
+ * A student's account. Students are the only Google-authenticated users — the
+ * app needs their Google token to read/write their Sheet and Drive. Trainers
+ * are NOT students and have no `users` doc (they authenticate via email link;
+ * see `Trainer`).
+ */
 export interface UserProfile {
   uid: string;
   email: string;
   displayName: string;
   photoURL: string;
-  role: 'trainer' | 'student';
   /** E.164-style without '+', e.g. "5511999999999". Used to build wa.me links. */
   whatsappPhone: string;
   createdAt: Timestamp;
 }
 
-// ── Workspace (one per trainer) ───────────────────────────────────────────────
+// ── Trainer (global, keyed by email) ──────────────────────────────────────────
 
-export interface Workspace {
-  /** Document ID = trainer's email (stable, human-readable). */
+/**
+ * A trainer record. Registered by a student (email + WhatsApp), globally unique
+ * by email. Trainers don't use Google — they authenticate by clicking a Firebase
+ * email sign-in link, which verifies email ownership. The first time a trainer
+ * signs in, their `status` flips `pending → confirmed`.
+ */
+export interface Trainer {
+  /** Document ID = trainer's email, lowercased (stable, unique). */
   id: string;
-  trainerUid: string;
-  trainerEmail: string;
-  trainerName: string;
+  email: string;
+  name?: string;
+  /** E.164-style without '+'. Editable by the trainer; email is immutable. */
   whatsappPhone: string;
+  status: 'pending' | 'confirmed';
+  /** uid of the student who first registered this trainer. */
+  createdByStudentUid: string;
+  confirmedAt?: Timestamp;
   createdAt: Timestamp;
 }
 
-// ── Student ↔ Trainer connection ──────────────────────────────────────────────
+// ── Student ↔ Trainer link ────────────────────────────────────────────────────
 
-export interface StudentWorkspace {
-  /** Document ID = `${studentUid}_${workspaceId}`. */
+/**
+ * Links a student to a trainer they registered. A student may register any
+ * number of trainers; each link is one doc. The student is responsible for
+ * sharing their Google Sheet with each linked trainer's email.
+ */
+export interface StudentTrainer {
+  /** Document ID = `${studentUid}_${trainerEmail}`. */
   id: string;
   studentUid: string;
   studentEmail: string;
   studentName: string;
-  /** workspaceId = trainer's email. */
-  workspaceId: string;
-  status: 'pending' | 'active';
-  joinedAt?: Timestamp;
+  /** trainerEmail = the linked trainer's email (lowercased). */
+  trainerEmail: string;
+  trainerName?: string;
   createdAt: Timestamp;
 }
 
@@ -60,7 +79,9 @@ export const MODALITIES: readonly Modality[] = [
 export interface Cycle {
   id: string;
   studentUid: string;
-  workspaceId: string;
+  /** Denormalised student identity — lets an (email-link) trainer render/notify without reading the student's `users` doc. */
+  studentName?: string;
+  studentWhatsapp?: string;
   googleSheetId: string;
   googleSheetUrl: string;
   title: string;
@@ -70,9 +91,13 @@ export interface Cycle {
   startDate: Timestamp;
   archivedAt?: Timestamp;
   createdAt: Timestamp;
-  /** Denormalised from the trainer's workspace doc at creation time — avoids extra queries when rendering cycle cards. */
-  trainerName?: string;
+  /**
+   * The trainer this program belongs to, if any. Optional — a student can run a
+   * cycle with no trainer (no feedback loop). Lowercased email; `trainerName`
+   * denormalised for display.
+   */
   trainerEmail?: string;
+  trainerName?: string;
 }
 
 // ── Cycle weeks ───────────────────────────────────────────────────────────────
@@ -99,7 +124,11 @@ export interface Session {
   id: string;
   cycleId: string;
   studentUid: string;
-  workspaceId: string;
+  /** Denormalised from the cycle — the trainer (if any) this session belongs to. */
+  trainerEmail?: string;
+  /** Denormalised student identity so an email-link trainer can render/notify without a `users` read. */
+  studentName?: string;
+  studentWhatsapp?: string;
   tabName: string;
   /** Position of this tab in the spreadsheet at week-start time — used to order
    *  the week's sessions stably without waiting for a live Sheets fetch. */
@@ -144,7 +173,7 @@ export interface SessionExercise {
   sessionId: string;
   cycleId: string;
   studentUid: string;
-  workspaceId: string;
+  trainerEmail?: string;
   tabName: string;
   exerciseName: string;
   setIndex: number;
@@ -169,7 +198,7 @@ export interface SessionVideo {
   sessionId: string;
   cycleId: string;
   studentUid: string;
-  workspaceId: string;
+  trainerEmail?: string;
   exerciseName?: string;
   freeFormDescription?: string;
   driveFileId: string;
@@ -202,8 +231,10 @@ export interface Feedback {
   sessionId: string;
   cycleId: string;
   studentUid: string;
-  workspaceId: string;
-  trainerUid: string;
+  /** Denormalised so the trainer dashboard can group feedbacks by student. */
+  studentName?: string;
+  /** The trainer who authored this feedback (lowercased email). */
+  trainerEmail: string;
   status: 'draft' | 'complete';
   exerciseFeedback: ExerciseFeedback[];
   generalNotes: string;

@@ -1,208 +1,198 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   collection,
   doc,
-  getDoc,
   getDocs,
-  onSnapshot,
   orderBy,
   query,
   Timestamp,
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { CheckCircle, Clock, MessageSquare, Users, Video, XCircle } from 'lucide-react';
+import { Check, MessageSquare, Pencil, Phone, Users, Video, X } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
 import { Avatar } from '../../components/Avatar';
-import type { Feedback, Session, StudentWorkspace, UserProfile } from '../../types';
+import type { Session } from '../../types';
 
-// ── Pending-feedback item ─────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-interface PendingFeedbackItem {
-  session: Session;
+function shortDate(ts?: Timestamp): string {
+  return ts instanceof Timestamp
+    ? ts.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+    : '';
+}
+
+/** Sessions grouped by student, most recent first within each group. */
+interface StudentGroup {
   studentName: string;
+  sessions: Session[];
+}
+
+function groupByStudent(sessions: Session[]): StudentGroup[] {
+  const map = new Map<string, Session[]>();
+  for (const s of sessions) {
+    const key = s.studentName || 'Aluno';
+    (map.get(key) ?? map.set(key, []).get(key)!).push(s);
+  }
+  return [...map.entries()]
+    .map(([studentName, list]) => ({ studentName, sessions: list }))
+    .sort((a, b) => a.studentName.localeCompare(b.studentName));
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function TrainerDashboard() {
-  const { userProfile } = useAuth();
+  const { currentUser, trainerProfile } = useAuth();
   const navigate = useNavigate();
-  const [pending, setPending] = useState<StudentWorkspace[]>([]);
-  const [active, setActive] = useState<StudentWorkspace[]>([]);
+
+  const trainerEmail = trainerProfile?.email ?? currentUser?.email?.toLowerCase() ?? '';
+
+  const [awaiting, setAwaiting] = useState<Session[]>([]);
+  const [completed, setCompleted] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
-  const [actionError, setActionError] = useState('');
 
-  // Sessions waiting for feedback
-  const [feedbackQueue, setFeedbackQueue] = useState<PendingFeedbackItem[]>([]);
-  const [queueLoading, setQueueLoading] = useState(true);
+  // WhatsApp edit state
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [phoneInput, setPhoneInput] = useState('');
+  const [savingPhone, setSavingPhone] = useState(false);
 
-  const workspaceId = userProfile?.email ?? '';
-
-  // ── Student workspace listener ──────────────────────────────────────────────
+  // ── Load the trainer's sessions (awaiting + completed feedback) ─────────────
 
   useEffect(() => {
-    if (!workspaceId) return;
-    const q = query(
-      collection(db, 'student_workspaces'),
-      where('workspaceId', '==', workspaceId),
-    );
-    const unsubscribe = onSnapshot(
-      q,
-      (snap) => {
-        const docs = snap.docs.map((d) => d.data() as StudentWorkspace);
-        setPending(docs.filter((d) => d.status === 'pending'));
-        setActive(docs.filter((d) => d.status === 'active'));
-        setLoading(false);
-      },
-      () => setLoading(false),
-    );
-    return unsubscribe;
-  }, [workspaceId]);
-
-  // ── Feedback queue ──────────────────────────────────────────────────────────
-  // Query sessions with hasVideos==true, then filter those without complete feedback.
-
-  useEffect(() => {
-    if (!workspaceId) return;
-
-    // `queueLoading` already starts `true` — the `finally` below is what
-    // flips it to `false` once the queue has been (re)computed.
-    const loadQueue = async () => {
+    const load = async () => {
+      if (!trainerEmail) { setLoading(false); return; }
       try {
-        const sessionsSnap = await getDocs(
-          query(
+        const [awaitingSnap, completedSnap] = await Promise.all([
+          getDocs(query(
             collection(db, 'sessions'),
-            where('workspaceId', '==', workspaceId),
+            where('trainerEmail', '==', trainerEmail),
             where('hasVideos', '==', true),
             orderBy('date', 'desc'),
-          ),
-        );
+          )),
+          getDocs(query(
+            collection(db, 'sessions'),
+            where('trainerEmail', '==', trainerEmail),
+            where('feedbackStatus', '==', 'complete'),
+            orderBy('date', 'desc'),
+          )),
+        ]);
 
-        const sessions = sessionsSnap.docs.map((d) => d.data() as Session);
-
-        // Parallel-fetch feedback docs + student profiles
-        const feedbackResults = await Promise.all(
-          sessions.map((s) => getDoc(doc(db, 'feedback', s.id))),
-        );
-
-        // Keep only sessions where feedback is not yet complete
-        const needsFeedback = sessions.filter((_, i) => {
-          const fb = feedbackResults[i];
-          if (!fb.exists()) return true;
-          return (fb.data() as Feedback).status !== 'complete';
-        });
-
-        // Fetch student display names (parallel, cached via workspace active list)
-        const studentNames = await Promise.all(
-          needsFeedback.map(async (s) => {
-            const u = await getDoc(doc(db, 'users', s.studentUid));
-            return u.exists() ? (u.data() as UserProfile).displayName : s.studentUid;
-          }),
-        );
-
-        setFeedbackQueue(
-          needsFeedback.map((s, i) => ({ session: s, studentName: studentNames[i] })),
-        );
+        const awaitingSessions = awaitingSnap.docs
+          .map((d) => d.data() as Session)
+          .filter((s) => s.feedbackStatus !== 'complete');
+        setAwaiting(awaitingSessions);
+        setCompleted(completedSnap.docs.map((d) => d.data() as Session));
       } finally {
-        setQueueLoading(false);
+        setLoading(false);
       }
     };
 
-    loadQueue();
-  }, [workspaceId]);
+    load();
+  }, [trainerEmail]);
 
-  // ── Actions ─────────────────────────────────────────────────────────────────
+  const completedGroups = useMemo(() => groupByStudent(completed), [completed]);
+  const activeStudentCount = useMemo(
+    () => new Set(completed.map((s) => s.studentName || 'Aluno')).size,
+    [completed],
+  );
 
-  const handleApprove = async (connection: StudentWorkspace) => {
-    setActionError('');
-    try {
-      await updateDoc(doc(db, 'student_workspaces', connection.id), {
-        status: 'active',
-        joinedAt: Timestamp.now(),
-      });
-    } catch {
-      setActionError('Não foi possível aprovar. Tente novamente.');
-    }
+  // ── Save WhatsApp number ────────────────────────────────────────────────────
+
+  const startEditPhone = () => {
+    setPhoneInput(trainerProfile?.whatsappPhone ?? '');
+    setEditingPhone(true);
   };
 
-  const handleReject = async (connection: StudentWorkspace) => {
-    setActionError('');
+  const savePhone = async () => {
+    if (!trainerEmail) return;
+    const cleaned = phoneInput.replace(/\D/g, '');
+    if (cleaned.length < 11) return;
+    setSavingPhone(true);
     try {
-      await updateDoc(doc(db, 'student_workspaces', connection.id), {
-        status: 'rejected',
-      });
-    } catch {
-      setActionError('Não foi possível rejeitar. Tente novamente.');
+      await updateDoc(doc(db, 'trainers', trainerEmail), { whatsappPhone: cleaned });
+      setEditingPhone(false);
+    } finally {
+      setSavingPhone(false);
     }
   };
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
+  if (!trainerProfile && !loading) {
+    return (
+      <Layout title="Painel do Treinador">
+        <div className="rounded-2xl border-2 border-dashed border-slate-200 px-4 py-12 text-center dark:border-slate-700">
+          <p className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">
+            Conta de treinador não encontrada.
+          </p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Peça ao seu aluno para cadastrar você no Consultoria com este e-mail.
+          </p>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout title="Painel do Treinador">
-      {/* Greeting */}
+      {/* Greeting + WhatsApp */}
       <div className="mb-6">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-          Olá, {userProfile?.displayName?.split(' ')[0]} 👋
+          Olá{trainerProfile?.name ? `, ${trainerProfile.name.split(' ')[0]}` : ''} 👋
         </h1>
         <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-          Gerencie seus alunos e acompanhe os treinos.
+          {trainerEmail}
         </p>
+
+        {/* WhatsApp editor */}
+        <div className="mt-3 flex items-center gap-2">
+          <Phone className="h-4 w-4 text-slate-400" />
+          {editingPhone ? (
+            <>
+              <input
+                type="tel"
+                value={phoneInput}
+                onChange={(e) => setPhoneInput(e.target.value)}
+                placeholder="+55 11 99999-9999"
+                className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+              <button
+                onClick={savePhone}
+                disabled={savingPhone}
+                aria-label="Salvar"
+                className="rounded-lg bg-emerald-600 p-1.5 text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
+              >
+                <Check className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setEditingPhone(false)}
+                aria-label="Cancelar"
+                className="rounded-lg bg-slate-200 p-1.5 text-slate-600 transition-colors hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="text-sm text-slate-600 dark:text-slate-300">
+                {trainerProfile?.whatsappPhone
+                  ? `+${trainerProfile.whatsappPhone}`
+                  : 'Sem WhatsApp'}
+              </span>
+              <button
+                onClick={startEditPhone}
+                aria-label="Editar WhatsApp"
+                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
+        </div>
       </div>
-
-      {actionError && (
-        <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-950/40 dark:text-red-400">
-          {actionError}
-        </p>
-      )}
-
-      {/* ── Feedback queue ────────────────────────────────────────────── */}
-      {!queueLoading && feedbackQueue.length > 0 && (
-        <section className="mb-8">
-          <div className="mb-3 flex items-center gap-2">
-            <Video className="h-4 w-4 text-violet-500" />
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Aguardando feedback
-            </h2>
-            <span className="ml-auto rounded-full bg-violet-100 px-2 py-0.5 text-xs font-bold text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
-              {feedbackQueue.length}
-            </span>
-          </div>
-
-          <ul className="flex flex-col gap-2">
-            {feedbackQueue.map(({ session, studentName }) => {
-              const dateLabel = session.date instanceof Timestamp
-                ? session.date.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
-                : '';
-              return (
-                <li key={session.id}>
-                  <button
-                    onClick={() => navigate(`/trainer/sessions/${session.id}`)}
-                    className="glass-premium flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all active:scale-[0.99]"
-                  >
-                    <MessageSquare className="h-5 w-5 flex-shrink-0 text-violet-500" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
-                        {studentName}
-                      </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {session.tabName} · {dateLabel}
-                      </p>
-                    </div>
-                    <span className="flex-shrink-0 text-xs font-medium text-violet-600 dark:text-violet-400">
-                      Ver →
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-16">
@@ -210,116 +200,107 @@ export function TrainerDashboard() {
         </div>
       ) : (
         <>
-          {/* ── Pending requests ──────────────────────────────────────── */}
-          <section className="mb-8">
-            <div className="mb-3 flex items-center gap-2">
-              <Clock className="h-4 w-4 text-amber-500" />
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Solicitações pendentes
-              </h2>
-              {pending.length > 0 && (
-                <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                  {pending.length}
+          {/* ── Awaiting feedback ─────────────────────────────────────── */}
+          {awaiting.length > 0 && (
+            <section className="mb-8">
+              <div className="mb-3 flex items-center gap-2">
+                <Video className="h-4 w-4 text-violet-500" />
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  Aguardando feedback
+                </h2>
+                <span className="ml-auto rounded-full bg-violet-100 px-2 py-0.5 text-xs font-bold text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+                  {awaiting.length}
                 </span>
-              )}
-            </div>
+              </div>
 
-            {pending.length === 0 ? (
-              <EmptyState message="Nenhuma solicitação pendente." />
-            ) : (
-              <ul className="flex flex-col gap-3">
-                {pending.map((conn) => (
-                  <li
-                    key={conn.id}
-                    className="glass-premium flex items-center gap-3 rounded-2xl px-4 py-3"
-                  >
-                    <Avatar displayName={conn.studentName} size="md" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
-                        {conn.studentName}
-                      </p>
-                      <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                        {conn.studentEmail}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleApprove(conn)}
-                        aria-label={`Aprovar ${conn.studentName}`}
-                        className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-all hover:bg-emerald-700 active:scale-95"
-                      >
-                        <span className="flex items-center gap-1">
-                          <CheckCircle className="h-3.5 w-3.5" />
-                          Aprovar
-                        </span>
-                      </button>
-                      <button
-                        onClick={() => handleReject(conn)}
-                        aria-label={`Rejeitar ${conn.studentName}`}
-                        className="rounded-xl bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition-all hover:bg-slate-300 active:scale-95 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
-                      >
-                        <span className="flex items-center gap-1">
-                          <XCircle className="h-3.5 w-3.5" />
-                          Rejeitar
-                        </span>
-                      </button>
-                    </div>
+              <ul className="flex flex-col gap-2">
+                {awaiting.map((s) => (
+                  <li key={s.id}>
+                    <button
+                      onClick={() => navigate(`/trainer/sessions/${s.id}`)}
+                      className="glass-premium flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all active:scale-[0.99]"
+                    >
+                      <MessageSquare className="h-5 w-5 flex-shrink-0 text-violet-500" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+                          {s.studentName || 'Aluno'}
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {s.tabName} · {shortDate(s.date)}
+                        </p>
+                      </div>
+                      <span className="flex-shrink-0 text-xs font-medium text-violet-600 dark:text-violet-400">
+                        Ver →
+                      </span>
+                    </button>
                   </li>
                 ))}
               </ul>
-            )}
-          </section>
+            </section>
+          )}
 
-          {/* ── Active students ───────────────────────────────────────── */}
+          {/* ── Feedbacks by student ──────────────────────────────────── */}
           <section>
             <div className="mb-3 flex items-center gap-2">
               <Users className="h-4 w-4 text-indigo-500" />
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Alunos ativos
+                Feedbacks por aluno
               </h2>
-              {active.length > 0 && (
+              {activeStudentCount > 0 && (
                 <span className="ml-auto rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-bold text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
-                  {active.length}
+                  {activeStudentCount}
                 </span>
               )}
             </div>
 
-            {active.length === 0 ? (
-              <EmptyState message="Nenhum aluno ativo ainda. Aprove as solicitações acima." />
+            {completedGroups.length === 0 ? (
+              <div className="rounded-2xl border-2 border-dashed border-slate-200 px-4 py-8 text-center dark:border-slate-700">
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Nenhum feedback concluído ainda.
+                </p>
+              </div>
             ) : (
-              <ul className="flex flex-col gap-3">
-                {active.map((conn) => (
-                  <li
-                    key={conn.id}
-                    className="glass flex items-center gap-3 rounded-2xl px-4 py-3"
-                  >
-                    <Avatar displayName={conn.studentName} size="md" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
-                        {conn.studentName}
+              <div className="flex flex-col gap-5">
+                {completedGroups.map((group) => (
+                  <div key={group.studentName}>
+                    <div className="mb-2 flex items-center gap-2">
+                      <Avatar displayName={group.studentName} size="sm" />
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                        {group.studentName}
                       </p>
-                      <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                        {conn.studentEmail}
-                      </p>
+                      <span className="text-xs text-slate-400">
+                        {group.sessions.length} feedback{group.sessions.length !== 1 ? 's' : ''}
+                      </span>
                     </div>
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                      Ativo
-                    </span>
-                  </li>
+                    <ul className="flex flex-col gap-2">
+                      {group.sessions.map((s) => (
+                        <li key={s.id}>
+                          <button
+                            onClick={() => navigate(`/trainer/sessions/${s.id}`)}
+                            className="glass flex w-full items-center gap-3 rounded-2xl px-4 py-2.5 text-left transition-all active:scale-[0.99]"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
+                                {s.tabName}
+                              </p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {shortDate(s.date)}
+                              </p>
+                            </div>
+                            <span className="flex-shrink-0 text-xs font-medium text-indigo-600 dark:text-indigo-400">
+                              Ver →
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ))}
-              </ul>
+              </div>
             )}
           </section>
         </>
       )}
     </Layout>
-  );
-}
-
-function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="rounded-2xl border-2 border-dashed border-slate-200 px-4 py-8 text-center dark:border-slate-700">
-      <p className="text-sm text-slate-500 dark:text-slate-400">{message}</p>
-    </div>
   );
 }

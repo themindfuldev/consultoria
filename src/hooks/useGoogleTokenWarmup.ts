@@ -22,7 +22,7 @@ export function useGoogleTokenWarmup(): void {
   const { userProfile, getAccessToken, isGoogleTokenValid } = useAuth();
 
   useEffect(() => {
-    if (userProfile?.role !== 'student') return;
+    if (!userProfile) return;
     if (isGoogleTokenValid()) return;
 
     // 1. Attempt right away (silent refresh, or popup if the browser allows it).

@@ -46,6 +46,114 @@ the sections below where they conflict):
 
 ---
 
+## 🆕 v0.3 — Trainer Redesign (supersedes the trainer/workspace model below)
+
+This iteration removes the mandatory registered-trainer concept and the trainer
+Google login. Where this section conflicts with the older "workspace" model, this
+section wins. (The prior full implementation is preserved on the `v0.1-full`
+branch; the earlier trainer build is snapshotted on `v0.2-trainer`; this redesign
+is **v0.3** and continues on `main`.)
+
+### Roles & authentication
+
+- **Students are the only Google-authenticated users.** Google sign-in is
+  required because the app acts on the student's own Google Sheet and Drive with
+  their OAuth token (`spreadsheets`, `drive.file`, `documents`). A magic-link
+  identity would not carry those scopes, so students cannot escape Google auth.
+- **Trainers do not use Google.** They authenticate with **Firebase passwordless
+  email-link sign-in**. Trainers never touch Sheets/Drive with their own token —
+  the feedback Google Doc is created student-side and all Drive files are shared
+  "anyone with link → Viewer" — so an email identity is sufficient. The `role`
+  field is gone; a user is a *student* if they have a `users/{uid}` doc and a
+  *trainer* if their verified email matches a `trainers/{email}` doc.
+
+### Security model (#5)
+
+There is **no backend and no WhatsApp API**, so a literal WhatsApp OTP isn't
+possible client-side. Instead the trainer session is secured by **email
+possession**: opening any trainer link (feedback or dashboard) while signed out
+redirects to `/trainer/login`, where the trainer requests a Firebase sign-in link
+to their email. Clicking that link authenticates the browser (and, on first
+sign-in, flips the trainer's `status` `pending → confirmed` — email ownership is
+now proven). When the session expires, the same flow issues a fresh link. The
+feedback link the student shares carries **no secret** — it's the email step that
+authorises access. `ProtectedRoute` remembers the intended URL via `?next=` so the
+link returns the trainer to the page they originally opened.
+
+### Trainer registration & confirmation (#1, #3)
+
+- A student registers a trainer from **Meus treinadores** (`/student/trainers`)
+  with the trainer's **email + WhatsApp**. Trainers are globally unique by email
+  (`trainers/{emailKey}`, email = lowercased doc id, immutable).
+- The first student to register a given email creates the `pending` record; later
+  students just link to it. Each link is a `student_trainers/{studentUid}_{email}`
+  doc — **a student may register any number of trainers**.
+- After registering, the student sends a **WhatsApp confirmation nudge** (`wa.me`)
+  linking to `/trainer/login`. The trainer confirms by signing in with that email.
+- The trainer can update their **WhatsApp number** from their dashboard; the
+  **email is immutable** (it's the identity/doc id).
+
+### Sheet sharing is the student's responsibility
+
+Because trainers authenticate by email and read the student's Sheet via normal
+Google sharing (not the app), the student must **share their Google Sheet (as
+Viewer) with each registered trainer's email**. This is reminded in the UI on the
+*Meus treinadores* page and again on *Adicionar Programa* when a trainer is
+selected.
+
+### Feedback flow (#2, #4)
+
+- **Cycles carry an optional trainer.** `AddCycle` lets the student pick one of
+  their registered trainers or "Sem treinador". A trainer-less cycle simply has no
+  feedback loop.
+- When a session is finished (or has videos), the student can **"Enviar para
+  feedback"** — a `wa.me` deep link to the cycle's trainer with a link to the
+  public, auth-gated feedback page `/trainer/sessions/:sessionId`.
+- The **trainer feedback page** authors per-exercise + general feedback (as
+  before) and links to **"Meu painel"**.
+- The **trainer dashboard** (`/trainer`) shows an *Aguardando feedback* queue plus
+  **all completed feedbacks grouped by student**, and lets the trainer edit their
+  WhatsApp. The old approve/reject student-connection flow is removed.
+
+### Data-model changes
+
+- `UserProfile`: **`role` removed**. Students only.
+- **New `trainers/{email}`**: `{ email, name?, whatsappPhone, status:
+  'pending'|'confirmed', createdByStudentUid, confirmedAt?, createdAt }`.
+- **New `student_trainers/{studentUid}_{email}`**: links a student to a trainer.
+- **`workspaces` and `student_workspaces` collections are removed.**
+- Everywhere `workspaceId` (= trainer email) appeared — `cycles`, `sessions`,
+  `session_exercises`, `videos`, `feedback` — it becomes **`trainerEmail`
+  (optional)**. `Feedback.trainerUid` → `trainerEmail`; `Feedback` gains
+  `studentName`.
+- `cycles` and `sessions` **denormalise `studentName` + `studentWhatsapp`** so an
+  email-link trainer can render and notify the student without reading the
+  student's `users` doc (which rules don't allow).
+
+### Security rules
+
+Real rules replace the open placeholder. Students are scoped to their own `uid`;
+trainers are scoped to their **verified `request.auth.token.email`** matched
+against the `trainerEmail` denormalised on each doc (`isTrainerFor(email)`).
+Feedback writes must stamp the trainer's own email; the trainer may also update a
+session's `feedbackStatus`. See the updated rules block at the end of this doc.
+
+### Firebase console prerequisites
+
+- Enable **Authentication → Sign-in method → Email/Password → Email link
+  (passwordless sign-in)**.
+- Ensure the app's hosting domain (and `localhost` for dev) is under
+  **Authentication → Settings → Authorized domains**.
+
+### Routes
+
+- Removed: `/student/select-trainer`, `/student/pending` (+ their pages).
+- Added: `/trainer/login` (public), `/student/trainers`.
+- `/trainer` and `/trainer/sessions/:sessionId` are now gated by the email-link
+  trainer identity rather than a Google role.
+
+---
+
 ## 🎯 Project Goals
 
 - **Mobile-first UX**: Trainer and student primarily use their phones. Every screen is designed at 375px first.
@@ -864,6 +972,12 @@ Same as v1 — push to `main` triggers build + Firebase Hosting deploy. See `doc
 ---
 
 ## 🛡️ Firestore Security Rules
+
+> **Superseded by v0.3.** The rules below describe the pre-v0.3 workspace model
+> and are kept for historical context. The **authoritative, deployed rules** live
+> in [`firestore.rules`](../firestore.rules) and follow the trainer-email model
+> described in the "v0.2 — Trainer Redesign" section above (students scoped to
+> their `uid`; trainers scoped to their verified `token.email`).
 
 ```js
 rules_version = '2';
