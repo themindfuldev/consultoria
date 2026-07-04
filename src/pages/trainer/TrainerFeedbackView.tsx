@@ -16,6 +16,7 @@ import {
 import { LayoutDashboard, Save, Send } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
+import { openWhatsApp } from '../../services/notifyService';
 import { Layout } from '../../components/Layout';
 import type {
   Cycle,
@@ -208,11 +209,11 @@ export function TrainerFeedbackView() {
       if (session.studentWhatsapp) {
         const dateStr = session.date instanceof Timestamp ? fmtDate(session.date) : '';
         const appUrl = window.location.origin;
-        const msg = encodeURIComponent(
+        openWhatsApp(
+          session.studentWhatsapp,
           `Seu feedback do treino *${session.tabName}* de ${dateStr} está pronto!\n` +
           `${appUrl}/student/sessions/${sessionId}/feedback`,
         );
-        window.open(`https://wa.me/${session.studentWhatsapp}?text=${msg}`, '_blank');
       }
 
       navigate('/trainer');

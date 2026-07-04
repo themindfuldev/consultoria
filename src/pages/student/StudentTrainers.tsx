@@ -13,6 +13,7 @@ import {
 import { CheckCircle2, Clock, Mail, Phone, Send, Trash2, UserPlus } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
+import { openWhatsApp } from '../../services/notifyService';
 import { Layout } from '../../components/Layout';
 import type { StudentTrainer, Trainer } from '../../types';
 
@@ -128,11 +129,12 @@ export function StudentTrainers() {
 
   const sendConfirmation = (whatsappPhone: string, trainerEmail: string) => {
     const url = `${window.location.origin}/trainer/login`;
-    const studentName = userProfile?.displayName ?? 'seu aluno';
     const msg =
-      `Olá! ${studentName} cadastrou você no Consultoria para receber feedbacks de treino.\n` +
-      `Confirme seu acesso (com o e-mail ${trainerEmail}): ${url}`;
-    window.open(`https://wa.me/${whatsappPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+      `Olá! Cadastrei você no Consultoria para receber feedbacks de treino. ` +
+      `Confirme seu acesso clicando no link abaixo:\n` +
+      `URL: ${url}\n` +
+      `E-mail: ${trainerEmail}`;
+    openWhatsApp(whatsappPhone, msg);
   };
 
   const handleRemove = async (link: StudentTrainer) => {
