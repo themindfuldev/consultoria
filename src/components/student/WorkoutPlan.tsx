@@ -113,7 +113,7 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                               onChange={(rpe) => onEntryChange!(key, { ...entry, rpe })}
                             />
                           ) : displayRpe != null ? (
-                            <span className={`inline-block rounded-full px-2 py-0.5 font-bold ${rpeChipClasses(displayRpe)}`}>
+                            <span className={`inline-block rounded-lg px-2 py-0.5 font-bold ${rpeChipClasses(displayRpe)}`}>
                               RPE {displayRpe}
                             </span>
                           ) : null}
