@@ -201,16 +201,16 @@ function RpeSelect({
   return (
     <div ref={ref} className="relative w-full sm:w-20">
       <input
-        type="number"
+        type="text"
         inputMode="numeric"
-        min={1}
-        max={10}
+        maxLength={2}
         value={value}
         onFocus={() => setOpen(true)}
         onChange={(e) => {
-          const raw = e.target.value;
-          const n = raw === '' ? '' : Math.min(10, Math.max(1, parseInt(raw) || 1));
-          onChange(n);
+          // Digits only; empty clears, otherwise clamp to 1–10.
+          const digits = e.target.value.replace(/\D/g, '');
+          if (digits === '') { onChange(''); return; }
+          onChange(Math.min(10, Math.max(1, parseInt(digits, 10))));
         }}
         placeholder="RPE"
         className={`w-full rounded-lg border px-3 py-2 pr-7 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/40 ${inputClasses}`}
