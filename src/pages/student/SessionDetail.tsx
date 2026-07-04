@@ -24,6 +24,7 @@ import {
   MessageSquare,
   PlusCircle,
   RotateCcw,
+  Send,
   SkipForward,
   Trash2,
   Upload,
@@ -179,6 +180,10 @@ export function SessionDetail() {
   // it had progressed before being skipped.
   const isSkipped = session?.status === 'skipped';
   const readOnly = weekConcluded || isSkipped;
+
+  // Once the trainer's feedback is in, the session is locked: no more video
+  // add/delete or re-sending for feedback.
+  const feedbackAvailable = session?.feedbackStatus === 'complete';
 
   // ── Load cycle + session ────────────────────────────────────────────────────
 
@@ -675,24 +680,6 @@ export function SessionDetail() {
         </div>
       )}
 
-      {/* Feedback available banner */}
-      {session?.feedbackStatus === 'complete' && (
-        <button
-          onClick={() => navigate(`/student/sessions/${sessionId}/feedback`)}
-          className="mb-5 flex w-full items-center gap-3 rounded-2xl bg-emerald-50 p-4 text-left transition-all hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30"
-        >
-          <MessageSquare className="h-5 w-5 flex-shrink-0 text-emerald-600 dark:text-emerald-400" />
-          <div>
-            <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
-              Feedback disponível!
-            </p>
-            <p className="text-xs text-emerald-600 dark:text-emerald-400">
-              Toque para ver o feedback do seu treinador.
-            </p>
-          </div>
-        </button>
-      )}
-
       {/* ── Reading mode: workout plan, always expanded ─────────────────── */}
       <div className="mb-5">
         <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -886,7 +873,7 @@ export function SessionDetail() {
                   >
                     <ExternalLink className="h-4 w-4" />
                   </a>
-                  {!readOnly && (
+                  {!readOnly && !feedbackAvailable && (
                     <button
                       onClick={() => handleDeleteVideo(v)}
                       aria-label="Excluir vídeo"
@@ -962,8 +949,8 @@ export function SessionDetail() {
             </div>
           )}
 
-          {/* Actions (hidden when read-only — concluded week or skipped) */}
-          {!readOnly && (
+          {/* Actions (hidden when read-only, or once feedback has arrived) */}
+          {!readOnly && !feedbackAvailable && (
             <div className="flex flex-col gap-3">
               {/* Hidden file input */}
               <input
@@ -990,12 +977,37 @@ export function SessionDetail() {
                   disabled={notifying}
                   className="flex items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-green-700 active:scale-95 disabled:opacity-60"
                 >
-                  📱 Enviar para feedback
+                  <Send className="h-4 w-4" />
+                  Enviar para feedback
                 </button>
               )}
             </div>
           )}
         </>
+      )}
+
+      {/* ── Feedback available: non-clickable banner + "Ver feedback" ────── */}
+      {feedbackAvailable && (
+        <div className="mt-6">
+          <div className="flex items-center gap-3 rounded-2xl bg-emerald-50 p-4 dark:bg-emerald-900/20">
+            <MessageSquare className="h-5 w-5 flex-shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <div>
+              <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+                Feedback disponível!
+              </p>
+              <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                Seu treinador enviou o feedback desta sessão.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate(`/student/sessions/${sessionId}/feedback`)}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-95"
+          >
+            <MessageSquare className="h-4 w-4" />
+            Ver feedback
+          </button>
+        </div>
       )}
 
       {/* ── Preview / exercise-label sheet ────────────────────────────── */}
