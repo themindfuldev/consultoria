@@ -34,6 +34,17 @@ async function driveJson<T>(
   return res.json() as Promise<T>;
 }
 
+/** Permanently deletes a Drive file. Treats 404 (already gone) as success. */
+export async function deleteDriveFile(fileId: string, token: string): Promise<void> {
+  const res = await fetch(`${DRIVE_API}/files/${fileId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`Drive API delete /files/${fileId} → ${res.status}`);
+  }
+}
+
 /** Set a file or folder to "anyone with the link → reader". */
 async function makePublicViewer(fileId: string, token: string): Promise<void> {
   await driveJson(

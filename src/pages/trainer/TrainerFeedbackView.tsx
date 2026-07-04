@@ -12,7 +12,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { LayoutDashboard, Save, Send } from 'lucide-react';
+import { LayoutDashboard, Save, Send, Video } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { openWhatsApp } from '../../services/notifyService';
@@ -431,7 +431,8 @@ function ExerciseBlock({
             rel="noopener noreferrer"
             className="flex items-center gap-2 rounded-xl bg-slate-100/60 px-3 py-2.5 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-100 dark:bg-slate-700/60 dark:text-indigo-300"
           >
-            ▶ Vídeo {i + 1}
+            <Video className="h-5 w-5 flex-shrink-0 text-indigo-500" />
+            Vídeo {i + 1}
             <span className="ml-auto text-xs text-slate-400">
               {(v.compressedSizeMB).toFixed(1)} MB
             </span>

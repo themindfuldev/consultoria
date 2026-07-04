@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   collection,
+  deleteDoc,
   deleteField,
   doc,
   getDoc,
@@ -18,11 +19,13 @@ import {
 import {
   CheckCircle2,
   Download,
+  ExternalLink,
   Lock,
   MessageSquare,
   PlusCircle,
   RotateCcw,
   SkipForward,
+  Trash2,
   Upload,
   Video,
   X,
@@ -36,6 +39,7 @@ import { ChoiceButtons } from '../../components/student/ChoiceButtons';
 import { WorkoutPlan } from '../../components/student/WorkoutPlan';
 import type { ExerciseEntry } from '../../components/student/WorkoutPlan';
 import {
+  deleteDriveFile,
   getCycleWeekLabel,
   getOrCreateSessionFolder,
   uploadFileToDrive,
@@ -603,6 +607,27 @@ export function SessionDetail() {
     }
   };
 
+  // ── Delete a video ───────────────────────────────────────────────────────────
+
+  const handleDeleteVideo = async (v: SessionVideo) => {
+    if (!window.confirm('Excluir este vídeo?')) return;
+    try {
+      await deleteDoc(doc(db, 'videos', v.id));
+      // If that was the last video, clear the session's hasVideos flag so it
+      // drops out of the trainer's "aguardando feedback" queue.
+      if (session && videos.filter((x) => x.id !== v.id).length === 0) {
+        await updateDoc(doc(db, 'sessions', session.id), { hasVideos: false });
+        setSession((prev) => (prev ? { ...prev, hasVideos: false } : prev));
+      }
+      // Best-effort: also remove the file from Drive.
+      getAccessToken()
+        .then((token) => deleteDriveFile(v.driveFileId, token))
+        .catch(() => {/* Drive cleanup is best-effort */});
+    } catch (err) {
+      console.error('Falha ao excluir vídeo:', err);
+    }
+  };
+
   // ── Send the session to the trainer for feedback (via WhatsApp) ──────────────
 
   const handleNotify = () => {
@@ -851,14 +876,26 @@ export function SessionDetail() {
                     {v.originalSizeMB > 0 && ` (original: ${fmtBytes(v.originalSizeMB)})`}
                   </p>
                 </div>
-                <a
-                  href={v.driveFileUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
-                >
-                  Ver
-                </a>
+                <div className="flex flex-shrink-0 items-center gap-1">
+                  <a
+                    href={v.driveFileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Abrir vídeo"
+                    className="rounded-lg p-2 text-indigo-600 transition-colors hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                  {!readOnly && (
+                    <button
+                      onClick={() => handleDeleteVideo(v)}
+                      aria-label="Excluir vídeo"
+                      className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
