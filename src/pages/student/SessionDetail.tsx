@@ -260,15 +260,17 @@ export function SessionDetail() {
   // ── Real-time videos listener ───────────────────────────────────────────────
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || !currentUser) return;
     setLoading(true);
-    // No `orderBy('uploadedAt')` here: a just-uploaded doc has a *pending*
-    // server timestamp (null locally), which an orderBy query excludes until the
-    // server resolves it — making the new video seem to vanish. Sort client-side
-    // instead (pending timestamps sort last) so it shows immediately.
+    // Must filter by studentUid: the videos read rule checks
+    // `resource.data.studentUid == uid`, and Firestore rules are not filters —
+    // a query not constrained to studentUid is denied outright. Also no
+    // `orderBy('uploadedAt')` (a pending server timestamp would be excluded
+    // until resolved) — sort client-side instead.
     const q = query(
       collection(db, 'videos'),
       where('sessionId', '==', sessionId),
+      where('studentUid', '==', currentUser.uid),
     );
     return onSnapshot(
       q,
@@ -285,7 +287,7 @@ export function SessionDetail() {
       },
       (err) => { console.error('Falha ao carregar vídeos:', err); setLoading(false); },
     );
-  }, [sessionId]);
+  }, [sessionId, currentUser]);
 
   // ── Pre-workout submit ──────────────────────────────────────────────────────
 

@@ -5,7 +5,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  orderBy,
   query,
   updateDoc,
   where,
@@ -63,16 +62,20 @@ export function FeedbackView() {
         const [cycleSnap, studentSnap, videosSnap] = await Promise.all([
           getDoc(doc(db, 'cycles', s.cycleId)),
           getDoc(doc(db, 'users', s.studentUid)),
+          // Must filter by studentUid to satisfy the videos read rule (rules are
+          // not filters). Sort client-side instead of orderBy.
           getDocs(query(
             collection(db, 'videos'),
             where('sessionId', '==', sessionId),
-            orderBy('uploadedAt', 'asc'),
+            where('studentUid', '==', s.studentUid),
           )),
         ]);
 
         if (cycleSnap.exists()) setCycle(cycleSnap.data() as Cycle);
         if (studentSnap.exists()) setStudentProfile(studentSnap.data() as UserProfile);
-        setVideos(videosSnap.docs.map((d) => d.data() as SessionVideo));
+        const vids = videosSnap.docs.map((d) => d.data() as SessionVideo);
+        vids.sort((a, b) => (a.uploadedAt?.seconds ?? Infinity) - (b.uploadedAt?.seconds ?? Infinity));
+        setVideos(vids);
       } finally {
         setLoading(false);
       }
