@@ -211,6 +211,7 @@ export function TrainerFeedbackView() {
         const appUrl = window.location.origin;
         openWhatsApp(
           session.studentWhatsapp,
+          'Feedback disponível',
           `Seu feedback do treino *${session.tabName}* de ${dateStr} está pronto!\n` +
           `${appUrl}/student/sessions/${sessionId}/feedback`,
         );

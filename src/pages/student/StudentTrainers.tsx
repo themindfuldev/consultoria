@@ -129,12 +129,12 @@ export function StudentTrainers() {
 
   const sendConfirmation = (whatsappPhone: string, trainerEmail: string) => {
     const url = `${window.location.origin}/trainer/login`;
-    const msg =
+    const body =
       `Olá! Cadastrei você no Consultoria para receber feedbacks de treino. ` +
       `Confirme seu acesso clicando no link abaixo:\n` +
       `URL: ${url}\n` +
       `E-mail: ${trainerEmail}`;
-    openWhatsApp(whatsappPhone, msg);
+    openWhatsApp(whatsappPhone, 'Confirmação de cadastro', body);
   };
 
   const handleRemove = async (link: StudentTrainer) => {

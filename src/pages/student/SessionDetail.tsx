@@ -274,6 +274,7 @@ export function SessionDetail() {
 
       notifyTrainer(
         cycle.trainerEmail,
+        'Treino iniciado',
         `Comecei o treino *${session.tabName}*` +
           (session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.'),
       ).catch(() => {/* notification is a convenience, never a blocker */});
@@ -413,6 +414,7 @@ export function SessionDetail() {
       // Notify trainer the workout is finished.
       notifyTrainer(
         cycle.trainerEmail,
+        'Treino concluído',
         `Terminei o treino *${session.tabName}* de ${dateLabel}.`,
       ).catch(() => {/* notification is a convenience, never a blocker */});
 
@@ -570,9 +572,9 @@ export function SessionDetail() {
     const videoLine = videos.length > 0
       ? `Enviei ${videos.length} vídeo(s) do treino *${session.tabName}* de ${dateLabel}.\n`
       : `Enviei o treino *${session.tabName}* de ${dateLabel} para feedback.\n`;
-    const msg = videoLine +
+    const body = videoLine +
       `Feedback: ${window.location.origin}/trainer/sessions/${session.id}`;
-    notifyTrainer(cycle.trainerEmail, msg)
+    notifyTrainer(cycle.trainerEmail, 'Treino enviado para feedback', body)
       .then(() => updateDoc(doc(db, 'sessions', session.id), { videosNotifiedAt: serverTimestamp() }))
       .finally(() => setNotifying(false));
   };
