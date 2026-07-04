@@ -1,20 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { setKey } from '../../services/sheetsService';
 import type { ParsedSheetTab, PlannedExercise } from '../../types';
 
 // ── Display helpers ───────────────────────────────────────────────────────────
 
-function fmtLoad(load: number | string): string {
+/** Raw load value (no "kg" suffix) — rendered as "Carga: {value}". */
+function fmtLoadValue(load: number | string): string {
   if (load === 'ESCOLHER') return 'a definir';
   if (load === '--' || !load) return '—';
-  return `${load} kg`;
-}
-
-function fmtRpe(rpe: number | string): string {
-  if (rpe === 'PREENCHER') return 'preencher';
-  if (rpe === '--' || !rpe) return '—';
-  return `RPE ${rpe}`;
+  return `${load}`;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -28,12 +23,12 @@ interface WorkoutPlanProps {
   tab: ParsedSheetTab;
   /**
    * When provided (together with `onEntryChange`), renders editable
-   * "Observações" / "RPE" inputs under each exercise — the student's actual
-   * notes for that exercise, later written back to sheet columns F/G.
-   * Omit both to render a purely read-only reference view (e.g. offline export).
+   * "Observações" / "RPE" inputs per **set** — the student's actual notes for
+   * that set, later written back to sheet columns F/G. Keyed by set key (see
+   * `setKey`). Omit both to render a read-only reference view (e.g. offline).
    */
   entries?: Record<string, ExerciseEntry>;
-  onEntryChange?: (exerciseName: string, entry: ExerciseEntry) => void;
+  onEntryChange?: (setKey: string, entry: ExerciseEntry) => void;
 }
 
 /**
@@ -74,46 +69,68 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                 <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-white">
                   {ex.exerciseName}
                 </p>
-                <div className="flex flex-col gap-3">
+                {/* Column grid: sets×reps · Carga · RPE · Descanso, with the
+                    per-set Observações on a second row aligned under "Carga". */}
+                <div className="grid grid-cols-[auto_auto_5rem_1fr] items-center gap-x-3 gap-y-1.5 text-xs">
                   {ex.setGroups.map((sg, i) => {
                     const key = setKey(ex.exerciseName, i, sg.rowNumber);
                     const entry: ExerciseEntry = entries?.[key] ?? { observations: '', rpe: '' };
+                    // RPE chip: student's value when set, otherwise the planned one.
+                    const displayRpe = typeof entry.rpe === 'number'
+                      ? entry.rpe
+                      : (typeof sg.rpe === 'number' ? sg.rpe : null);
+                    const showObs = editable || !!entry.observations || !!sg.observations;
                     return (
-                      <div key={i} className="flex flex-col gap-1.5">
-                        {/* Planned reference line (read-only) */}
-                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                          <span className="min-w-[1.5rem] font-medium text-slate-700 dark:text-slate-300">
-                            {sg.sets}×{sg.reps}
-                          </span>
-                          <span>{fmtLoad(sg.load)}</span>
-                          {sg.rpe !== '--' && <span className="text-emerald-600 dark:text-emerald-400">{fmtRpe(sg.rpe)}</span>}
-                          {sg.rest && <span>⏱ {sg.rest}</span>}
-                        </div>
-
-                        {editable ? (
-                          // Per-set editable Observações + RPE (preloaded from the sheet).
-                          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start">
-                            <input
-                              type="text"
-                              value={entry.observations}
-                              onChange={(e) => onEntryChange!(key, { ...entry, observations: e.target.value })}
-                              placeholder="Observações…"
-                              className="w-full flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
-                            />
+                      <Fragment key={i}>
+                        {/* Row 1 — aligned columns */}
+                        <span className="whitespace-nowrap font-medium text-slate-700 dark:text-slate-300">
+                          {sg.sets}×{sg.reps}
+                        </span>
+                        <span className="whitespace-nowrap text-slate-500 dark:text-slate-400">
+                          Carga: {fmtLoadValue(sg.load)}
+                        </span>
+                        <span>
+                          {editable ? (
                             <RpeSelect
                               value={entry.rpe}
                               onChange={(rpe) => onEntryChange!(key, { ...entry, rpe })}
                             />
-                          </div>
-                        ) : entries?.[key] ? (
-                          <ExerciseEntryReadOnly entry={entry} />
-                        ) : sg.observations ? (
-                          // Reference view (pre-workout / offline): trainer's note.
-                          <p className="text-xs italic text-amber-600 dark:text-amber-400">
-                            {sg.observations}
-                          </p>
-                        ) : null}
-                      </div>
+                          ) : displayRpe != null ? (
+                            <span className={`inline-block rounded-full px-2 py-0.5 font-bold ${rpeChipClasses(displayRpe)}`}>
+                              RPE {displayRpe}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="whitespace-nowrap text-slate-500 dark:text-slate-400">
+                          {sg.rest ? `⏱ ${sg.rest}` : ''}
+                        </span>
+
+                        {/* Row 2 — Observações under "Carga", spanning to the end */}
+                        {showObs && (
+                          <>
+                            <span />
+                            <div className="col-span-3">
+                              {editable ? (
+                                <input
+                                  type="text"
+                                  value={entry.observations}
+                                  onChange={(e) => onEntryChange!(key, { ...entry, observations: e.target.value })}
+                                  placeholder="Observações…"
+                                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
+                                />
+                              ) : entry.observations ? (
+                                <span className="inline-block rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200">
+                                  📝 {entry.observations}
+                                </span>
+                              ) : (
+                                <span className="italic text-amber-600 dark:text-amber-400">
+                                  📝 {sg.observations}
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </Fragment>
                     );
                   })}
                 </div>
@@ -122,28 +139,6 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-// ── Read-only entry summary (filled Observações + RPE, shown after finishing) ─
-
-function ExerciseEntryReadOnly({ entry }: { entry: ExerciseEntry }) {
-  const hasObs = entry.observations.trim() !== '';
-  const hasRpe = entry.rpe !== '' && entry.rpe !== 0;
-  if (!hasObs && !hasRpe) return null;
-  return (
-    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-      {hasObs && (
-        <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200">
-          📝 {entry.observations}
-        </span>
-      )}
-      {hasRpe && (
-        <span className={`rounded-full px-2 py-0.5 font-bold ${rpeChipClasses(entry.rpe as number)}`}>
-          RPE {entry.rpe}
-        </span>
-      )}
     </div>
   );
 }

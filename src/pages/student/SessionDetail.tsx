@@ -8,7 +8,6 @@ import {
   getDocs,
   limit,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -256,15 +255,19 @@ export function SessionDetail() {
   useEffect(() => {
     if (!sessionId) return;
     setLoading(true);
+    // No `orderBy('uploadedAt')` here: a just-uploaded doc has a *pending*
+    // server timestamp (null locally), which an orderBy query excludes until the
+    // server resolves it — making the new video seem to vanish. Sort client-side
+    // instead (pending timestamps sort last) so it shows immediately.
     const q = query(
       collection(db, 'videos'),
       where('sessionId', '==', sessionId),
-      orderBy('uploadedAt', 'asc'),
     );
     return onSnapshot(
       q,
       (snap) => {
         const vids = snap.docs.map((d) => d.data() as SessionVideo);
+        vids.sort((a, b) => (a.uploadedAt?.seconds ?? Infinity) - (b.uploadedAt?.seconds ?? Infinity));
         setVideos(vids);
         // Append any video-tagged names not already present (keep sheet order first).
         const names = vids.map((v) => v.exerciseName).filter(Boolean) as string[];
