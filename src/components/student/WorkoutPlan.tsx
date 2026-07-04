@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
-import { ChevronDown, Weight } from 'lucide-react';
+import { ChevronDown, Clock, Weight } from 'lucide-react';
 import { setKey } from '../../services/sheetsService';
 import type { ParsedSheetTab, PlannedExercise } from '../../types';
 
@@ -70,9 +70,9 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                   {ex.exerciseName}
                 </p>
                 {/* Fixed columns so every exercise lines up. Row 1: sets×reps ·
-                    carga · RPE · descanso. Row 2: Observações, from the carga
+                    carga · descanso · RPE. Row 2: Observações, from the carga
                     column to the full width. */}
-                <div className="grid grid-cols-[3rem_5.5rem_5rem_1fr] items-center gap-x-3 gap-y-1.5 text-xs">
+                <div className="grid grid-cols-[3rem_5.5rem_4.5rem_5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 text-xs">
                   {ex.setGroups.map((sg, i) => {
                     const key = setKey(ex.exerciseName, i, sg.rowNumber);
                     const entry: ExerciseEntry = entries?.[key] ?? { observations: '', rpe: '' };
@@ -90,12 +90,12 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                           {sg.sets}×{sg.reps}
                         </span>
                         <span className="flex items-center gap-1 overflow-hidden whitespace-nowrap text-slate-500 dark:text-slate-400">
-                          {hasLoad && (
-                            <>
-                              <Weight className="h-3.5 w-3.5 flex-shrink-0" />
-                              {fmtLoadValue(sg.load)}
-                            </>
-                          )}
+                          <Weight className="h-3.5 w-3.5 flex-shrink-0" />
+                          {hasLoad && fmtLoadValue(sg.load)}
+                        </span>
+                        <span className="flex items-center gap-1 whitespace-nowrap text-slate-500 dark:text-slate-400">
+                          <Clock className="h-3.5 w-3.5 flex-shrink-0" />
+                          {rest}
                         </span>
                         <span>
                           {editable ? (
@@ -109,15 +109,13 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                             </span>
                           ) : null}
                         </span>
-                        <span className="whitespace-nowrap text-slate-500 dark:text-slate-400">
-                          {rest && `⏱ ${rest}`}
-                        </span>
+                        <span />
 
-                        {/* Row 2 — Observações: empty col 1, then spans cols 2–4 */}
+                        {/* Row 2 — Observações: empty col 1, then spans cols 2–5 */}
                         {showObs && (
                           <>
                             <span />
-                            <div className="col-span-3 min-w-0">
+                            <div className="col-span-4 mb-1 min-w-0">
                               {editable ? (
                                 <input
                                   type="text"
@@ -128,11 +126,11 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                                 />
                               ) : entry.observations ? (
                                 <span className="block w-full rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200">
-                                  📝 {entry.observations}
+                                  {entry.observations}
                                 </span>
                               ) : (
                                 <span className="block w-full rounded-lg bg-amber-50 px-2 py-1 italic text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-                                  📝 {sg.observations}
+                                  {sg.observations}
                                 </span>
                               )}
                             </div>
