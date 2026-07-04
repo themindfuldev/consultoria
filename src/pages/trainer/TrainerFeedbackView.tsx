@@ -66,28 +66,30 @@ export function TrainerFeedbackView() {
 
     const loadAll = async () => {
       try {
-        const sessionSnap = await getDoc(doc(db, 'sessions', sessionId));
-        if (!sessionSnap.exists()) return;
+        const sessionSnap = await getDoc(doc(db, 'sessions', sessionId)).catch(() => null);
+        if (!sessionSnap || !sessionSnap.exists()) return;
         const s = sessionSnap.data() as Session;
         setSession(s);
 
+        // Each read is independent + tolerant: a single failure (e.g. Firestore
+        // denies reading the not-yet-created feedback doc) must not blank the
+        // cycle/videos too.
         const [cycleSnap, videosSnap, feedbackSnap] = await Promise.all([
-          getDoc(doc(db, 'cycles', s.cycleId)),
+          getDoc(doc(db, 'cycles', s.cycleId)).catch(() => null),
           getDocs(query(
             collection(db, 'videos'),
             where('sessionId', '==', sessionId),
             orderBy('uploadedAt', 'asc'),
-          )),
-          getDoc(doc(db, 'feedback', sessionId)),
+          )).catch(() => null),
+          getDoc(doc(db, 'feedback', sessionId)).catch(() => null),
         ]);
 
-        if (cycleSnap.exists()) setCycle(cycleSnap.data() as Cycle);
+        if (cycleSnap?.exists()) setCycle(cycleSnap.data() as Cycle);
 
-        const vids = videosSnap.docs.map((d) => d.data() as SessionVideo);
-        setVideos(vids);
+        if (videosSnap) setVideos(videosSnap.docs.map((d) => d.data() as SessionVideo));
 
         // Pre-fill form if draft exists
-        if (feedbackSnap.exists()) {
+        if (feedbackSnap?.exists()) {
           const fb = feedbackSnap.data() as Feedback;
           const fMap = new Map<string, string>();
           const mMap = new Map<string, FeedbackMediaFile[]>();
@@ -262,6 +264,15 @@ export function TrainerFeedbackView() {
 
       {/* Exercise blocks */}
       <div className="flex flex-col gap-6">
+        {videos.length === 0 && (
+          <div className="rounded-2xl border-2 border-dashed border-slate-200 px-4 py-6 text-center dark:border-slate-700">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              O aluno ainda não enviou vídeos para esta sessão. Você pode deixar
+              observações gerais abaixo.
+            </p>
+          </div>
+        )}
+
         {[...exerciseGroups.byExercise.entries()].map(([exerciseName, vids]) => (
           <ExerciseBlock
             key={exerciseName}

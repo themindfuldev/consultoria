@@ -155,8 +155,12 @@ export interface Session {
     energyLevel: 1 | 2 | 3 | 4 | 5;
     feeling: 'Mantenho a resposta anterior' | 'Um pouco melhor' | 'Um pouco pior';
   };
-  /** Student-filled per-exercise notes, keyed by exercise name — written back to sheet columns F/G on finish. */
-  exerciseEntries?: Record<string, { observations: string; rpe: number }>;
+  /**
+   * Student-filled per-**set** notes, keyed by set key (`r{rowNumber}` or
+   * `{exerciseName}#{index}`) — written back to sheet columns F/G on finish.
+   * `rpe` is omitted when the student leaves it blank (never coerced to 0).
+   */
+  exerciseEntries?: Record<string, { observations: string; rpe?: number }>;
   driveFolderId?: string;
   driveFolderUrl?: string;
   hasVideos: boolean;

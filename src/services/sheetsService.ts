@@ -261,14 +261,24 @@ export function cellRange(tabName: string, col: string, row: number): string {
   return `${tabName}!${col}${row}`;
 }
 
+/**
+ * Stable key for a single set within a session's per-set entries map. Prefers
+ * the sheet row number (so it maps cleanly to columns F/G on write-back); falls
+ * back to exercise name + set index when a row number isn't available.
+ */
+export function setKey(exerciseName: string, index: number, rowNumber?: number): string {
+  return rowNumber != null ? `r${rowNumber}` : `${exerciseName}#${index}`;
+}
+
 // ── Convenience: get unique exercise names from a parsed tab ──────────────────
 
 /**
- * Returns a deduplicated, sorted list of exercise names from a parsed tab.
- * Useful for pre-populating the video-tagging dropdown.
+ * Returns a deduplicated list of exercise names from a parsed tab, **in
+ * spreadsheet order** (first occurrence wins). Used to pre-populate the
+ * video-tagging dropdown so it mirrors the sheet, not alphabetical order.
  */
 export function getExerciseNames(tab: ParsedSheetTab): string[] {
   return Array.from(
     new Set(tab.exercises.map((e) => e.exerciseName).filter(Boolean)),
-  ).sort();
+  );
 }

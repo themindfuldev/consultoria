@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { setKey } from '../../services/sheetsService';
 import type { ParsedSheetTab, PlannedExercise } from '../../types';
 
 // ── Display helpers ───────────────────────────────────────────────────────────
@@ -70,70 +71,57 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
           <div className="divide-y divide-slate-100 dark:divide-slate-700">
             {exercises.map((ex) => (
               <div key={ex.exerciseName} className="px-3 py-2.5">
-                <p className="mb-1.5 text-sm font-semibold text-slate-800 dark:text-white">
+                <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-white">
                   {ex.exerciseName}
                 </p>
-                <div className="flex flex-col gap-0.5">
-                  {ex.setGroups.map((sg, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                      <span className="min-w-[1.5rem] font-medium text-slate-700 dark:text-slate-300">
-                        {sg.sets}×{sg.reps}
-                      </span>
-                      <span>{fmtLoad(sg.load)}</span>
-                      {sg.rpe !== '--' && <span className="text-emerald-600 dark:text-emerald-400">{fmtRpe(sg.rpe)}</span>}
-                      {sg.rest && <span>⏱ {sg.rest}</span>}
-                      {sg.observations && (
-                        <span className="ml-auto italic text-amber-600 dark:text-amber-400">
-                          {sg.observations}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <div className="flex flex-col gap-3">
+                  {ex.setGroups.map((sg, i) => {
+                    const key = setKey(ex.exerciseName, i, sg.rowNumber);
+                    const entry: ExerciseEntry = entries?.[key] ?? { observations: '', rpe: '' };
+                    return (
+                      <div key={i} className="flex flex-col gap-1.5">
+                        {/* Planned reference line (read-only) */}
+                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                          <span className="min-w-[1.5rem] font-medium text-slate-700 dark:text-slate-300">
+                            {sg.sets}×{sg.reps}
+                          </span>
+                          <span>{fmtLoad(sg.load)}</span>
+                          {sg.rpe !== '--' && <span className="text-emerald-600 dark:text-emerald-400">{fmtRpe(sg.rpe)}</span>}
+                          {sg.rest && <span>⏱ {sg.rest}</span>}
+                        </div>
 
-                {editable ? (
-                  <ExerciseEntryFields
-                    exerciseName={ex.exerciseName}
-                    entry={entries?.[ex.exerciseName] ?? { observations: '', rpe: '' }}
-                    onChange={(entry) => onEntryChange!(ex.exerciseName, entry)}
-                  />
-                ) : (
-                  entries?.[ex.exerciseName] && (
-                    <ExerciseEntryReadOnly entry={entries[ex.exerciseName]} />
-                  )
-                )}
+                        {editable ? (
+                          // Per-set editable Observações + RPE (preloaded from the sheet).
+                          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start">
+                            <input
+                              type="text"
+                              value={entry.observations}
+                              onChange={(e) => onEntryChange!(key, { ...entry, observations: e.target.value })}
+                              placeholder="Observações…"
+                              className="w-full flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
+                            />
+                            <RpeSelect
+                              value={entry.rpe}
+                              onChange={(rpe) => onEntryChange!(key, { ...entry, rpe })}
+                            />
+                          </div>
+                        ) : entries?.[key] ? (
+                          <ExerciseEntryReadOnly entry={entry} />
+                        ) : sg.observations ? (
+                          // Reference view (pre-workout / offline): trainer's note.
+                          <p className="text-xs italic text-amber-600 dark:text-amber-400">
+                            {sg.observations}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ))}
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-// ── Per-exercise input fields (Observações + RPE) ─────────────────────────────
-
-function ExerciseEntryFields({
-  entry,
-  onChange,
-}: {
-  exerciseName: string;
-  entry: ExerciseEntry;
-  onChange: (entry: ExerciseEntry) => void;
-}) {
-  return (
-    <div className="mt-2 flex flex-col gap-1.5 sm:flex-row sm:items-start">
-      <input
-        type="text"
-        value={entry.observations}
-        onChange={(e) => onChange({ ...entry, observations: e.target.value })}
-        placeholder="Observações…"
-        className="w-full flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
-      />
-      <RpeSelect
-        value={entry.rpe}
-        onChange={(rpe) => onChange({ ...entry, rpe })}
-      />
     </div>
   );
 }

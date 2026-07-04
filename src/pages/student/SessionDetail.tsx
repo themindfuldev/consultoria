@@ -26,6 +26,7 @@ import {
   SkipForward,
   Upload,
   Video,
+  X,
 } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
@@ -44,7 +45,7 @@ import {
   cellRange,
   getExerciseNames,
   parseTrainingTab,
-  rowRange,
+  setKey,
   writeCells,
 } from '../../services/sheetsService';
 import { notifyTrainer } from '../../services/notifyService';
@@ -72,6 +73,24 @@ function todayStr(): string {
 
 function offlineKey(sessionId: string): string {
   return `offline_session_${sessionId}`;
+}
+
+/**
+ * Converts the in-memory per-set entries into the Firestore shape. A blank RPE
+ * is **omitted** (never coerced to 0). Entirely-empty entries are dropped so the
+ * saved map stays lean.
+ */
+function serializeEntries(
+  entries: Record<string, ExerciseEntry>,
+): Record<string, { observations: string; rpe?: number }> {
+  const out: Record<string, { observations: string; rpe?: number }> = {};
+  for (const [key, e] of Object.entries(entries)) {
+    const observations = e.observations.trim();
+    const hasRpe = typeof e.rpe === 'number';
+    if (!observations && !hasRpe) continue;
+    out[key] = { observations, ...(hasRpe ? { rpe: e.rpe as number } : {}) };
+  }
+  return out;
 }
 
 // ── Upload state per video ────────────────────────────────────────────────────
@@ -198,30 +217,39 @@ export function SessionDetail() {
       .then((token) => parseTrainingTab(cycle.googleSheetId, session.tabName, token))
       .then((tab) => {
         setParsedTab(tab);
-        // Merge sheet exercise names with any already-tagged video names
+        // Sheet order first, then any extra video-only names appended (no sort).
         const sheetNames = getExerciseNames(tab);
-        setExerciseOptions((prev) => {
-          const combined = Array.from(new Set([...sheetNames, ...prev])).sort();
-          return combined;
-        });
+        setExerciseOptions((prev) =>
+          Array.from(new Set([...sheetNames, ...prev])),
+        );
       })
       .catch(() => {/* non-fatal — sheet might not have this tab yet */})
       .finally(() => setParsedTabLoading(false));
   }, [cycle?.googleSheetId, session?.tabName]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Seed exercise entries from Firestore once (avoid clobbering local edits) ─
+  // ── Seed per-set entries once, from the sheet (preloaded) + saved values ─────
+  // Needs the parsed tab so every set is pre-filled with the trainer's
+  // Observações (col F) and RPE (col G); any previously-saved student edits win.
 
   useEffect(() => {
-    if (entriesInitialized.current || !session) return;
-    if (session.exerciseEntries) {
-      const seeded: Record<string, ExerciseEntry> = {};
-      for (const [name, e] of Object.entries(session.exerciseEntries)) {
-        seeded[name] = { observations: e.observations, rpe: e.rpe };
-      }
-      setExerciseEntries(seeded);
+    if (entriesInitialized.current || !parsedTab) return;
+    const saved = session?.exerciseEntries ?? {};
+    const seeded: Record<string, ExerciseEntry> = {};
+    for (const ex of parsedTab.exercises) {
+      ex.setGroups.forEach((sg, i) => {
+        const key = setKey(ex.exerciseName, i, sg.rowNumber);
+        const savedEntry = saved[key];
+        seeded[key] = {
+          observations: savedEntry?.observations ?? sg.observations ?? '',
+          rpe: savedEntry?.rpe != null
+            ? savedEntry.rpe
+            : (typeof sg.rpe === 'number' ? sg.rpe : ''),
+        };
+      });
     }
+    setExerciseEntries(seeded);
     entriesInitialized.current = true;
-  }, [session]);
+  }, [parsedTab, session]);
 
   // ── Real-time videos listener ───────────────────────────────────────────────
 
@@ -238,14 +266,11 @@ export function SessionDetail() {
       (snap) => {
         const vids = snap.docs.map((d) => d.data() as SessionVideo);
         setVideos(vids);
-        // Merge video exercise names into options
-        const names = Array.from(
-          new Set(vids.map((v) => v.exerciseName).filter(Boolean) as string[]),
-        ).sort();
-        setExerciseOptions((prev) => {
-          const combined = Array.from(new Set([...prev, ...names])).sort();
-          return combined;
-        });
+        // Append any video-tagged names not already present (keep sheet order first).
+        const names = vids.map((v) => v.exerciseName).filter(Boolean) as string[];
+        setExerciseOptions((prev) =>
+          Array.from(new Set([...prev, ...names])),
+        );
         setLoading(false);
       },
       () => setLoading(false),
@@ -345,18 +370,15 @@ export function SessionDetail() {
 
   // ── Exercise entry change (debounced autosave) ──────────────────────────────
 
-  const handleEntryChange = (exerciseName: string, entry: ExerciseEntry) => {
+  const handleEntryChange = (key: string, entry: ExerciseEntry) => {
     setExerciseEntries((prev) => {
-      const next = { ...prev, [exerciseName]: entry };
+      const next = { ...prev, [key]: entry };
 
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         if (!sessionId) return;
-        const toSave: Record<string, { observations: string; rpe: number }> = {};
-        for (const [name, e] of Object.entries(next)) {
-          toSave[name] = { observations: e.observations, rpe: e.rpe === '' ? 0 : e.rpe };
-        }
-        updateDoc(doc(db, 'sessions', sessionId), { exerciseEntries: toSave }).catch(() => {/* retried on next change */});
+        updateDoc(doc(db, 'sessions', sessionId), { exerciseEntries: serializeEntries(next) })
+          .catch(() => {/* retried on next change */});
       }, 800);
 
       return next;
@@ -371,12 +393,7 @@ export function SessionDetail() {
     setFinishing(true);
 
     const postWorkout = { energyLevel: postEnergy, feeling: postFeeling };
-    const finalEntries: Record<string, { observations: string; rpe: number }> = {};
-    for (const [name, e] of Object.entries(exerciseEntries)) {
-      if (e.observations.trim() || e.rpe !== '') {
-        finalEntries[name] = { observations: e.observations.trim(), rpe: e.rpe === '' ? 0 : e.rpe };
-      }
-    }
+    const finalEntries = serializeEntries(exerciseEntries);
 
     try {
       await updateDoc(doc(db, 'sessions', session.id), {
@@ -397,12 +414,19 @@ export function SessionDetail() {
         if (parsedTab.postWorkout.feelingRow) {
           updates.push({ range: cellRange(session.tabName, 'B', parsedTab.postWorkout.feelingRow), values: [[postFeeling]] });
         }
+        // Per-set write-back: Observações → col F; RPE → col G only when the
+        // student actually set a number (a blank RPE leaves the sheet value).
         for (const ex of parsedTab.exercises) {
-          const entry = finalEntries[ex.exerciseName];
-          const row = ex.setGroups[0]?.rowNumber;
-          if (entry && row) {
-            updates.push({ range: rowRange(session.tabName, 'F', 'G', row), values: [[entry.observations, entry.rpe]] });
-          }
+          ex.setGroups.forEach((sg, i) => {
+            const row = sg.rowNumber;
+            if (!row) return;
+            const entry = exerciseEntries[setKey(ex.exerciseName, i, row)];
+            if (!entry) return;
+            updates.push({ range: cellRange(session.tabName, 'F', row), values: [[entry.observations]] });
+            if (typeof entry.rpe === 'number') {
+              updates.push({ range: cellRange(session.tabName, 'G', row), values: [[entry.rpe]] });
+            }
+          });
         }
         updates.push({ range: cellRange(session.tabName, 'H', 2), values: [[true]] });
 
@@ -555,9 +579,12 @@ export function SessionDetail() {
         setSession((prev) => prev ? { ...prev, hasVideos: true } : prev);
       }
 
+      // Keep the "enviado" confirmation until the next upload — the video also
+      // appears in the list below (via the real-time listener), so the student
+      // has two clear signals that it succeeded.
       setUploadState((s) => s ? { ...s, phase: 'done', progress: 1 } : s);
-      setTimeout(() => setUploadState(null), 2500);
     } catch (err) {
+      console.error('Falha no upload do vídeo:', err);
       setUploadState((s) =>
         s ? { ...s, phase: 'error', error: String(err) } : s,
       );
@@ -794,15 +821,40 @@ export function SessionDetail() {
       {/* ── Phase C: completed — video feedback flow ─────────────────────── */}
       {phase === 'done' && (
         <>
-          {/* Active upload progress */}
+          {/* Active upload progress / result */}
           {uploadState && (
-            <div className="mb-4 rounded-2xl bg-indigo-50 p-4 dark:bg-indigo-900/20">
-              <p className="mb-1.5 text-sm font-semibold text-indigo-800 dark:text-indigo-300">
-                {uploadState.phase === 'compressing' && 'Comprimindo vídeo…'}
-                {uploadState.phase === 'uploading' && 'Enviando para o Drive…'}
-                {uploadState.phase === 'done' && '✅ Vídeo enviado com sucesso!'}
-                {uploadState.phase === 'error' && '❌ Erro no envio'}
-              </p>
+            <div
+              className={`mb-4 rounded-2xl p-4 ${
+                uploadState.phase === 'error'
+                  ? 'bg-red-50 dark:bg-red-950/30'
+                  : uploadState.phase === 'done'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/30'
+                    : 'bg-indigo-50 dark:bg-indigo-900/20'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className={`mb-1.5 text-sm font-semibold ${
+                  uploadState.phase === 'error'
+                    ? 'text-red-700 dark:text-red-300'
+                    : uploadState.phase === 'done'
+                      ? 'text-emerald-700 dark:text-emerald-300'
+                      : 'text-indigo-800 dark:text-indigo-300'
+                }`}>
+                  {uploadState.phase === 'compressing' && 'Comprimindo vídeo…'}
+                  {uploadState.phase === 'uploading' && 'Enviando para o Drive…'}
+                  {uploadState.phase === 'done' && '✅ Vídeo enviado! Veja na lista abaixo.'}
+                  {uploadState.phase === 'error' && '❌ Falha no envio — nada foi salvo.'}
+                </p>
+                {(uploadState.phase === 'done' || uploadState.phase === 'error') && (
+                  <button
+                    onClick={() => setUploadState(null)}
+                    aria-label="Fechar"
+                    className="flex-shrink-0 rounded-full p-1 text-slate-400 hover:bg-black/5 hover:text-slate-700 dark:hover:bg-white/10"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
               {uploadState.phase !== 'done' && uploadState.phase !== 'error' && (
                 <>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-indigo-200 dark:bg-indigo-800">
@@ -819,13 +871,19 @@ export function SessionDetail() {
                 </>
               )}
               {uploadState.phase === 'error' && (
-                <p className="text-xs text-red-600 dark:text-red-400">{uploadState.error}</p>
+                <p className="text-xs text-red-600 dark:text-red-400">
+                  {uploadState.error} — tente novamente.
+                </p>
               )}
             </div>
           )}
 
           {/* Video list */}
           {videos.length > 0 && (
+            <>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              🎬 Vídeos enviados ({videos.length})
+            </p>
             <ul className="mb-5 flex flex-col gap-2">
               {videos.map((v) => (
                 <li
@@ -853,6 +911,7 @@ export function SessionDetail() {
                 </li>
               ))}
             </ul>
+            </>
           )}
 
           {/* Actions (hidden when read-only — concluded week or skipped) */}
