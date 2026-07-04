@@ -106,7 +106,7 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                           )}
                         </span>
                         <span />
-                        <span>
+                        <span className="justify-self-end">
                           {editable ? (
                             <RpeSelect
                               value={entry.rpe}
