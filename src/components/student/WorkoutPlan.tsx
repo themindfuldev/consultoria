@@ -69,9 +69,10 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                 <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-white">
                   {ex.exerciseName}
                 </p>
-                {/* One row per set, fixed columns so every exercise lines up:
-                    sets×reps · carga · RPE · descanso · Observações. */}
-                <div className="grid grid-cols-[3rem_5.5rem_5rem_4.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2 text-xs">
+                {/* Fixed columns so every exercise lines up. Row 1: sets×reps ·
+                    carga · RPE · descanso. Row 2: Observações, from the carga
+                    column to the full width. */}
+                <div className="grid grid-cols-[3rem_5.5rem_5rem_1fr] items-center gap-x-3 gap-y-1.5 text-xs">
                   {ex.setGroups.map((sg, i) => {
                     const key = setKey(ex.exerciseName, i, sg.rowNumber);
                     const entry: ExerciseEntry = entries?.[key] ?? { observations: '', rpe: '' };
@@ -81,8 +82,10 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                       : (typeof sg.rpe === 'number' ? sg.rpe : null);
                     const hasLoad = sg.load !== '--' && sg.load !== '' && sg.load != null;
                     const rest = sg.rest ? sg.rest.replace(/[()]/g, '').trim() : '';
+                    const showObs = editable || !!entry.observations || !!sg.observations;
                     return (
                       <Fragment key={i}>
+                        {/* Row 1 */}
                         <span className="whitespace-nowrap font-medium text-slate-700 dark:text-slate-300">
                           {sg.sets}×{sg.reps}
                         </span>
@@ -109,26 +112,32 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                         <span className="whitespace-nowrap text-slate-500 dark:text-slate-400">
                           {rest && `⏱ ${rest}`}
                         </span>
-                        {/* Inline on sm+, wraps to its own row on mobile. */}
-                        <div className="col-span-5 min-w-0 sm:col-span-1">
-                          {editable ? (
-                            <input
-                              type="text"
-                              value={entry.observations}
-                              onChange={(e) => onEntryChange!(key, { ...entry, observations: e.target.value })}
-                              placeholder="Observações…"
-                              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
-                            />
-                          ) : entry.observations ? (
-                            <span className="inline-block rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200">
-                              📝 {entry.observations}
-                            </span>
-                          ) : sg.observations ? (
-                            <span className="italic text-amber-600 dark:text-amber-400">
-                              📝 {sg.observations}
-                            </span>
-                          ) : null}
-                        </div>
+
+                        {/* Row 2 — Observações: empty col 1, then spans cols 2–4 */}
+                        {showObs && (
+                          <>
+                            <span />
+                            <div className="col-span-3 min-w-0">
+                              {editable ? (
+                                <input
+                                  type="text"
+                                  value={entry.observations}
+                                  onChange={(e) => onEntryChange!(key, { ...entry, observations: e.target.value })}
+                                  placeholder="Observações…"
+                                  className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
+                                />
+                              ) : entry.observations ? (
+                                <span className="block w-full rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200">
+                                  📝 {entry.observations}
+                                </span>
+                              ) : (
+                                <span className="block w-full rounded-lg bg-amber-50 px-2 py-1 italic text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                                  📝 {sg.observations}
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        )}
                       </Fragment>
                     );
                   })}
