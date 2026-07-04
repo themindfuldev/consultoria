@@ -216,6 +216,13 @@ export function SessionDetail() {
       .then((token) => parseTrainingTab(cycle.googleSheetId, session.tabName, token))
       .then((tab) => {
         setParsedTab(tab);
+        // Snapshot the plan onto the session so the (Google-less) trainer can
+        // render the same "Plano de treino". JSON round-trip strips undefined
+        // (Firestore rejects it). Best-effort — never blocks the view.
+        if (sessionId) {
+          updateDoc(doc(db, 'sessions', sessionId), { plan: JSON.parse(JSON.stringify(tab)) })
+            .catch(() => {/* non-fatal */});
+        }
         // Sheet order first, then any extra video-only names appended (no sort).
         const sheetNames = getExerciseNames(tab);
         setExerciseOptions((prev) =>
@@ -626,11 +633,10 @@ export function SessionDetail() {
       {/* Session header */}
       <div className="mb-5">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-          {session?.tabName}
+          {session?.weekNumber ? `Semana ${session.weekNumber} · ` : ''}{session?.tabName}
         </h1>
         <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
           {cycle?.title} · {dateLabel}
-          {session?.weekNumber ? ` · Semana ${session.weekNumber}` : ''}
         </p>
       </div>
 

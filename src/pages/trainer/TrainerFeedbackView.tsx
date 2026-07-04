@@ -5,7 +5,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -18,6 +17,8 @@ import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { openWhatsApp } from '../../services/notifyService';
 import { Layout } from '../../components/Layout';
+import { WorkoutPlan } from '../../components/student/WorkoutPlan';
+import type { ExerciseEntry } from '../../components/student/WorkoutPlan';
 import type {
   Cycle,
   ExerciseFeedback,
@@ -74,19 +75,30 @@ export function TrainerFeedbackView() {
         // Each read is independent + tolerant: a single failure (e.g. Firestore
         // denies reading the not-yet-created feedback doc) must not blank the
         // cycle/videos too.
+        //
+        // The videos query is constrained to this trainer's email — the read
+        // rule checks each doc's `trainerEmail`, so a list query filtered only by
+        // sessionId is denied outright if *any* matching video has a different/
+        // empty trainerEmail (e.g. an older upload). Filtering guarantees every
+        // returned doc is readable. Sort client-side (no orderBy → no index).
+        const trainerEmail = s.trainerEmail ?? '';
         const [cycleSnap, videosSnap, feedbackSnap] = await Promise.all([
           getDoc(doc(db, 'cycles', s.cycleId)).catch(() => null),
           getDocs(query(
             collection(db, 'videos'),
             where('sessionId', '==', sessionId),
-            orderBy('uploadedAt', 'asc'),
+            where('trainerEmail', '==', trainerEmail),
           )).catch(() => null),
           getDoc(doc(db, 'feedback', sessionId)).catch(() => null),
         ]);
 
         if (cycleSnap?.exists()) setCycle(cycleSnap.data() as Cycle);
 
-        if (videosSnap) setVideos(videosSnap.docs.map((d) => d.data() as SessionVideo));
+        if (videosSnap) {
+          const vids = videosSnap.docs.map((d) => d.data() as SessionVideo);
+          vids.sort((a, b) => (a.uploadedAt?.seconds ?? Infinity) - (b.uploadedAt?.seconds ?? Infinity));
+          setVideos(vids);
+        }
 
         // Pre-fill form if draft exists
         if (feedbackSnap?.exists()) {
@@ -241,6 +253,14 @@ export function TrainerFeedbackView() {
 
   const dateLabel = session?.date instanceof Timestamp ? fmtDate(session.date) : '';
 
+  // The student's saved per-set entries, in WorkoutPlan's shape (rpe '' when unset).
+  const planEntries: Record<string, ExerciseEntry> = {};
+  if (session?.exerciseEntries) {
+    for (const [k, e] of Object.entries(session.exerciseEntries)) {
+      planEntries[k] = { observations: e.observations, rpe: e.rpe ?? '' };
+    }
+  }
+
   return (
     <Layout title="Dar feedback" backTo="/trainer">
       {/* Header */}
@@ -250,7 +270,12 @@ export function TrainerFeedbackView() {
             {session?.studentName || 'Aluno'}
           </h1>
           <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-            {cycle?.title} · {session?.tabName} · {dateLabel}
+            {[
+              cycle?.title,
+              dateLabel,
+              session?.weekNumber ? `Semana ${session.weekNumber}` : null,
+              session?.tabName,
+            ].filter(Boolean).join(' · ')}
           </p>
         </div>
         <button
@@ -261,6 +286,16 @@ export function TrainerFeedbackView() {
           Meu painel
         </button>
       </div>
+
+      {/* Plano de treino — same read-only summary the student sees, if snapshotted */}
+      {session?.plan && (
+        <div className="mb-6">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            📋 Plano de treino
+          </p>
+          <WorkoutPlan tab={session.plan} entries={planEntries} />
+        </div>
+      )}
 
       {/* Exercise blocks */}
       <div className="flex flex-col gap-6">

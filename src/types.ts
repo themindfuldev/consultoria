@@ -167,6 +167,12 @@ export interface Session {
   videosNotifiedAt?: Timestamp;
   /** Denormalised from the feedback doc — avoids N+1 reads on trainer dashboard. */
   feedbackStatus?: 'none' | 'draft' | 'complete';
+  /**
+   * Snapshot of the parsed training tab, saved by the student side so the
+   * trainer (who has no Google token to read the sheet) can render the same
+   * "Plano de treino" on the feedback page.
+   */
+  plan?: ParsedSheetTab;
 }
 
 // ── Session exercises (actuals cache) ─────────────────────────────────────────
