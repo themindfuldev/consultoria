@@ -12,7 +12,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { LayoutDashboard, Video } from 'lucide-react';
+import { Dumbbell, LayoutDashboard, Video } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { openWhatsApp } from '../../services/notifyService';
@@ -428,8 +428,9 @@ function ExerciseBlock({
 }: ExerciseBlockProps) {
   return (
     <div className="glass-premium rounded-2xl p-4">
-      <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        🎬 {exerciseName}
+      <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        <Dumbbell className="h-4 w-4 text-indigo-500" />
+        {exerciseName}
       </h3>
 
       {/* Videos */}

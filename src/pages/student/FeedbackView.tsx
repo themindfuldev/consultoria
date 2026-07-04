@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   collection,
   doc,
@@ -9,7 +9,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { ExternalLink, FileText } from 'lucide-react';
+import { Dumbbell, ExternalLink, FileText } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
@@ -21,6 +21,7 @@ import type { Cycle, Feedback, Session, SessionVideo, UserProfile } from '../../
 export function FeedbackView() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { getAccessToken } = useAuth();
+  const navigate = useNavigate();
 
   const [session, setSession] = useState<Session | null>(null);
   const [cycle, setCycle] = useState<Cycle | null>(null);
@@ -172,49 +173,15 @@ export function FeedbackView() {
         </p>
       </div>
 
-      {/* Google Doc button */}
-      <div className="mb-5">
-        {docUrl ? (
-          <a
-            href={docUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 rounded-xl bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition-all hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/30"
-          >
-            <FileText className="h-4 w-4" />
-            Abrir no Google Docs
-            <ExternalLink className="ml-auto h-3.5 w-3.5" />
-          </a>
-        ) : (
-          <div className="flex flex-col gap-2">
-            <button
-              onClick={handleCreateDoc}
-              disabled={creatingDoc || !session?.driveFolderId}
-              className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <FileText className="h-4 w-4" />
-              {creatingDoc ? 'Criando documento…' : 'Salvar feedback no Google Docs'}
-            </button>
-            {docError && (
-              <p className="text-xs text-red-600 dark:text-red-400">{docError}</p>
-            )}
-            {!session?.driveFolderId && (
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Para criar o Google Doc, primeiro envie vídeos nesta sessão.
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-
       {/* Exercise feedback blocks */}
       <div className="flex flex-col gap-5">
         {feedback.exerciseFeedback.map((ef) => {
           const exerciseVideos = videos.filter((v) => v.exerciseName === ef.exerciseName);
           return (
             <div key={ef.exerciseName} className="glass-premium rounded-2xl p-4">
-              <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                🎬 {ef.exerciseName}
+              <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                <Dumbbell className="h-4 w-4 text-indigo-500" />
+                {ef.exerciseName}
               </h3>
 
               {/* Student's videos */}
@@ -285,6 +252,49 @@ export function FeedbackView() {
             </p>
           </div>
         )}
+
+        {/* ── Actions (bottom) ─────────────────────────────────────────── */}
+        <div className="flex flex-col gap-2 pb-2">
+          {docUrl ? (
+            <a
+              href={docUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded-xl bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition-all hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/30"
+            >
+              <FileText className="h-4 w-4" />
+              Abrir no Google Docs
+              <ExternalLink className="ml-auto h-3.5 w-3.5" />
+            </a>
+          ) : (
+            <>
+              <button
+                onClick={handleCreateDoc}
+                disabled={creatingDoc || !session?.driveFolderId}
+                className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <FileText className="h-4 w-4" />
+                {creatingDoc ? 'Criando documento…' : 'Salvar feedback no Google Docs'}
+              </button>
+              {docError && (
+                <p className="text-xs text-red-600 dark:text-red-400">{docError}</p>
+              )}
+              {!session?.driveFolderId && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Para criar o Google Doc, primeiro envie vídeos nesta sessão.
+                </p>
+              )}
+            </>
+          )}
+
+          <button
+            onClick={() => session && navigate(`/student/cycles/${session.cycleId}/sessions/${sessionId}`)}
+            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
+            <Dumbbell className="h-4 w-4" />
+            Ver treino
+          </button>
+        </div>
       </div>
     </Layout>
   );

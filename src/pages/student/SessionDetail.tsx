@@ -989,16 +989,13 @@ export function SessionDetail() {
       {/* ── Feedback available: non-clickable banner + "Ver feedback" ────── */}
       {feedbackAvailable && (
         <div className="mt-6">
-          <div className="flex items-center gap-3 rounded-2xl bg-emerald-50 p-4 dark:bg-emerald-900/20">
-            <MessageSquare className="h-5 w-5 flex-shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <div>
-              <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
-                Feedback disponível!
-              </p>
-              <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                Seu treinador enviou o feedback desta sessão.
-              </p>
-            </div>
+          <div className="rounded-2xl bg-emerald-50 p-4 dark:bg-emerald-900/20">
+            <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+              Feedback disponível!
+            </p>
+            <p className="text-xs text-emerald-600 dark:text-emerald-400">
+              Seu treinador enviou o feedback desta sessão.
+            </p>
           </div>
           <button
             onClick={() => navigate(`/student/sessions/${sessionId}/feedback`)}
