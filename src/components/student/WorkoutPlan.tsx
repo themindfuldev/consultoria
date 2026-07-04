@@ -70,9 +70,9 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                   {ex.exerciseName}
                 </p>
                 {/* Fixed columns so every exercise lines up. Row 1: sets×reps ·
-                    carga · descanso · RPE. Row 2: Observações, from the carga
-                    column to the full width. */}
-                <div className="grid grid-cols-[3rem_5.5rem_4.5rem_5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 text-xs">
+                    carga · descanso · (spacer) · RPE — RPE pinned to the right.
+                    Row 2: Observações, from the carga column to the full width. */}
+                <div className="grid grid-cols-[3rem_5.5rem_4.5rem_minmax(0,1fr)_5rem] items-center gap-x-3 gap-y-1.5 text-xs">
                   {ex.setGroups.map((sg, i) => {
                     const key = setKey(ex.exerciseName, i, sg.rowNumber);
                     const entry: ExerciseEntry = entries?.[key] ?? { observations: '', rpe: '' };
@@ -90,13 +90,22 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                           {sg.sets}×{sg.reps}
                         </span>
                         <span className="flex items-center gap-1 overflow-hidden whitespace-nowrap text-slate-500 dark:text-slate-400">
-                          <Weight className="h-3.5 w-3.5 flex-shrink-0" />
-                          {hasLoad && fmtLoadValue(sg.load)}
+                          {hasLoad && (
+                            <>
+                              <Weight className="h-3.5 w-3.5 flex-shrink-0" />
+                              {fmtLoadValue(sg.load)}
+                            </>
+                          )}
                         </span>
                         <span className="flex items-center gap-1 whitespace-nowrap text-slate-500 dark:text-slate-400">
-                          <Clock className="h-3.5 w-3.5 flex-shrink-0" />
-                          {rest}
+                          {rest && (
+                            <>
+                              <Clock className="h-3.5 w-3.5 flex-shrink-0" />
+                              {rest}
+                            </>
+                          )}
                         </span>
+                        <span />
                         <span>
                           {editable ? (
                             <RpeSelect
@@ -109,13 +118,12 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                             </span>
                           ) : null}
                         </span>
-                        <span />
 
                         {/* Row 2 — Observações: empty col 1, then spans cols 2–5 */}
                         {showObs && (
                           <>
                             <span />
-                            <div className="col-span-4 mb-1 min-w-0">
+                            <div className="col-span-4 mb-2 min-w-0">
                               {editable ? (
                                 <input
                                   type="text"
