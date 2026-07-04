@@ -12,7 +12,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { Dumbbell, LayoutDashboard, Video } from 'lucide-react';
+import { Dumbbell, LayoutDashboard, Send, Video } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { openWhatsApp } from '../../services/notifyService';
@@ -59,7 +59,6 @@ export function TrainerFeedbackView() {
   const [saving, setSaving] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [saveError, setSaveError] = useState('');
-  const [saveSuccess, setSaveSuccess] = useState(false);
 
   // ── Load session + related data ─────────────────────────────────────────────
 
@@ -184,8 +183,6 @@ export function TrainerFeedbackView() {
       );
       // Denormalise feedbackStatus on session
       await updateDoc(doc(db, 'sessions', sessionId!), { feedbackStatus: 'draft' });
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2000);
     } catch {
       setSaveError('Não foi possível salvar o rascunho.');
     } finally {
@@ -387,11 +384,7 @@ export function TrainerFeedbackView() {
 
         {/* Auto-save status */}
         <p className="text-center text-xs text-slate-400 dark:text-slate-500">
-          {saving
-            ? 'Salvando rascunho…'
-            : saveSuccess
-              ? '✅ Rascunho salvo automaticamente'
-              : 'As alterações são salvas automaticamente'}
+          {saving ? 'Salvando rascunho…' : 'As alterações são salvas automaticamente'}
         </p>
 
         {/* Action button */}
@@ -401,7 +394,8 @@ export function TrainerFeedbackView() {
             disabled={completing || saving}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-60"
           >
-            {completing ? 'Concluindo…' : '✅ Concluir'}
+            <Send className="h-4 w-4" />
+            {completing ? 'Enviando…' : 'Responder feedback'}
           </button>
         </div>
       </div>

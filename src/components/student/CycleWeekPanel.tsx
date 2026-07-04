@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Timestamp } from 'firebase/firestore';
 import {
   CheckCircle2,
   ChevronDown,
@@ -38,9 +39,14 @@ const STATUS_META: Record<SessionStatus, { label: string; badge: string }> = {
 function StatusBadge({ session }: { session: Session | null }) {
   const status: SessionStatus = session?.status ?? 'pending';
   const meta = STATUS_META[status];
+  let label = meta.label;
+  if (status === 'completed' && session?.finishedAt instanceof Timestamp) {
+    const d = session.finishedAt.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    label = `Concluído em ${d}`;
+  }
   return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${meta.badge}`}>
-      {meta.label}
+    <span className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${meta.badge}`}>
+      {label}
     </span>
   );
 }
@@ -74,7 +80,7 @@ function SessionRows({
         return (
           <li
             key={row.tab}
-            className="grid grid-cols-[1.25rem_minmax(0,1fr)_6.5rem_auto] items-center gap-2 rounded-xl bg-white/50 px-2.5 py-2 dark:bg-slate-800/40"
+            className="grid grid-cols-[1.25rem_minmax(0,1fr)_7.75rem_5.75rem] items-center gap-2 rounded-xl bg-white/50 px-2.5 py-2 dark:bg-slate-800/40"
           >
             <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-[11px] font-bold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
               {idx + 1}

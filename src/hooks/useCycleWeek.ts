@@ -18,7 +18,10 @@ import { getTrainingTabs } from '../services/sheetsService';
 import type { Cycle, CycleWeek, Session } from '../types';
 
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Local date (not toISOString, which is UTC and rolls to the next day in the
+  // evening for negative-UTC zones — that caused session dates to drift +1 day).
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export interface TabSessionRow {

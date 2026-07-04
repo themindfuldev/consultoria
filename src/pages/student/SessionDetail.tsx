@@ -39,6 +39,7 @@ import { StarRating } from '../../components/student/StarRating';
 import { ChoiceButtons } from '../../components/student/ChoiceButtons';
 import { WorkoutPlan } from '../../components/student/WorkoutPlan';
 import type { ExerciseEntry } from '../../components/student/WorkoutPlan';
+import { Breadcrumbs } from '../../components/Breadcrumbs';
 import {
   deleteDriveFile,
   getCycleWeekLabel,
@@ -72,7 +73,10 @@ function fmtBytes(mb: number): string {
 }
 
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Local date (not toISOString, which is UTC and would drift +1 day in the
+  // evening for negative-UTC zones).
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function offlineKey(sessionId: string): string {
@@ -194,7 +198,27 @@ export function SessionDetail() {
       getDoc(doc(db, 'sessions', sessionId)),
     ]).then(([c, s]) => {
       if (c.exists()) setCycle(c.data() as Cycle);
-      if (s.exists()) setSession(s.data() as Session);
+      if (!s.exists()) return;
+      const sess = s.data() as Session;
+      setSession(sess);
+
+      // Self-heal legacy date drift: `date` used to be derived from a UTC day
+      // (off by +1 in the evening for negative-UTC zones). For a completed
+      // session, `finishedAt` is the source of truth — correct `date` to its
+      // local day if they differ.
+      if (sess.status === 'completed' && sess.finishedAt instanceof Timestamp) {
+        const fin = sess.finishedAt.toDate();
+        const cur = sess.date instanceof Timestamp ? sess.date.toDate() : null;
+        const sameDay = !!cur
+          && cur.getFullYear() === fin.getFullYear()
+          && cur.getMonth() === fin.getMonth()
+          && cur.getDate() === fin.getDate();
+        if (!sameDay) {
+          const fixed = Timestamp.fromDate(new Date(fin.getFullYear(), fin.getMonth(), fin.getDate()));
+          updateDoc(doc(db, 'sessions', sessionId), { date: fixed }).catch(() => {/* best-effort */});
+          setSession((prev) => (prev ? { ...prev, date: fixed } : prev));
+        }
+      }
     });
   }, [cycleId, sessionId]);
 
@@ -662,6 +686,13 @@ export function SessionDetail() {
 
   return (
     <Layout title={session?.tabName ?? 'Sessão'} backTo={cycleId ? `/student/cycles/${cycleId}` : '/student'}>
+      <Breadcrumbs
+        items={[
+          { label: cycle?.title ?? 'Ciclo', to: cycleId ? `/student/cycles/${cycleId}` : undefined },
+          { label: session?.tabName ?? 'Treino' },
+        ]}
+      />
+
       {/* Session header */}
       <div className="mb-5">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
@@ -978,7 +1009,7 @@ export function SessionDetail() {
                   className="flex items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-green-700 active:scale-95 disabled:opacity-60"
                 >
                   <Send className="h-4 w-4" />
-                  Enviar para feedback
+                  Solicitar feedback
                 </button>
               )}
             </div>

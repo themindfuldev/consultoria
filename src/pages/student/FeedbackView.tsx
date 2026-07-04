@@ -9,10 +9,11 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { Dumbbell, ExternalLink, FileText } from 'lucide-react';
+import { ChevronLeft, Dumbbell, ExternalLink, FileText } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
+import { Breadcrumbs } from '../../components/Breadcrumbs';
 import { buildFeedbackHtml, createFeedbackDoc } from '../../services/docsService';
 import type { Cycle, Feedback, Session, SessionVideo, UserProfile } from '../../types';
 
@@ -163,13 +164,21 @@ export function FeedbackView() {
 
   return (
     <Layout title="Meu Feedback">
+      <Breadcrumbs
+        items={[
+          { label: cycle?.title ?? 'Ciclo', to: session ? `/student/cycles/${session.cycleId}` : undefined },
+          { label: session?.tabName ?? 'Treino', to: session ? `/student/cycles/${session.cycleId}/sessions/${sessionId}` : undefined },
+          { label: 'Feedback' },
+        ]}
+      />
+
       {/* Header */}
       <div className="mb-5">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-          Feedback do treinador
+          {session?.weekNumber ? `Semana ${session.weekNumber} · ` : ''}{session?.tabName} · Feedback do treinador
         </h1>
         <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-          {cycle?.title} · {session?.tabName} · {dateLabel}
+          {cycle?.title} · {dateLabel}
         </p>
       </div>
 
@@ -291,7 +300,7 @@ export function FeedbackView() {
             onClick={() => session && navigate(`/student/cycles/${session.cycleId}/sessions/${sessionId}`)}
             className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
           >
-            <Dumbbell className="h-4 w-4" />
+            <ChevronLeft className="h-4 w-4" />
             Ver treino
           </button>
         </div>
