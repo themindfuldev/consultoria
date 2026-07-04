@@ -18,6 +18,37 @@ import { AuthContext } from './AuthContextDef';
 /** localStorage key holding the email a trainer requested a sign-in link for. */
 const TRAINER_EMAIL_KEY = 'trainerEmailForSignIn';
 
+/**
+ * sessionStorage key caching the Google OAuth access token (+ expiry) for the
+ * current tab session. Persisting it here (rather than memory-only) means a page
+ * refresh reuses the still-valid token instead of re-opening the GIS popup. It's
+ * per-tab and cleared on tab close or sign-out — not localStorage.
+ */
+const GOOGLE_TOKEN_KEY = 'googleAccessToken';
+
+interface StoredToken { token: string | null; expiry: number; }
+
+function readStoredToken(): StoredToken {
+  try {
+    const raw = sessionStorage.getItem(GOOGLE_TOKEN_KEY);
+    if (!raw) return { token: null, expiry: 0 };
+    const parsed = JSON.parse(raw) as StoredToken;
+    // Ignore an already-expired cached token.
+    if (!parsed.token || Date.now() >= parsed.expiry) return { token: null, expiry: 0 };
+    return parsed;
+  } catch {
+    return { token: null, expiry: 0 };
+  }
+}
+
+function storeToken(token: string, expiry: number): void {
+  try { sessionStorage.setItem(GOOGLE_TOKEN_KEY, JSON.stringify({ token, expiry })); } catch { /* storage full/blocked — non-fatal */ }
+}
+
+function clearStoredToken(): void {
+  try { sessionStorage.removeItem(GOOGLE_TOKEN_KEY); } catch { /* non-fatal */ }
+}
+
 /** True when the current Firebase user signed in via an email link (a trainer). */
 function isEmailLinkUser(user: User | null): boolean {
   return !!user?.providerData.some((p) => p.providerId === 'password');
@@ -65,9 +96,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   // GIS Token Client — all state kept in refs so it never triggers re-renders.
+  // The access token / expiry hydrate from sessionStorage so a refresh reuses a
+  // still-valid token instead of re-prompting.
   const tokenClientRef = useRef<GISTokenClient | null>(null);
-  const accessTokenRef = useRef<string | null>(null);
-  const tokenExpiryRef = useRef<number>(0);
+  const initialToken = readStoredToken();
+  const accessTokenRef = useRef<string | null>(initialToken.token);
+  const tokenExpiryRef = useRef<number>(initialToken.expiry);
   const pendingResolveRef = useRef<((token: string) => void) | null>(null);
   const pendingRejectRef = useRef<((err: Error) => void) | null>(null);
   // The single in-flight token request, so concurrent callers (e.g. the
@@ -91,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         tokenExpiryRef.current = 0;
         tokenClientRef.current = null;
         inFlightRef.current = null;
+        clearStoredToken();
       } else if (!isEmailLinkUser(user)) {
         // A Google (student) user has no trainer record — resolve immediately so
         // trainer loading never blocks. The dedicated effect below handles the
@@ -206,6 +241,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       accessTokenRef.current = credential.accessToken;
       // Google OAuth access tokens last ~1h; assume 55min to stay clear of expiry.
       tokenExpiryRef.current = Date.now() + 55 * 60 * 1_000;
+      storeToken(accessTokenRef.current, tokenExpiryRef.current);
     }
     // Auth state propagates via onAuthStateChanged — no manual state update needed.
   }, []);
@@ -257,6 +293,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               accessTokenRef.current = response.access_token;
               // Store expiry with a 60-second safety buffer.
               tokenExpiryRef.current = Date.now() + (response.expires_in - 60) * 1_000;
+              storeToken(accessTokenRef.current, tokenExpiryRef.current);
               pendingResolveRef.current?.(response.access_token);
             } else {
               pendingRejectRef.current?.(
