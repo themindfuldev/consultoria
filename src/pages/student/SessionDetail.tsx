@@ -283,7 +283,7 @@ export function SessionDetail() {
         );
         setLoading(false);
       },
-      () => setLoading(false),
+      (err) => { console.error('Falha ao carregar vídeos:', err); setLoading(false); },
     );
   }, [sessionId]);
 
@@ -827,6 +827,42 @@ export function SessionDetail() {
         </div>
       )}
 
+      {/* Uploaded videos — shown whenever any exist, regardless of phase. */}
+      {videos.length > 0 && (
+        <div className="mb-5">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            🎬 Vídeos enviados ({videos.length})
+          </p>
+          <ul className="flex flex-col gap-2">
+            {videos.map((v) => (
+              <li
+                key={v.id}
+                className="glass-premium flex items-center gap-3 rounded-xl p-3"
+              >
+                <Video className="h-5 w-5 flex-shrink-0 text-indigo-500" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-slate-800 dark:text-white">
+                    {v.exerciseName ?? 'Vídeo geral'}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {fmtBytes(v.compressedSizeMB)} comprimido
+                    {v.originalSizeMB > 0 && ` (original: ${fmtBytes(v.originalSizeMB)})`}
+                  </p>
+                </div>
+                <a
+                  href={v.driveFileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+                >
+                  Ver
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* ── Phase C: completed — video feedback flow ─────────────────────── */}
       {phase === 'done' && (
         <>
@@ -885,42 +921,6 @@ export function SessionDetail() {
                 </p>
               )}
             </div>
-          )}
-
-          {/* Video list */}
-          {videos.length > 0 && (
-            <>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              🎬 Vídeos enviados ({videos.length})
-            </p>
-            <ul className="mb-5 flex flex-col gap-2">
-              {videos.map((v) => (
-                <li
-                  key={v.id}
-                  className="glass-premium flex items-center gap-3 rounded-xl p-3"
-                >
-                  <Video className="h-5 w-5 flex-shrink-0 text-indigo-500" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-800 dark:text-white">
-                      {v.exerciseName ?? 'Vídeo geral'}
-                    </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {fmtBytes(v.compressedSizeMB)} comprimido
-                      {v.originalSizeMB > 0 && ` (original: ${fmtBytes(v.originalSizeMB)})`}
-                    </p>
-                  </div>
-                  <a
-                    href={v.driveFileUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
-                  >
-                    Ver
-                  </a>
-                </li>
-              ))}
-            </ul>
-            </>
           )}
 
           {/* Actions (hidden when read-only — concluded week or skipped) */}

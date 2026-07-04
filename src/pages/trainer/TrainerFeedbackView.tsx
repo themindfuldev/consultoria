@@ -16,6 +16,7 @@ import { LayoutDashboard, Save, Send } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { openWhatsApp } from '../../services/notifyService';
+import { setKey } from '../../services/sheetsService';
 import { Layout } from '../../components/Layout';
 import { WorkoutPlan } from '../../components/student/WorkoutPlan';
 import type { ExerciseEntry } from '../../components/student/WorkoutPlan';
@@ -253,11 +254,23 @@ export function TrainerFeedbackView() {
 
   const dateLabel = session?.date instanceof Timestamp ? fmtDate(session.date) : '';
 
-  // The student's saved per-set entries, in WorkoutPlan's shape (rpe '' when unset).
+  // Seed every set from the plan (sheet Observações/RPE) overlaid with the
+  // student's saved entries — identical to the student's finished view, so the
+  // Observações render the same way (not the amber "reference" style).
   const planEntries: Record<string, ExerciseEntry> = {};
-  if (session?.exerciseEntries) {
-    for (const [k, e] of Object.entries(session.exerciseEntries)) {
-      planEntries[k] = { observations: e.observations, rpe: e.rpe ?? '' };
+  if (session?.plan) {
+    const saved = session.exerciseEntries ?? {};
+    for (const ex of session.plan.exercises) {
+      ex.setGroups.forEach((sg, i) => {
+        const key = setKey(ex.exerciseName, i, sg.rowNumber);
+        const savedEntry = saved[key];
+        planEntries[key] = {
+          observations: savedEntry?.observations ?? sg.observations ?? '',
+          rpe: savedEntry?.rpe != null
+            ? savedEntry.rpe
+            : (typeof sg.rpe === 'number' ? sg.rpe : ''),
+        };
+      });
     }
   }
 
