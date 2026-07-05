@@ -203,28 +203,30 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
     <div>
       {/* ── Week control ─────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        <div className="min-w-0 flex-1">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
             {currentWeek ? 'Semana atual' : 'Ciclo ainda não iniciado'}
           </p>
-          <p className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-white">
-            {currentWeek ? `Semana ${currentWeek.weekNumber}` : 'Comece a primeira semana'}
-            {currentWeekStatus === 'in_progress' && (
-              <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
-                Em andamento
-              </span>
-            )}
-            {currentWeekStatus === 'completed' && (
-              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                Concluída
-              </span>
-            )}
+          <div className="flex items-center justify-between gap-3">
+            <p className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-white">
+              {currentWeek ? `Semana ${currentWeek.weekNumber}` : 'Comece a primeira semana'}
+              {currentWeekStatus === 'in_progress' && (
+                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+                  Em andamento
+                </span>
+              )}
+              {currentWeekStatus === 'completed' && (
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                  Concluída
+                </span>
+              )}
+            </p>
             {currentWeek?.startedAt instanceof Timestamp && (
-              <span className="text-xs font-normal text-slate-400 dark:text-slate-500">
-                · Desde {currentWeek.startedAt.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
+              <span className="flex-shrink-0 text-xs font-normal text-slate-400 dark:text-slate-500">
+                Desde {currentWeek.startedAt.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
               </span>
             )}
-          </p>
+          </div>
         </div>
 
         {/* Conclude the current week (all sessions terminal, not yet concluded) */}
