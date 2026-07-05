@@ -132,13 +132,9 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                                   placeholder="Observações…"
                                   className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
                                 />
-                              ) : entry.observations ? (
-                                <span className="block w-full rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200">
-                                  {entry.observations}
-                                </span>
                               ) : (
-                                <span className="block w-full rounded-lg bg-amber-50 px-2 py-1 italic text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-                                  {sg.observations}
+                                <span className="block w-full rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200">
+                                  {entry.observations || sg.observations}
                                 </span>
                               )}
                             </div>
