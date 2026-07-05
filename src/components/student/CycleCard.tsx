@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { doc, deleteField, getDoc, Timestamp, updateDoc } from 'firebase/firestore';
-import { Archive, ClipboardList, ExternalLink, MoreVertical, RotateCcw } from 'lucide-react';
+import { Archive, ClipboardList, ExternalLink, Mail, MoreVertical, RotateCcw } from 'lucide-react';
 import { db } from '../../firebase';
 import { useCycleWeek } from '../../hooks/useCycleWeek';
 import { Tooltip } from '../Tooltip';
+import { WhatsAppIcon } from '../icons/WhatsAppIcon';
 import { MODALITY_STYLE } from './modality';
 import type { Cycle, Trainer } from '../../types';
 
@@ -98,8 +99,16 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
               <Tooltip
                 content={
                   <>
-                    <span className="block">E-mail: {cycle.trainerEmail ?? '—'}</span>
-                    {trainerPhone && <span className="block">WhatsApp: +{trainerPhone}</span>}
+                    <span className="flex items-center gap-1.5">
+                      <Mail className="h-3.5 w-3.5 flex-shrink-0" />
+                      {cycle.trainerEmail ?? '—'}
+                    </span>
+                    {trainerPhone && (
+                      <span className="mt-0.5 flex items-center gap-1.5">
+                        <WhatsAppIcon className="h-3.5 w-3.5 flex-shrink-0" />
+                        +{trainerPhone}
+                      </span>
+                    )}
                   </>
                 }
               >

@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { ExternalLink, Pencil } from 'lucide-react';
+import { ExternalLink, Mail, Pencil } from 'lucide-react';
 import { db } from '../../firebase';
 import { Layout } from '../../components/Layout';
 import { useCycleWeek } from '../../hooks/useCycleWeek';
 import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
 import { CycleWeekPanel } from '../../components/student/CycleWeekPanel';
 import { MODALITY_STYLE } from '../../components/student/modality';
+import { WhatsAppIcon } from '../../components/icons/WhatsAppIcon';
 import { Tooltip } from '../../components/Tooltip';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
 import type { Cycle, Trainer } from '../../types';
@@ -110,8 +111,16 @@ export function CycleDetail() {
             <Tooltip
               content={
                 <>
-                  <span className="block">E-mail: {cycle.trainerEmail ?? '—'}</span>
-                  {trainerPhone && <span className="block">WhatsApp: +{trainerPhone}</span>}
+                  <span className="flex items-center gap-1.5">
+                    <Mail className="h-3.5 w-3.5 flex-shrink-0" />
+                    {cycle.trainerEmail ?? '—'}
+                  </span>
+                  {trainerPhone && (
+                    <span className="mt-0.5 flex items-center gap-1.5">
+                      <WhatsAppIcon className="h-3.5 w-3.5 flex-shrink-0" />
+                      +{trainerPhone}
+                    </span>
+                  )}
                 </>
               }
             >

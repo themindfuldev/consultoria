@@ -10,11 +10,12 @@ import {
   setDoc,
   where,
 } from 'firebase/firestore';
-import { CheckCircle2, Clock, Mail, Phone, Send, Trash2, UserPlus } from 'lucide-react';
+import { CheckCircle2, Clock, Mail, Send, Trash2, UserPlus } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { openWhatsApp } from '../../services/notifyService';
 import { Layout } from '../../components/Layout';
+import { WhatsAppIcon } from '../../components/icons/WhatsAppIcon';
 import type { StudentTrainer, Trainer } from '../../types';
 
 /** Row shown in the list: the link plus the resolved (global) trainer record. */
@@ -195,12 +196,14 @@ export function StudentTrainers() {
                   <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
                     {link.trainerName ?? link.trainerEmail}
                   </p>
-                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                    {link.trainerEmail}
+                  <p className="flex items-center gap-1.5 truncate text-xs text-slate-500 dark:text-slate-400">
+                    <Mail className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span className="truncate">{link.trainerEmail}</span>
                   </p>
                   {phoneToUse && (
-                    <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                      WhatsApp: +{phoneToUse}
+                    <p className="flex items-center gap-1.5 truncate text-xs text-slate-500 dark:text-slate-400">
+                      <WhatsAppIcon className="h-3.5 w-3.5 flex-shrink-0" />
+                      <span className="truncate">+{phoneToUse}</span>
                     </p>
                   )}
                 </div>
@@ -262,12 +265,12 @@ export function StudentTrainers() {
             />
           </div>
           <div className="relative">
-            <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <WhatsAppIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              placeholder="WhatsApp: +55 11 99999-9999"
+              placeholder="+55 11 99999-9999"
               className={`${inputCls} pl-10`}
             />
           </div>

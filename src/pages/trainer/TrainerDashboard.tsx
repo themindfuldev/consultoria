@@ -16,7 +16,6 @@ import {
   ChevronRight,
   MessageSquare,
   Pencil,
-  Phone,
   Video,
   X,
 } from 'lucide-react';
@@ -24,6 +23,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
 import { Avatar } from '../../components/Avatar';
+import { WhatsAppIcon } from '../../components/icons/WhatsAppIcon';
 import type { Session } from '../../types';
 
 // ── Date helpers (local time, Sunday-start week) ──────────────────────────────
@@ -206,7 +206,7 @@ export function TrainerDashboard() {
         <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{trainerEmail}</p>
 
         <div className="mt-3 flex items-center gap-2">
-          <Phone className="h-4 w-4 text-slate-400" />
+          <WhatsAppIcon className="h-4 w-4 text-slate-400" />
           {editingPhone ? (
             <>
               <input

@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { Moon, Phone, Sun } from 'lucide-react';
+import { Moon, Sun } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../hooks/useAuth';
 import { useDarkMode } from '../hooks/useDarkMode';
+import { WhatsAppIcon } from '../components/icons/WhatsAppIcon';
 
 export function Onboarding() {
   const { currentUser } = useAuth();
@@ -90,7 +91,7 @@ export function Onboarding() {
           </p>
 
           <div className="relative mb-4">
-            <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <WhatsAppIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="tel"
               value={phone}
