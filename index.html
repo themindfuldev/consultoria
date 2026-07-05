@@ -8,6 +8,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Acompanhamento de treino personalizado integrado ao Google Sheets — mobile-first." />
     <title>Consultoria</title>
+    <!-- Resolve dark/light before first paint (no flash): stored preference,
+         else the OS default. The first-time OS choice is saved so it carries
+         forward across login / app / offline. useDarkMode reads the same key. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('theme');
+          var isDark = stored
+            ? stored === 'dark'
+            : window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.classList.toggle('dark', isDark);
+          if (!stored) localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        } catch (e) {}
+      })();
+    </script>
     <!-- Google Identity Services — lazy token refresh for Sheets / Drive API -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <!-- Google Fonts: Outfit -->
