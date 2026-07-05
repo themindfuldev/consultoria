@@ -12,7 +12,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { Dumbbell, Send, Video } from 'lucide-react';
+import { Dumbbell, NotebookText, Send, Video } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { openWhatsApp } from '../../services/notifyService';
@@ -322,8 +322,9 @@ export function TrainerFeedbackView() {
       {/* Plano de treino — same read-only summary the student sees, if snapshotted */}
       {session?.plan && (
         <div className="mb-6">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            📋 Plano de treino
+          <p className="mb-2 flex items-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            <NotebookText className="h-4 w-4" />
+            <span className="ml-2">Plano de treino</span>
           </p>
           <WorkoutPlan tab={session.plan} entries={planEntries} />
         </div>

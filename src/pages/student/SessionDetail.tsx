@@ -21,6 +21,7 @@ import {
   ExternalLink,
   Lock,
   MessageSquare,
+  NotebookText,
   Play,
   PlusCircle,
   RotateCcw,
@@ -754,10 +755,11 @@ export function SessionDetail() {
 
       {/* ── Reading mode: workout plan, always expanded ─────────────────── */}
       <div className="mb-5">
-        <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-          📋 Plano de treino
+        <p className="mb-2 flex items-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          <NotebookText className="h-4 w-4" />
+          <span className="ml-2">Plano de treino</span>
           {parsedTabLoading && (
-            <span className="h-3 w-3 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+            <span className="ml-2 h-3 w-3 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
           )}
         </p>
         {parsedTab ? (

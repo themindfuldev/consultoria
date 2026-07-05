@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Save } from 'lucide-react';
+import { NotebookText, Save, Trash2 } from 'lucide-react';
 import { WorkoutPlan } from '../components/student/WorkoutPlan';
 import type { ExerciseEntry } from '../components/student/WorkoutPlan';
 import type { ParsedSheetTab } from '../types';
@@ -63,6 +63,14 @@ export function OfflineSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [{ state, snapshot }] = useState<LoadedSnapshot>(() => loadSnapshot(sessionId));
 
+  // Drop the snapshot and leave the standalone viewer via a full navigation:
+  // the normal app + ProtectedRoute then land a logged-in student on their home
+  // page and everyone else on the login page.
+  const handleDiscard = () => {
+    if (sessionId) localStorage.removeItem(offlineKey(sessionId));
+    window.location.href = '/student';
+  };
+
   if (state !== 'ok' || !snapshot) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center dark:bg-slate-950">
@@ -106,10 +114,19 @@ export function OfflineSession() {
           </div>
         )}
 
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-          📋 Plano de treino
+        <p className="mb-2 flex items-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          <NotebookText className="h-4 w-4" />
+          <span className="ml-2">Plano de treino</span>
         </p>
         <WorkoutPlan tab={snapshot.parsedTab} />
+
+        <button
+          onClick={handleDiscard}
+          className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-6 py-3 text-sm font-semibold text-red-600 transition-all hover:bg-red-50 active:scale-95 dark:border-red-900/50 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-red-950/30"
+        >
+          <Trash2 className="h-4 w-4" />
+          Descartar treino
+        </button>
       </div>
     </div>
   );
