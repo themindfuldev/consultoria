@@ -10,7 +10,7 @@ import {
   setDoc,
   where,
 } from 'firebase/firestore';
-import { CheckCircle2, Clock, Mail, Send, Trash2, UserPlus } from 'lucide-react';
+import { CheckCircle2, Clock, Info, Mail, Send, Trash2, UserPlus } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { openWhatsApp } from '../../services/notifyService';
@@ -69,8 +69,13 @@ export function StudentTrainers() {
   const handleAdd = async () => {
     if (!currentUser || !userProfile) return;
 
+    const trimmedName = name.trim();
     const cleanEmail = email.trim().toLowerCase();
     const cleanPhone = phone.replace(/\D/g, '');
+    if (!trimmedName) {
+      setError('Digite o nome do treinador.');
+      return;
+    }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       setError('Digite um e-mail válido para o treinador.');
       return;
@@ -86,7 +91,6 @@ export function StudentTrainers() {
 
     setError('');
     setSaving(true);
-    const trimmedName = name.trim();
     try {
       const trainerRef = doc(db, 'trainers', cleanEmail);
       const existing = await getDoc(trainerRef);
@@ -95,7 +99,7 @@ export function StudentTrainers() {
         await setDoc(trainerRef, {
           id: cleanEmail,
           email: cleanEmail,
-          ...(trimmedName ? { name: trimmedName } : {}),
+          name: trimmedName,
           whatsappPhone: cleanPhone,
           status: 'pending',
           createdByStudentUid: currentUser.uid,
@@ -110,7 +114,7 @@ export function StudentTrainers() {
         studentEmail: userProfile.email,
         studentName: userProfile.displayName,
         trainerEmail: cleanEmail,
-        ...(trimmedName ? { trainerName: trimmedName } : {}),
+        trainerName: trimmedName,
         createdAt: serverTimestamp(),
       });
 
@@ -156,16 +160,18 @@ export function StudentTrainers() {
           Meus treinadores
         </h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Cadastre os treinadores que vão receber seus treinos para feedback. O
-          cadastro é opcional.
+          Cadastre os treinadores que vão acompanhar seus treinos.
         </p>
       </div>
 
       {/* Sheet-sharing reminder */}
-      <div className="mb-6 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-        <strong>Importante:</strong> compartilhe sua planilha do Google com o
-        e-mail de cada treinador (como leitor), para que eles consigam
-        acompanhar seus treinos.
+      <div className="mb-6 flex items-start gap-2 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+        <Info className="mt-0.5 h-4 w-4 flex-shrink-0" />
+        <span>
+          Compartilhe suas planilhas do Google Sheets e pastas do Google Drive
+          com o e-mail de cada treinador, para que eles consigam acompanhar seus
+          treinos.
+        </span>
       </div>
 
       {error && (
@@ -206,12 +212,13 @@ export function StudentTrainers() {
                       <span className="truncate">+{phoneToUse}</span>
                     </p>
                   )}
+                  {confirmed && (
+                    <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Confirmado
+                    </span>
+                  )}
                 </div>
-                {confirmed ? (
-                  <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Confirmado
-                  </span>
-                ) : (
+                {!confirmed && (
                   <button
                     onClick={() => phoneToUse && sendConfirmation(phoneToUse, link.trainerEmail)}
                     className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300"
@@ -250,7 +257,7 @@ export function StudentTrainers() {
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Nome do treinador (opcional)"
+            placeholder="Nome do treinador"
             className={inputCls}
           />
           <div className="relative">
@@ -270,7 +277,7 @@ export function StudentTrainers() {
               type="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              placeholder="+55 11 99999-9999"
+              placeholder="+55 11 99999-9999 (WhatsApp)"
               className={`${inputCls} pl-10`}
             />
           </div>
