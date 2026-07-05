@@ -198,6 +198,11 @@ export function StudentTrainers() {
                   <p className="truncate text-xs text-slate-500 dark:text-slate-400">
                     {link.trainerEmail}
                   </p>
+                  {phoneToUse && (
+                    <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                      WhatsApp: +{phoneToUse}
+                    </p>
+                  )}
                 </div>
                 {confirmed ? (
                   <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">

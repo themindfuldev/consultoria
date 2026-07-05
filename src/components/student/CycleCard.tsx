@@ -45,8 +45,9 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
   }, [cycle.trainerEmail]);
 
   const handleArchive = async () => {
-    setBusy(true);
     setMenuOpen(false);
+    if (!window.confirm(`Arquivar o programa "${cycle.title}"?`)) return;
+    setBusy(true);
     try {
       await updateDoc(doc(db, 'cycles', cycle.id), {
         status: 'archived',
