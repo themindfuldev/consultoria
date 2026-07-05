@@ -165,8 +165,8 @@ export function StudentTrainers() {
       </div>
 
       {/* Sheet-sharing reminder */}
-      <div className="mb-6 flex items-start gap-2 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-        <Info className="mt-0.5 h-4 w-4 flex-shrink-0" />
+      <div className="mb-6 flex items-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+        <Info className="h-4 w-4 flex-shrink-0" />
         <span>
           Lembre-se de compartilhar suas planilhas do Google Sheets e pastas do
           Google Drive com o e-mail de cada treinador.
