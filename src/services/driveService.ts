@@ -46,7 +46,7 @@ export async function deleteDriveFile(fileId: string, token: string): Promise<vo
 }
 
 /** Set a file or folder to "anyone with the link → reader". */
-async function makePublicViewer(fileId: string, token: string): Promise<void> {
+export async function makePublicViewer(fileId: string, token: string): Promise<void> {
   await driveJson(
     `/files/${fileId}/permissions`,
     {
@@ -242,6 +242,22 @@ export async function getOrCreateSessionFolder(
   const weekFolder = await findOrCreateFolder(weekLabel, token, cycleFolder.id);
   const sessionFolder = await findOrCreateFolder(sessionLabel, token, weekFolder.id);
   return sessionFolder;
+}
+
+/**
+ * Ensures the root → cycle → week folders exist and returns the **week** folder
+ * (parent of the per-session folders). Used for the single weekly feedback doc.
+ */
+export async function getOrCreateWeekFolder(
+  trainerName: string,
+  studentName: string,
+  cycleTitle: string,
+  weekLabel: string, // e.g. "Semana 1"
+  token: string,
+): Promise<DriveFolder> {
+  const root = await findOrCreateFolder(`Consultoria: ${trainerName} - ${studentName}`, token);
+  const cycleFolder = await findOrCreateFolder(cycleTitle, token, root.id);
+  return findOrCreateFolder(weekLabel, token, cycleFolder.id);
 }
 
 /**

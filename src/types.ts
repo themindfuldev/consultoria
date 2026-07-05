@@ -116,6 +116,9 @@ export interface CycleWeek {
    */
   status?: 'in_progress' | 'completed';
   completedAt?: Timestamp;
+  /** The single weekly feedback Google Doc ("Feedbacks - Semana X") for this week. */
+  feedbackDocId?: string;
+  feedbackDocUrl?: string;
 }
 
 // ── Sessions ──────────────────────────────────────────────────────────────────

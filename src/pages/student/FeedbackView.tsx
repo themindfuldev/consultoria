@@ -6,6 +6,7 @@ import {
   getDoc,
   getDocs,
   query,
+  Timestamp,
   updateDoc,
   where,
 } from 'firebase/firestore';
@@ -14,8 +15,10 @@ import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
-import { buildFeedbackHtml, createFeedbackDoc } from '../../services/docsService';
-import type { Cycle, Feedback, Session, SessionVideo, UserProfile } from '../../types';
+import { buildWeeklyFeedbackHtml, replaceWeeklyDoc } from '../../services/docsService';
+import type { WeeklySection } from '../../services/docsService';
+import { getOrCreateWeekFolder } from '../../services/driveService';
+import type { Cycle, CycleWeek, Feedback, Session, SessionVideo, UserProfile } from '../../types';
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -58,8 +61,16 @@ export function FeedbackView() {
         setSession(s);
         setFeedback(fb);
 
-        // Pre-set doc URL if already created
-        if (fb.feedbackDocUrl) setDocUrl(fb.feedbackDocUrl);
+        // Pre-set the weekly doc URL if this week already has one.
+        getDocs(query(
+          collection(db, 'cycles', s.cycleId, 'weeks'),
+          where('weekNumber', '==', s.weekNumber ?? 1),
+        ))
+          .then((snap) => {
+            const wd = snap.docs[0]?.data() as CycleWeek | undefined;
+            if (wd?.feedbackDocUrl) setDocUrl(wd.feedbackDocUrl);
+          })
+          .catch(() => {/* non-fatal */});
 
         const [cycleSnap, studentSnap, videosSnap] = await Promise.all([
           getDoc(doc(db, 'cycles', s.cycleId)),
@@ -89,41 +100,87 @@ export function FeedbackView() {
   // ── Create Google Doc (on demand) ───────────────────────────────────────────
 
   const handleCreateDoc = async () => {
-    if (!feedback || !session || !cycle || !studentProfile) return;
-    if (!session.driveFolderId) {
-      setDocError('Pasta do Drive não encontrada. Volte e tente novamente.');
-      return;
-    }
+    if (!session || !cycle || !studentProfile) return;
     setCreatingDoc(true);
     setDocError('');
     try {
       const token = await getAccessToken();
-      const sessionLabel = session.date
-        ? session.date.toDate().toLocaleDateString('pt-BR', {
-            day: '2-digit',
-            month: 'long',
-            year: 'numeric',
-          })
-        : session.tabName;
+      const weekNumber = session.weekNumber ?? 1;
+      const weekLabel = `Semana ${weekNumber}`;
+      const modality = cycle.modality === 'Outro'
+        ? (cycle.modalityCustom ?? 'Outro')
+        : cycle.modality;
 
-      const html = buildFeedbackHtml(
-        feedback,
-        `${session.tabName} · ${sessionLabel}`,
-        cycle.title,
+      // 1) All the student's completed-feedback sessions in this cycle-week.
+      const sessSnap = await getDocs(query(
+        collection(db, 'sessions'),
+        where('cycleId', '==', session.cycleId),
+        where('studentUid', '==', session.studentUid),
+      ));
+      const weekSessions = sessSnap.docs
+        .map((d) => d.data() as Session)
+        .filter((s) => (s.weekNumber ?? 1) === weekNumber && s.feedbackStatus === 'complete')
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+      // 2) One section per session (its feedback + videos).
+      const sections: WeeklySection[] = [];
+      for (const s of weekSessions) {
+        const [fbSnap, vidSnap] = await Promise.all([
+          getDoc(doc(db, 'feedback', s.id)),
+          getDocs(query(
+            collection(db, 'videos'),
+            where('sessionId', '==', s.id),
+            where('studentUid', '==', s.studentUid),
+          )),
+        ]);
+        if (!fbSnap.exists()) continue;
+        const fb = fbSnap.data() as Feedback;
+        const vids = vidSnap.docs.map((d) => d.data() as SessionVideo);
+        vids.sort((a, b) => (a.uploadedAt?.seconds ?? Infinity) - (b.uploadedAt?.seconds ?? Infinity));
+        const dateLbl = s.date instanceof Timestamp
+          ? s.date.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
+          : '';
+        sections.push({
+          sessionLabel: `${s.tabName}${dateLbl ? ` · ${dateLbl}` : ''}`,
+          exerciseFeedback: fb.exerciseFeedback,
+          videos: vids,
+          generalNotes: fb.generalNotes,
+        });
+      }
+
+      // 3) Week folder + the single weekly doc (replace if it exists).
+      const weekFolder = await getOrCreateWeekFolder(
+        cycle.trainerName ?? 'Treinador',
         studentProfile.displayName,
-        videos,
+        cycle.title,
+        weekLabel,
+        token,
       );
 
-      const created = await createFeedbackDoc(html, session.driveFolderId, token);
+      const weekQ = await getDocs(query(
+        collection(db, 'cycles', session.cycleId, 'weeks'),
+        where('weekNumber', '==', weekNumber),
+      ));
+      const weekDoc = weekQ.docs[0];
+      const prevDocId = (weekDoc?.data() as CycleWeek | undefined)?.feedbackDocId;
 
-      // Persist the URL so we don't recreate on every visit
-      await updateDoc(doc(db, 'feedback', sessionId!), {
-        feedbackDocUrl: created.webViewLink,
-      });
+      const html = buildWeeklyFeedbackHtml(
+        weekNumber, cycle.title, modality, studentProfile.displayName, sections,
+      );
+      const created = await replaceWeeklyDoc(
+        prevDocId, `Feedbacks - ${weekLabel}`, html, weekFolder.id, token,
+      );
+
+      if (weekDoc) {
+        await updateDoc(doc(db, 'cycles', session.cycleId, 'weeks', weekDoc.id), {
+          feedbackDocId: created.id,
+          feedbackDocUrl: created.webViewLink,
+        }).catch(() => {/* non-fatal */});
+      }
 
       setDocUrl(created.webViewLink);
-      setFeedback((prev) => prev ? { ...prev, feedbackDocUrl: created.webViewLink } : prev);
     } catch (err) {
+      console.error(err);
       setDocError(`Não foi possível criar o documento: ${String(err)}`);
     } finally {
       setCreatingDoc(false);
@@ -264,36 +321,36 @@ export function FeedbackView() {
 
         {/* ── Actions (bottom) ─────────────────────────────────────────── */}
         <div className="flex flex-col gap-2 pb-2">
-          {docUrl ? (
+          {docUrl && (
             <a
               href={docUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 rounded-xl bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition-all hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/30"
+              className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95"
             >
               <FileText className="h-4 w-4" />
-              Abrir no Google Docs
+              Abrir feedbacks da semana
               <ExternalLink className="ml-auto h-3.5 w-3.5" />
             </a>
-          ) : (
-            <>
-              <button
-                onClick={handleCreateDoc}
-                disabled={creatingDoc || !session?.driveFolderId}
-                className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <FileText className="h-4 w-4" />
-                {creatingDoc ? 'Criando documento…' : 'Salvar feedback no Google Docs'}
-              </button>
-              {docError && (
-                <p className="text-xs text-red-600 dark:text-red-400">{docError}</p>
-              )}
-              {!session?.driveFolderId && (
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Para criar o Google Doc, primeiro envie vídeos nesta sessão.
-                </p>
-              )}
-            </>
+          )}
+          <button
+            onClick={handleCreateDoc}
+            disabled={creatingDoc}
+            className={`flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 ${
+              docUrl
+                ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+                : 'bg-blue-600 text-white shadow-sm hover:bg-blue-700'
+            }`}
+          >
+            <FileText className="h-4 w-4" />
+            {creatingDoc
+              ? 'Gerando documento…'
+              : docUrl
+                ? 'Atualizar documento da semana'
+                : 'Salvar feedbacks da semana no Google Docs'}
+          </button>
+          {docError && (
+            <p className="text-xs text-red-600 dark:text-red-400">{docError}</p>
           )}
 
           <button

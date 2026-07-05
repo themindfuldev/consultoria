@@ -1,13 +1,20 @@
 /**
  * docsService.ts
  *
- * Creates a "Feedback" Google Doc inside the student's session Drive folder.
- * Uses the Drive API multipart upload with mimeType=application/vnd.google-apps.document
- * so that Drive automatically converts the HTML payload into a native Google Doc.
+ * Builds and writes the weekly feedback Google Doc into the student's Drive.
+ * There is ONE doc per cycle-week ("Feedbacks - Semana X") inside the week
+ * folder; it lists every session's per-exercise feedback and video links.
+ *
+ * The Drive multipart upload must send the HTML with a `text/html` media part
+ * while the metadata declares `application/vnd.google-apps.document` as the
+ * target type — Drive then converts the HTML into a native Google Doc. (Sending
+ * the Google-Apps mime as the media Content-Type is what returned HTTP 400.)
  */
 
-import type { Feedback, SessionVideo } from '../types';
-import { uploadFileToDrive } from './driveService';
+import type { ExerciseFeedback, SessionVideo } from '../types';
+import { deleteDriveFile, makePublicViewer } from './driveService';
+
+const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3';
 
 // ── HTML builder ──────────────────────────────────────────────────────────────
 
@@ -19,68 +26,57 @@ function esc(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/**
- * Builds an HTML string from a completed Feedback document.
- * Drive converts this HTML into a properly formatted Google Doc.
- */
-export function buildFeedbackHtml(
-  feedback: Feedback,
-  sessionLabel: string,       // e.g. "Terça · 25 de maio de 2026"
-  cycleTitle: string,
-  studentName: string,
-  videos: SessionVideo[],
-): string {
-  const videosByExercise = new Map<string, SessionVideo[]>();
-  for (const v of videos) {
-    const key = v.exerciseName ?? 'Geral';
-    const list = videosByExercise.get(key) ?? [];
-    list.push(v);
-    videosByExercise.set(key, list);
-  }
+/** One session's contribution to the weekly doc. */
+export interface WeeklySection {
+  sessionLabel: string;             // e.g. "Treino 1 · 04 de julho de 2026"
+  exerciseFeedback: ExerciseFeedback[];
+  videos: SessionVideo[];
+  generalNotes?: string;
+}
 
-  const exerciseBlocks = feedback.exerciseFeedback
-    .map((ef) => {
-      const exerciseVideos = videosByExercise.get(ef.exerciseName) ?? [];
-      const videoLinks = exerciseVideos
-        .map(
-          (v, i) =>
-            `<li><a href="${esc(v.driveFileUrl)}">Vídeo ${i + 1}</a></li>`,
-        )
+/**
+ * Builds the full HTML for the weekly feedback doc. Drive converts it into a
+ * Google Doc. Header carries the cycle name, type and week; then one section per
+ * session, each listing the exercises with the trainer's feedback + video links.
+ */
+export function buildWeeklyFeedbackHtml(
+  weekNumber: number,
+  cycleTitle: string,
+  modality: string,
+  studentName: string,
+  sections: WeeklySection[],
+): string {
+  const sectionHtml = sections
+    .map((sec) => {
+      const videosByExercise = new Map<string, SessionVideo[]>();
+      for (const v of sec.videos) {
+        const key = v.exerciseName ?? 'Geral';
+        (videosByExercise.get(key) ?? videosByExercise.set(key, []).get(key)!).push(v);
+      }
+
+      const exerciseBlocks = sec.exerciseFeedback
+        .map((ef) => {
+          const vids = videosByExercise.get(ef.exerciseName) ?? [];
+          const videoLinks = vids
+            .map((v, i) => `<li><a href="${esc(v.driveFileUrl)}">Vídeo ${i + 1}</a></li>`)
+            .join('');
+          const text = ef.textFeedback
+            ? esc(ef.textFeedback).replace(/\n/g, '<br>')
+            : '<em>Sem comentários.</em>';
+          return `
+            <h3>${esc(ef.exerciseName)}</h3>
+            ${vids.length ? `<p><strong>Vídeos:</strong></p><ul>${videoLinks}</ul>` : ''}
+            <p>${text}</p>`;
+        })
         .join('');
 
-      const mediaLinks =
-        ef.mediaFiles.length > 0
-          ? `<p><strong>Respostas do treinador:</strong></p><ul>` +
-            ef.mediaFiles
-              .map(
-                (m) =>
-                  `<li><a href="${esc(m.driveFileUrl)}">${esc(m.fileName)}</a> (${m.mediaType})</li>`,
-              )
-              .join('') +
-            `</ul>`
-          : '';
+      const notes = sec.generalNotes
+        ? `<p><strong>Observações gerais:</strong> ${esc(sec.generalNotes).replace(/\n/g, '<br>')}</p>`
+        : '';
 
-      return `
-      <h2>${esc(ef.exerciseName)}</h2>
-      ${exerciseVideos.length > 0 ? `<p><strong>Vídeos:</strong></p><ul>${videoLinks}</ul>` : ''}
-      <p><strong>Feedback:</strong></p>
-      <p>${esc(ef.textFeedback).replace(/\n/g, '<br>')}</p>
-      ${mediaLinks}
-    `;
+      return `<h2>${esc(sec.sessionLabel)}</h2>${exerciseBlocks}${notes}`;
     })
     .join('<hr>');
-
-  const generalNotes = feedback.generalNotes
-    ? `<h2>Observações Gerais</h2><p>${esc(feedback.generalNotes).replace(/\n/g, '<br>')}</p>`
-    : '';
-
-  const completedDate = feedback.completedAt
-    ? new Date(feedback.completedAt.seconds * 1000).toLocaleDateString('pt-BR', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
-      })
-    : '';
 
   return `<!DOCTYPE html>
 <html>
@@ -89,20 +85,21 @@ export function buildFeedbackHtml(
   body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 24px; color: #1e293b; }
   h1 { color: #4f46e5; }
   h2 { color: #334155; margin-top: 28px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }
+  h3 { color: #475569; margin-top: 18px; }
   hr { border: none; border-top: 2px solid #e2e8f0; margin: 24px 0; }
   a { color: #4f46e5; }
   .meta { color: #64748b; font-size: 14px; margin-bottom: 24px; }
 </style>
 </head>
 <body>
-  <h1>Feedback — ${esc(cycleTitle)}</h1>
+  <h1>Feedbacks - Semana ${weekNumber}</h1>
   <div class="meta">
+    <p><strong>Ciclo:</strong> ${esc(cycleTitle)}</p>
+    <p><strong>Tipo:</strong> ${esc(modality)}</p>
+    <p><strong>Semana:</strong> ${weekNumber}</p>
     <p><strong>Aluno(a):</strong> ${esc(studentName)}</p>
-    <p><strong>Sessão:</strong> ${esc(sessionLabel)}</p>
-    ${completedDate ? `<p><strong>Data do feedback:</strong> ${completedDate}</p>` : ''}
   </div>
-  ${exerciseBlocks}
-  ${generalNotes}
+  ${sectionHtml || '<p><em>Nenhum feedback ainda.</em></p>'}
 </body>
 </html>`;
 }
@@ -114,24 +111,57 @@ export interface CreatedDoc {
   webViewLink: string;
 }
 
-/**
- * Creates a "Feedback.gdoc" inside the given Drive folder.
- * Returns the Google Doc's id and shareable URL.
- */
-export async function createFeedbackDoc(
+/** Creates a Google Doc from HTML inside `folderId` and shares it (anyone → reader). */
+export async function createDocFromHtml(
+  name: string,
   html: string,
   folderId: string,
   token: string,
 ): Promise<CreatedDoc> {
-  const htmlBytes = new TextEncoder().encode(html);
+  const boundary = 'consultoria_doc_' + Date.now();
+  const metadata = JSON.stringify({
+    name,
+    mimeType: 'application/vnd.google-apps.document',
+    parents: [folderId],
+  });
+  const body =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n` +
+    `--${boundary}\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n${html}\r\n` +
+    `--${boundary}--`;
 
-  const result = await uploadFileToDrive(
-    'Feedback',
-    'application/vnd.google-apps.document',
-    htmlBytes,
-    folderId,
-    token,
+  const res = await fetch(
+    `${DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id,webViewLink`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    },
   );
+  if (!res.ok) {
+    throw new Error(`Falha ao criar documento: ${res.status} ${await res.text()}`);
+  }
+  const json = (await res.json()) as CreatedDoc;
+  await makePublicViewer(json.id, token).catch(() => {/* sharing is best-effort */});
+  return json;
+}
 
-  return { id: result.id, webViewLink: result.webViewLink };
+/**
+ * Replaces the weekly doc: deletes the previous one (if any) and recreates it
+ * from the latest HTML. Simpler and more reliable than an in-place Docs update,
+ * since the doc is always rebuilt from all the week's feedbacks.
+ */
+export async function replaceWeeklyDoc(
+  previousDocId: string | undefined,
+  name: string,
+  html: string,
+  folderId: string,
+  token: string,
+): Promise<CreatedDoc> {
+  if (previousDocId) {
+    await deleteDriveFile(previousDocId, token).catch(() => {/* may already be gone */});
+  }
+  return createDocFromHtml(name, html, folderId, token);
 }
