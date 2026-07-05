@@ -7,6 +7,7 @@ import { Layout } from '../../components/Layout';
 import { useCycleWeek } from '../../hooks/useCycleWeek';
 import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
 import { CycleWeekPanel } from '../../components/student/CycleWeekPanel';
+import { Tooltip } from '../../components/Tooltip';
 import type { Cycle, Trainer } from '../../types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -90,12 +91,18 @@ export function CycleDetail() {
         </h1>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           {cycle?.trainerName ? (
-            <span
-              title={`E-mail: ${cycle.trainerEmail ?? '—'}${trainerPhone ? `\nWhatsApp: +${trainerPhone}` : ''}`}
-              className="cursor-help border-b border-dotted border-slate-400 text-sm text-slate-500 dark:border-slate-500 dark:text-slate-400"
+            <Tooltip
+              content={
+                <>
+                  <span className="block">E-mail: {cycle.trainerEmail ?? '—'}</span>
+                  {trainerPhone && <span className="block">WhatsApp: +{trainerPhone}</span>}
+                </>
+              }
             >
-              Treinador: {cycle.trainerName}
-            </span>
+              <span className="cursor-pointer border-b border-dotted border-slate-400 text-sm text-slate-500 dark:border-slate-500 dark:text-slate-400">
+                Treinador: {cycle.trainerName}
+              </span>
+            </Tooltip>
           ) : (
             <span />
           )}
