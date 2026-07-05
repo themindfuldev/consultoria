@@ -46,8 +46,9 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
     : null;
 
   // An offline snapshot available in localStorage → an "Offline" action that
-  // opens the static viewer in a new tab (works irrespective of login).
-  const offline = findCurrentOfflineSession();
+  // opens the static viewer in a new tab. Students only — never surface a
+  // leftover snapshot to a trainer.
+  const offline = userProfile ? findCurrentOfflineSession() : null;
 
   // "Treino em andamento" bar: shown while a workout is open (live session
   // and/or a saved offline snapshot), but hidden while viewing that very

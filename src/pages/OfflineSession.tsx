@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { NotebookText, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Moon, NotebookText, Save, Sun, Trash2 } from 'lucide-react';
+import { useDarkMode } from '../hooks/useDarkMode';
 import { WorkoutPlan } from '../components/student/WorkoutPlan';
 import type { ExerciseEntry } from '../components/student/WorkoutPlan';
 import type { ParsedSheetTab } from '../types';
@@ -22,12 +23,10 @@ function offlineKey(sessionId: string): string {
 }
 
 function fmtSavedAt(ms: number): string {
-  return new Date(ms).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: 'long',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const d = new Date(ms);
+  const date = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return `${date} às ${time}`;
 }
 
 interface LoadedSnapshot {
@@ -62,13 +61,19 @@ function loadSnapshot(sessionId: string | undefined): LoadedSnapshot {
 export function OfflineSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [{ state, snapshot }] = useState<LoadedSnapshot>(() => loadSnapshot(sessionId));
+  const { isDark, toggle } = useDarkMode();
 
-  // Drop the snapshot and leave the standalone viewer via a full navigation:
-  // the normal app + ProtectedRoute then land a logged-in student on their home
-  // page and everyone else on the login page.
+  // Leave the standalone viewer via a full navigation: the normal app +
+  // ProtectedRoute then land a logged-in student on their home page and
+  // everyone else on the login page.
+  const handleBack = () => {
+    window.location.href = '/student';
+  };
+
+  // Same, but also drops the snapshot first.
   const handleDiscard = () => {
     if (sessionId) localStorage.removeItem(offlineKey(sessionId));
-    window.location.href = '/student';
+    handleBack();
   };
 
   if (state !== 'ok' || !snapshot) {
@@ -90,10 +95,36 @@ export function OfflineSession() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+      {/* Top bar — mirrors the logged-in session header */}
+      <header className="glass sticky top-0 z-40 border-b border-slate-200 dark:border-slate-800">
+        <div className="mx-auto flex h-14 max-w-2xl items-center justify-between px-4">
+          <div className="flex min-w-0 items-center gap-1">
+            <button
+              onClick={handleBack}
+              aria-label="Voltar"
+              className="-ml-1.5 rounded-full p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <div className="flex min-w-0 items-center gap-1.5 text-base font-black text-slate-900 dark:text-white">
+              <img src="/app-icon.png" alt="" className="h-6 w-6 flex-shrink-0" />
+              <span className="truncate">{snapshot.tabName}</span>
+            </div>
+          </div>
+          <button
+            onClick={toggle}
+            aria-label={isDark ? 'Ativar modo claro' : 'Ativar modo escuro'}
+            className="rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+          >
+            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </button>
+        </div>
+      </header>
+
       <div className="mx-auto max-w-2xl px-4 py-6">
-        <div className="mb-4 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-amber-800 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:border-amber-300 dark:bg-amber-900/20 dark:text-amber-300">
           <Save className="h-4 w-4 flex-shrink-0" />
-          Modo offline — instantâneo salvo em {fmtSavedAt(snapshot.savedAt)}
+          Treino em andamento offline - salvo em {fmtSavedAt(snapshot.savedAt)}
         </div>
 
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
@@ -102,17 +133,6 @@ export function OfflineSession() {
         <p className="mb-5 mt-0.5 text-sm text-slate-500 dark:text-slate-400">
           {snapshot.cycleTitle} · {snapshot.dateLabel}
         </p>
-
-        {snapshot.preWorkout && (
-          <div className="glass-premium mb-5 rounded-2xl p-4">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Início do treino
-            </p>
-            <p className="text-sm text-slate-700 dark:text-slate-200">
-              Ânimo: {'⭐'.repeat(snapshot.preWorkout.energyLevel)} · {snapshot.preWorkout.feeling}
-            </p>
-          </div>
-        )}
 
         <p className="mb-2 flex items-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
           <NotebookText className="h-4 w-4" />

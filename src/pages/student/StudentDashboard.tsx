@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { ArchiveRestore, PlusCircle, Users } from 'lucide-react';
+import { ArchiveRestore, ClipboardList, PlusCircle, Users } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
@@ -140,7 +140,7 @@ export function StudentDashboard() {
           />
         ) : (
           <EmptyState
-            icon="📋"
+            icon={<ClipboardList className="mx-auto h-10 w-10 text-slate-400 dark:text-slate-500" />}
             title="Nenhum programa ainda"
             description="Cole o link da planilha do seu treinador para começar."
             action={
@@ -174,7 +174,7 @@ function EmptyState({
   description,
   action,
 }: {
-  icon: string;
+  icon: React.ReactNode;
   title: string;
   description: string;
   action?: React.ReactNode;
