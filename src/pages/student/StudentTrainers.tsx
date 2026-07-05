@@ -192,7 +192,7 @@ export function StudentTrainers() {
             return (
               <li
                 key={link.id}
-                className="glass-premium flex items-start gap-3 rounded-2xl px-4 py-3"
+                className="glass-premium flex items-center gap-3 rounded-2xl px-4 py-3"
               >
                 <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">
                   {(link.trainerName ?? link.trainerEmail).charAt(0).toUpperCase()}
