@@ -1,21 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { doc, deleteField, getDoc, Timestamp, updateDoc } from 'firebase/firestore';
-import { Archive, Dumbbell, ExternalLink, MoreVertical, RotateCcw } from 'lucide-react';
+import { Archive, ClipboardList, ExternalLink, MoreVertical, RotateCcw } from 'lucide-react';
 import { db } from '../../firebase';
 import { useCycleWeek } from '../../hooks/useCycleWeek';
 import { Tooltip } from '../Tooltip';
-import type { Cycle, Modality, Trainer } from '../../types';
-
-// ── Modality badge colours ────────────────────────────────────────────────────
-
-const MODALITY_STYLE: Record<Modality, string> = {
-  'Força':      'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-  'Mobilidade': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
-  'Cardio':     'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
-  'Competição': 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
-  'Outro':      'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
-};
+import { MODALITY_STYLE } from './modality';
+import type { Cycle, Trainer } from '../../types';
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -34,7 +25,7 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
 
   // Weeks-only usage: the panel isn't rendered here — we just want the current
   // week number/status for the summary. (Archived cycles skip the listeners.)
-  const { currentWeek, currentWeekStatus } = useCycleWeek(isArchived ? null : cycle);
+  const { currentWeek } = useCycleWeek(isArchived ? null : cycle);
 
   const modalityLabel =
     cycle.modality === 'Outro' && cycle.modalityCustom
@@ -42,7 +33,7 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
       : cycle.modality;
 
   const startedAt = cycle.startDate instanceof Timestamp
-    ? cycle.startDate.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
+    ? cycle.startDate.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
     : '—';
 
   // Trainer WhatsApp for the tooltip.
@@ -168,21 +159,9 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
             <>
               <span className="text-slate-400 dark:text-slate-500">Semana atual:</span>
               {currentWeek ? (
-                <>
-                  <span className="font-semibold text-slate-700 dark:text-slate-200">
-                    Semana {currentWeek.weekNumber}
-                  </span>
-                  {currentWeekStatus === 'in_progress' && (
-                    <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
-                      Em andamento
-                    </span>
-                  )}
-                  {currentWeekStatus === 'completed' && (
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                      Concluída
-                    </span>
-                  )}
-                </>
+                <span className="font-semibold text-slate-700 dark:text-slate-200">
+                  Semana {currentWeek.weekNumber}
+                </span>
               ) : (
                 <span className="text-slate-500 dark:text-slate-400">Ainda não iniciado</span>
               )}
@@ -200,7 +179,7 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
           onClick={() => navigate(`/student/cycles/${cycle.id}`)}
           className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95"
         >
-          <Dumbbell className="h-4 w-4" />
+          <ClipboardList className="h-4 w-4" />
           Abrir programa
         </button>
         <a

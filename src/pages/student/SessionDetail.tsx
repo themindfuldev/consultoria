@@ -984,12 +984,12 @@ export function SessionDetail() {
           {/* Actions (hidden when read-only, or once feedback has arrived) */}
           {!readOnly && !feedbackAvailable && (
             <div className="flex flex-col gap-3">
-              {/* Hidden file input */}
+              {/* Hidden file input — no `capture` so it opens the library/camera
+                  roll picker (lets the student choose an already-recorded video). */}
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="video/*"
-                capture="environment"
                 className="hidden"
                 onChange={handleFileSelected}
               />

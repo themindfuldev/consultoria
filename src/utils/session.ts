@@ -24,6 +24,15 @@ export function isSessionOpen(session: Session, now: number = Date.now()): boole
   return now - startedMs < SESSION_OPEN_TTL_MS;
 }
 
+/** How long a saved offline snapshot stays valid (matches the session TTL). */
+export const OFFLINE_TTL_MS = SESSION_OPEN_TTL_MS; // 4 hours
+
+const OFFLINE_PREFIX = 'offline_session_';
+
+export function offlineKey(sessionId: string): string {
+  return `${OFFLINE_PREFIX}${sessionId}`;
+}
+
 /**
  * Removes every cached offline-export snapshot from localStorage. Starting a
  * new workout invalidates whatever was cached for offline use.
@@ -31,6 +40,40 @@ export function isSessionOpen(session: Session, now: number = Date.now()): boole
 export function clearOfflineSnapshots(): void {
   for (let i = localStorage.length - 1; i >= 0; i--) {
     const key = localStorage.key(i);
-    if (key?.startsWith('offline_session_')) localStorage.removeItem(key);
+    if (key?.startsWith(OFFLINE_PREFIX)) localStorage.removeItem(key);
   }
+}
+
+export interface OfflineRef {
+  sessionId: string;
+  tabName: string;
+  savedAt: number;
+}
+
+/**
+ * Returns the most recent non-expired offline snapshot in localStorage (pruning
+ * expired ones), or null. Powers the "offline session available" banner.
+ */
+export function findCurrentOfflineSession(now: number = Date.now()): OfflineRef | null {
+  let best: OfflineRef | null = null;
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (!key?.startsWith(OFFLINE_PREFIX)) continue;
+    const raw = localStorage.getItem(key);
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw) as { savedAt: number; tabName?: string };
+      if (now - parsed.savedAt > OFFLINE_TTL_MS) { localStorage.removeItem(key); continue; }
+      if (!best || parsed.savedAt > best.savedAt) {
+        best = {
+          sessionId: key.slice(OFFLINE_PREFIX.length),
+          tabName: parsed.tabName ?? 'Treino',
+          savedAt: parsed.savedAt,
+        };
+      }
+    } catch {
+      localStorage.removeItem(key);
+    }
+  }
+  return best;
 }

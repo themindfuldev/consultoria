@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Dumbbell, LogOut, Moon, Sun } from 'lucide-react';
+import { ArrowLeft, Dumbbell, LogOut, Moon, Sun, WifiOff } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useActiveSession } from '../hooks/useActiveSession';
 import { useDarkMode } from '../hooks/useDarkMode';
+import { findCurrentOfflineSession } from '../utils/session';
 import { Avatar } from './Avatar';
 
 interface LayoutProps {
@@ -44,6 +45,10 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
     : null;
   const showActiveSessionBanner = !!activeSessionHref && location.pathname !== activeSessionHref;
 
+  // An offline snapshot available in localStorage → banner that opens the static
+  // offline viewer in a new tab (works irrespective of login).
+  const offline = findCurrentOfflineSession();
+
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-950">
       {/* ── Sticky top nav ─────────────────────────────────────────────────── */}
@@ -62,19 +67,12 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
             )}
             <Link
               to={homeHref}
-              className="flex items-center gap-1.5 text-base font-black text-slate-900 dark:text-white"
+              className="flex min-w-0 items-center gap-1.5 text-base font-black text-slate-900 dark:text-white"
             >
-              <span className="text-indigo-600 dark:text-indigo-400">⚡</span>
-              Consultoria
+              <img src="/favicon.svg" alt="" className="h-6 w-6 flex-shrink-0" />
+              <span className="truncate">{title ?? 'Consultoria'}</span>
             </Link>
           </div>
-
-          {/* Centred page title */}
-          {title && (
-            <span className="absolute left-1/2 -translate-x-1/2 text-sm font-semibold text-slate-700 dark:text-slate-200 pointer-events-none">
-              {title}
-            </span>
-          )}
 
           {/* Right-side controls */}
           <div className="flex items-center gap-1">
@@ -115,6 +113,19 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
           <Dumbbell className="h-4 w-4" />
           Ver treino atual
         </Link>
+      )}
+
+      {/* ── Offline snapshot banner (opens the static viewer in a new tab) ──── */}
+      {offline && (
+        <a
+          href={`/offline/${offline.sessionId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition-colors hover:bg-amber-600"
+        >
+          <WifiOff className="h-4 w-4" />
+          Abrir treino offline ({offline.tabName})
+        </a>
       )}
 
       {/* ── Page content ───────────────────────────────────────────────────── */}

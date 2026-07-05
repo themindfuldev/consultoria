@@ -5,7 +5,7 @@ import { WorkoutPlan } from '../components/student/WorkoutPlan';
 import type { ExerciseEntry } from '../components/student/WorkoutPlan';
 import type { ParsedSheetTab } from '../types';
 
-const EXPIRY_MS = 24 * 60 * 60 * 1000;
+const EXPIRY_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 interface OfflineSnapshot {
   savedAt: number;
@@ -73,7 +73,7 @@ export function OfflineSession() {
             : 'Esse instantâneo não existe mais'}
         </p>
         <p className="max-w-xs text-sm text-slate-500 dark:text-slate-400">
-          Instantâneos offline ficam disponíveis por até 24 horas após serem salvos.
+          Instantâneos offline ficam disponíveis por até 4 horas após serem salvos.
           Abra a sessão novamente e toque em "Salvar para acesso offline".
         </p>
       </div>

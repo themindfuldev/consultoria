@@ -83,10 +83,10 @@ export function StudentDashboard() {
         </h1>
         <button
           onClick={() => navigate('/student/trainers')}
-          className="flex flex-shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          className="flex min-w-[10.5rem] flex-shrink-0 items-center justify-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
         >
           <Users className="h-3.5 w-3.5" />
-          Gerenciar treinadores
+          Meus treinadores
         </button>
       </div>
 
@@ -114,7 +114,7 @@ export function StudentDashboard() {
           {!showArchived && (
             <button
               onClick={() => navigate('/student/add-cycle')}
-              className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95"
+              className="flex min-w-[10.5rem] items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95"
             >
               <PlusCircle className="h-3.5 w-3.5" />
               Adicionar programa
