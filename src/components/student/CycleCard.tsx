@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, deleteField, Timestamp, updateDoc } from 'firebase/firestore';
-import { Archive, ExternalLink, MoreVertical, RotateCcw } from 'lucide-react';
+import { doc, deleteField, getDoc, Timestamp, updateDoc } from 'firebase/firestore';
+import { Archive, Dumbbell, ExternalLink, MoreVertical, RotateCcw } from 'lucide-react';
 import { db } from '../../firebase';
 import { useCycleWeek } from '../../hooks/useCycleWeek';
-import { CycleWeekPanel } from './CycleWeekPanel';
-import type { Cycle, Modality } from '../../types';
+import { Tooltip } from '../Tooltip';
+import type { Cycle, Modality, Trainer } from '../../types';
 
 // ── Modality badge colours ────────────────────────────────────────────────────
 
@@ -28,11 +28,13 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [trainerPhone, setTrainerPhone] = useState('');
 
   const isArchived = cycle.status === 'archived';
 
-  // Archived cycles don't need the week/sessions panel — skip its listeners.
-  const cycleWeek = useCycleWeek(isArchived ? null : cycle);
+  // Weeks-only usage: the panel isn't rendered here — we just want the current
+  // week number/status for the summary. (Archived cycles skip the listeners.)
+  const { currentWeek, currentWeekStatus } = useCycleWeek(isArchived ? null : cycle);
 
   const modalityLabel =
     cycle.modality === 'Outro' && cycle.modalityCustom
@@ -42,6 +44,14 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
   const startedAt = cycle.startDate instanceof Timestamp
     ? cycle.startDate.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
     : '—';
+
+  // Trainer WhatsApp for the tooltip.
+  useEffect(() => {
+    if (!cycle.trainerEmail) return;
+    getDoc(doc(db, 'trainers', cycle.trainerEmail))
+      .then((s) => { if (s.exists()) setTrainerPhone((s.data() as Trainer).whatsappPhone ?? ''); })
+      .catch(() => {/* non-fatal */});
+  }, [cycle.trainerEmail]);
 
   const handleArchive = async () => {
     setBusy(true);
@@ -77,19 +87,32 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
     <div className={`glass-premium relative rounded-2xl p-4 transition-opacity ${busy ? 'opacity-60' : ''} ${isArchived ? 'opacity-75' : ''}`}>
       {/* ── Header row ─────────────────────────────────────────────────── */}
       <div className="mb-2 flex items-start gap-2">
-        <button
-          onClick={() => navigate(`/student/cycles/${cycle.id}`)}
-          className="min-w-0 flex-1 text-left"
-        >
-          <h3 className="truncate text-base font-bold text-slate-900 hover:underline dark:text-white">
-            {cycle.title}
-          </h3>
+        <div className="min-w-0 flex-1">
+          <button
+            onClick={() => navigate(`/student/cycles/${cycle.id}`)}
+            className="min-w-0 max-w-full text-left"
+          >
+            <h3 className="truncate text-base font-bold text-slate-900 hover:underline dark:text-white">
+              {cycle.title}
+            </h3>
+          </button>
           {cycle.trainerName && (
-            <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
-              Treinador: {cycle.trainerName}
-            </p>
+            <div className="mt-0.5">
+              <Tooltip
+                content={
+                  <>
+                    <span className="block">E-mail: {cycle.trainerEmail ?? '—'}</span>
+                    {trainerPhone && <span className="block">WhatsApp: +{trainerPhone}</span>}
+                  </>
+                }
+              >
+                <span className="cursor-pointer border-b border-dotted border-slate-400 text-xs text-slate-500 dark:border-slate-500 dark:text-slate-400">
+                  Treinador: {cycle.trainerName}
+                </span>
+              </Tooltip>
+            </div>
           )}
-        </button>
+        </div>
 
         {/* ⋯ menu */}
         <div className="relative flex-shrink-0">
@@ -104,7 +127,6 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
 
           {menuOpen && (
             <>
-              {/* Backdrop */}
               <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
               <div className="absolute right-0 top-8 z-20 w-40 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
                 {isArchived ? (
@@ -145,15 +167,41 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
         </span>
       </div>
 
-      {/* ── Week + this week's sessions (active cycles only) ─────────────── */}
+      {/* ── Current week (active cycles) ─────────────────────────────────── */}
       {!isArchived && (
-        <div className="mb-3 border-t border-slate-200/70 pt-3 dark:border-slate-700/50">
-          <CycleWeekPanel cycleWeek={cycleWeek} />
+        <div className="mb-3 flex items-center gap-2 text-xs">
+          <span className="text-slate-400 dark:text-slate-500">Semana atual:</span>
+          {currentWeek ? (
+            <>
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                Semana {currentWeek.weekNumber}
+              </span>
+              {currentWeekStatus === 'in_progress' && (
+                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+                  Em andamento
+                </span>
+              )}
+              {currentWeekStatus === 'completed' && (
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                  Concluída
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="text-slate-500 dark:text-slate-400">Ainda não iniciado</span>
+          )}
         </div>
       )}
 
       {/* ── Action buttons ──────────────────────────────────────────────── */}
       <div className="flex gap-2">
+        <button
+          onClick={() => navigate(`/student/cycles/${cycle.id}`)}
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95"
+        >
+          <Dumbbell className="h-4 w-4" />
+          Abrir programa
+        </button>
         <a
           href={cycle.googleSheetUrl}
           target="_blank"
