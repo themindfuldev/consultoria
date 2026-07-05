@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Dumbbell, LogOut, Moon, Sun, WifiOff } from 'lucide-react';
+import { ArrowLeft, Dumbbell, LogOut, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useActiveSession } from '../hooks/useActiveSession';
 import { useDarkMode } from '../hooks/useDarkMode';
@@ -123,7 +123,7 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
           rel="noopener noreferrer"
           className="flex items-center justify-center gap-2 bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition-colors hover:bg-amber-600"
         >
-          <WifiOff className="h-4 w-4" />
+          <span aria-hidden>📴</span>
           Abrir treino offline ({offline.tabName})
         </a>
       )}

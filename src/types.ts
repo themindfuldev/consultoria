@@ -15,6 +15,8 @@ export interface UserProfile {
   photoURL: string;
   /** E.164-style without '+', e.g. "5511999999999". Used to build wa.me links. */
   whatsappPhone: string;
+  /** Whether to open the WhatsApp "started/finished" notifications. Default true. */
+  notifyTrainer?: boolean;
   createdAt: Timestamp;
 }
 

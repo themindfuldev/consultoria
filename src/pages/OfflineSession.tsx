@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { WifiOff } from 'lucide-react';
 import { WorkoutPlan } from '../components/student/WorkoutPlan';
 import type { ExerciseEntry } from '../components/student/WorkoutPlan';
 import type { ParsedSheetTab } from '../types';
@@ -66,7 +65,7 @@ export function OfflineSession() {
   if (state !== 'ok' || !snapshot) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center dark:bg-slate-950">
-        <WifiOff className="h-10 w-10 text-slate-400 dark:text-slate-600" />
+        <span className="text-5xl" aria-hidden>📴</span>
         <p className="text-base font-bold text-slate-900 dark:text-white">
           {state === 'expired'
             ? 'Esse instantâneo expirou'
@@ -84,8 +83,8 @@ export function OfflineSession() {
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       <div className="mx-auto max-w-2xl px-4 py-6">
         <div className="mb-4 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-          <WifiOff className="h-4 w-4 flex-shrink-0" />
-          📴 Modo offline — instantâneo salvo em {fmtSavedAt(snapshot.savedAt)}
+          <span aria-hidden>📴</span>
+          Modo offline — instantâneo salvo em {fmtSavedAt(snapshot.savedAt)}
         </div>
 
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">

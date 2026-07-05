@@ -17,15 +17,15 @@ import {
   where,
 } from 'firebase/firestore';
 import {
-  CheckCircle2,
-  Download,
   ExternalLink,
   Lock,
   MessageSquare,
+  Play,
   PlusCircle,
   RotateCcw,
   Send,
   SkipForward,
+  Square,
   Trash2,
   Upload,
   Video,
@@ -101,6 +101,28 @@ function serializeEntries(
   return out;
 }
 
+// ── "Notificar treinador" checkbox ────────────────────────────────────────────
+
+function NotifyTrainerCheckbox({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className="mb-2 flex cursor-pointer select-none items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-700"
+      />
+      Notificar treinador
+    </label>
+  );
+}
+
 // ── Upload state per video ────────────────────────────────────────────────────
 
 interface UploadState {
@@ -115,7 +137,7 @@ interface UploadState {
 
 export function SessionDetail() {
   const { cycleId, sessionId } = useParams<{ cycleId: string; sessionId: string }>();
-  const { currentUser, getAccessToken } = useAuth();
+  const { currentUser, userProfile, getAccessToken } = useAuth();
   const navigate = useNavigate();
   const { compress } = useVideoCompress();
 
@@ -145,6 +167,18 @@ export function SessionDetail() {
 
   // Notification state (video-ready notification)
   const [notifying, setNotifying] = useState(false);
+
+  // "Notificar treinador" preference (saved on the user profile; default on).
+  const [notify, setNotify] = useState(true);
+  useEffect(() => {
+    if (userProfile) setNotify(userProfile.notifyTrainer ?? true);
+  }, [userProfile]);
+  const toggleNotify = (value: boolean) => {
+    setNotify(value);
+    if (currentUser) {
+      updateDoc(doc(db, 'users', currentUser.uid), { notifyTrainer: value }).catch(() => {/* best-effort */});
+    }
+  };
 
   // Pre-workout form state
   const [preEnergy, setPreEnergy] = useState<1 | 2 | 3 | 4 | 5 | null>(null);
@@ -342,12 +376,14 @@ export function SessionDetail() {
       });
       setSession((prev) => (prev ? { ...prev, preWorkout, status: 'in_progress' } : prev));
 
-      notifyTrainer(
-        cycle.trainerEmail,
-        'Treino iniciado',
-        `Comecei o treino *${session.tabName}*` +
-          (session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.'),
-      ).catch(() => {/* notification is a convenience, never a blocker */});
+      if (notify) {
+        notifyTrainer(
+          cycle.trainerEmail,
+          'Treino iniciado',
+          `Comecei o treino *${session.tabName}*` +
+            (session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.'),
+        ).catch(() => {/* notification is a convenience, never a blocker */});
+      }
 
       // Best-effort write-back into the trainer's sheet — never blocks the flow.
       if (parsedTab) {
@@ -480,13 +516,15 @@ export function SessionDetail() {
           .catch(() => {/* best-effort sync — Firestore remains canonical */});
       }
 
-      // Notify trainer the workout is finished.
-      notifyTrainer(
-        cycle.trainerEmail,
-        'Treino concluído',
-        `Terminei o treino *${session.tabName}*` +
-          (session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.'),
-      ).catch(() => {/* notification is a convenience, never a blocker */});
+      // Notify trainer the workout is finished (unless the student opted out).
+      if (notify) {
+        notifyTrainer(
+          cycle.trainerEmail,
+          'Treino concluído',
+          `Terminei o treino *${session.tabName}*` +
+            (session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.'),
+        ).catch(() => {/* notification is a convenience, never a blocker */});
+      }
 
       // The offline snapshot is no longer useful once the session is done.
       localStorage.removeItem(offlineKey(session.id));
@@ -787,11 +825,15 @@ export function SessionDetail() {
 
           {preError && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{preError}</p>}
 
+          {cycle?.trainerEmail && (
+            <NotifyTrainerCheckbox checked={notify} onChange={toggleNotify} />
+          )}
           <button
             onClick={handleSubmitPreWorkout}
             disabled={!preEnergy || !preFeeling || preSubmitting || skipping}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
+            <Play className="h-4 w-4" />
             {preSubmitting ? 'Salvando…' : 'Começar treino'}
           </button>
 
@@ -814,7 +856,7 @@ export function SessionDetail() {
             disabled={!parsedTab || savingOffline}
             className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
           >
-            <Download className="h-4 w-4" />
+            <span aria-hidden className="text-base leading-none">📴</span>
             Salvar para acesso offline
           </button>
 
@@ -823,7 +865,7 @@ export function SessionDetail() {
               onClick={() => setShowFinishForm(true)}
               className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-95"
             >
-              <CheckCircle2 className="h-4 w-4" />
+              <Square className="h-4 w-4" />
               Finalizar treino
             </button>
           ) : (
@@ -853,6 +895,9 @@ export function SessionDetail() {
 
               {finishError && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{finishError}</p>}
 
+              {cycle?.trainerEmail && (
+                <NotifyTrainerCheckbox checked={notify} onChange={toggleNotify} />
+              )}
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowFinishForm(false)}
