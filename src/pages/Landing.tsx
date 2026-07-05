@@ -4,6 +4,8 @@ import { Moon, Sun } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { SessionBar } from '../components/SessionBar';
+import { findCurrentOfflineSession } from '../utils/session';
 
 export function Landing() {
   const { currentUser, userProfile, trainerProfile, loading, signInWithGoogle } = useAuth();
@@ -45,8 +47,14 @@ export function Landing() {
     }
   };
 
+  // A saved offline snapshot can be reopened straight from the login screen,
+  // even while logged out.
+  const offline = findCurrentOfflineSession();
+
   return (
-    <div className="animated-gradient relative flex min-h-screen items-center justify-center p-4">
+    <div className="animated-gradient relative flex min-h-screen flex-col">
+      {offline && <SessionBar offlineSessionId={offline.sessionId} className="z-30" />}
+
       {/* Dark mode toggle */}
       <button
         onClick={toggle}
@@ -57,6 +65,7 @@ export function Landing() {
       </button>
 
       {/* Card */}
+      <div className="flex flex-1 items-center justify-center p-4">
       <div className="glass-premium w-full max-w-sm rounded-3xl p-8 text-center shadow-2xl">
         {/* Logo mark */}
         <img
@@ -75,6 +84,9 @@ export function Landing() {
         </p>
 
         {/* Google Sign-In button */}
+        <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+          É aluno?
+        </p>
         <button
           onClick={handleSignIn}
           disabled={signingIn}
@@ -117,7 +129,7 @@ export function Landing() {
           </p>
           <button
             onClick={() => navigate('/trainer/login')}
-            className="w-full rounded-2xl border border-slate-200 bg-transparent px-6 py-3 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50 active:scale-95 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="w-full rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 shadow-md transition-all hover:bg-slate-50 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
           >
             Entrar por link no e-mail
           </button>
@@ -126,6 +138,7 @@ export function Landing() {
         <p className="mt-6 text-xs text-slate-500 dark:text-slate-400">
           Ao entrar, você concorda com o uso dos seus dados para fins de acompanhamento de treino.
         </p>
+      </div>
       </div>
     </div>
   );

@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Dumbbell, LogOut, Moon, Play, Save, Sun } from 'lucide-react';
+import { ArrowLeft, LogOut, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useActiveSession } from '../hooks/useActiveSession';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { findCurrentOfflineSession } from '../utils/session';
 import { Avatar } from './Avatar';
+import { SessionBar } from './SessionBar';
 
 interface LayoutProps {
   children: ReactNode;
@@ -114,32 +115,11 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
 
       {/* ── "Treino em andamento" bar (non-clickable; the buttons act) ──────── */}
       {showSessionBar && (
-        <div className="sticky top-14 z-30 flex items-center justify-center gap-3 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md">
-          <span className="flex items-center gap-2">
-            <Dumbbell className="h-4 w-4" />
-            Treino em andamento
-          </span>
-          {activeSessionHref && (
-            <Link
-              to={activeSessionHref}
-              className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-semibold text-indigo-700 transition-colors hover:bg-indigo-50"
-            >
-              <Play className="h-3.5 w-3.5" />
-              Abrir
-            </Link>
-          )}
-          {offline && (
-            <a
-              href={`/offline/${offline.sessionId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-semibold text-orange-600 transition-colors hover:bg-orange-50"
-            >
-              <Save className="h-3.5 w-3.5" />
-              Offline
-            </a>
-          )}
-        </div>
+        <SessionBar
+          activeSessionHref={activeSessionHref}
+          offlineSessionId={offline?.sessionId ?? null}
+          className="sticky top-14 z-30"
+        />
       )}
 
       {/* ── Page content ───────────────────────────────────────────────────── */}
