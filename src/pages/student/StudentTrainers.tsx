@@ -160,7 +160,7 @@ export function StudentTrainers() {
           Meus treinadores
         </h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Cadastre os treinadores que vão acompanhar seus treinos.
+          Cadastre os treinadores que acompanharão seus treinos.
         </p>
       </div>
 
@@ -168,9 +168,8 @@ export function StudentTrainers() {
       <div className="mb-6 flex items-start gap-2 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
         <Info className="mt-0.5 h-4 w-4 flex-shrink-0" />
         <span>
-          Compartilhe suas planilhas do Google Sheets e pastas do Google Drive
-          com o e-mail de cada treinador, para que eles consigam acompanhar seus
-          treinos.
+          Lembre-se de compartilhar suas planilhas do Google Sheets e pastas do
+          Google Drive com o e-mail de cada treinador.
         </span>
       </div>
 
@@ -193,46 +192,53 @@ export function StudentTrainers() {
             return (
               <li
                 key={link.id}
-                className="glass-premium flex items-center gap-3 rounded-2xl px-4 py-3"
+                className="glass-premium flex items-start gap-3 rounded-2xl px-4 py-3"
               >
                 <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">
                   {(link.trainerName ?? link.trainerEmail).charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
-                    {link.trainerName ?? link.trainerEmail}
-                  </p>
-                  <p className="flex items-center gap-1.5 truncate text-xs text-slate-500 dark:text-slate-400">
-                    <Mail className="h-3.5 w-3.5 flex-shrink-0" />
-                    <span className="truncate">{link.trainerEmail}</span>
-                  </p>
-                  {phoneToUse && (
-                    <p className="flex items-center gap-1.5 truncate text-xs text-slate-500 dark:text-slate-400">
-                      <WhatsAppIcon className="h-3.5 w-3.5 flex-shrink-0" />
-                      <span className="truncate">+{phoneToUse}</span>
+                  {/* Name + status badge */}
+                  <div className="mb-2 flex items-center gap-2">
+                    <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900 dark:text-white">
+                      {link.trainerName ?? link.trainerEmail}
                     </p>
-                  )}
-                  {confirmed && (
-                    <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                      <CheckCircle2 className="h-3.5 w-3.5" /> Confirmado
-                    </span>
-                  )}
+                    {confirmed ? (
+                      <span className="inline-flex flex-shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Confirmado
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => phoneToUse && sendConfirmation(phoneToUse, link.trainerEmail)}
+                        className="flex flex-shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300"
+                      >
+                        <Clock className="h-3.5 w-3.5" /> Reenviar
+                      </button>
+                    )}
+                  </div>
+                  {/* Email + WhatsApp, with delete centered alongside */}
+                  <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="flex items-center gap-1.5 truncate text-xs text-slate-500 dark:text-slate-400">
+                        <Mail className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span className="truncate">{link.trainerEmail}</span>
+                      </p>
+                      {phoneToUse && (
+                        <p className="flex items-center gap-1.5 truncate text-xs text-slate-500 dark:text-slate-400">
+                          <WhatsAppIcon className="h-3.5 w-3.5 flex-shrink-0" />
+                          <span className="truncate">+{phoneToUse}</span>
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleRemove(link)}
+                      aria-label="Remover treinador"
+                      className="flex-shrink-0 rounded-full p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
-                {!confirmed && (
-                  <button
-                    onClick={() => phoneToUse && sendConfirmation(phoneToUse, link.trainerEmail)}
-                    className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300"
-                  >
-                    <Clock className="h-3.5 w-3.5" /> Reenviar
-                  </button>
-                )}
-                <button
-                  onClick={() => handleRemove(link)}
-                  aria-label="Remover treinador"
-                  className="rounded-full p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
               </li>
             );
           })}
