@@ -7,6 +7,7 @@ import { Layout } from '../../components/Layout';
 import { useCycleWeek } from '../../hooks/useCycleWeek';
 import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
 import { CycleWeekPanel } from '../../components/student/CycleWeekPanel';
+import { MODALITY_STYLE } from '../../components/student/modality';
 import { Tooltip } from '../../components/Tooltip';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
 import type { Cycle, Trainer } from '../../types';
@@ -94,9 +95,16 @@ export function CycleDetail() {
 
       {/* Header */}
       <div className="mb-5">
-        <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-          {cycle?.title ?? '…'}
-        </h1>
+        <div className="flex items-center gap-2">
+          <h1 className="min-w-0 truncate text-xl font-bold text-slate-900 dark:text-white">
+            {cycle?.title ?? '…'}
+          </h1>
+          {cycle && (
+            <span className={`flex-shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${MODALITY_STYLE[cycle.modality]}`}>
+              {cycle.modality === 'Outro' && cycle.modalityCustom ? cycle.modalityCustom : cycle.modality}
+            </span>
+          )}
+        </div>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           {cycle?.trainerName ? (
             <Tooltip

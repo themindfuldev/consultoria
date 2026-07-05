@@ -63,16 +63,17 @@ export function buildWeeklyFeedbackHtml(
           const text = ef.textFeedback
             ? esc(ef.textFeedback).replace(/\n/g, '<br>')
             : '<em>Sem comentários.</em>';
-          // (d) label + (c) line break before the text.
+          // Label + empty line before it, then a line break before the text.
           return `
             <h3>${esc(ef.exerciseName)}</h3>
             ${vids.length ? `<p><strong>Vídeos:</strong></p><ul>${videoLinks}</ul>` : ''}
+            <p></p>
             <p><strong>Feedback:</strong><br>${text}</p>`;
         })
         .join('');
 
       const notes = sec.generalNotes
-        ? `<p><strong>Observações gerais:</strong><br>${esc(sec.generalNotes).replace(/\n/g, '<br>')}</p>`
+        ? `<p></p><p><strong>Observações gerais:</strong><br>${esc(sec.generalNotes).replace(/\n/g, '<br>')}</p>`
         : '';
 
       // (b) full horizontal line before each training session (incl. the first).
@@ -90,18 +91,15 @@ export function buildWeeklyFeedbackHtml(
   h3 { color: #475569; margin-top: 18px; margin-bottom: 4px; }
   hr { border: none; border-top: 2px solid #94a3b8; margin: 28px 0 12px; }
   a { color: #4f46e5; }
-  .meta { color: #64748b; font-size: 14px; }
-  .meta p { margin: 2px 0; }
+  p.meta { color: #64748b; font-size: 14px; margin: 2px 0; }
 </style>
 </head>
 <body>
   <h1>Feedbacks - Semana ${weekNumber}</h1>
-  <div class="meta">
-    <p><strong>Ciclo:</strong> ${esc(cycleTitle)}</p>
-    <p><strong>Tipo:</strong> ${esc(modality)}</p>
-    <p><strong>Semana:</strong> ${weekNumber}</p>
-    <p><strong>Aluno(a):</strong> ${esc(studentName)}</p>
-  </div>
+  <p class="meta"><strong>Ciclo:</strong> ${esc(cycleTitle)}</p>
+  <p class="meta"><strong>Tipo:</strong> ${esc(modality)}</p>
+  <p class="meta"><strong>Semana:</strong> ${weekNumber}</p>
+  <p class="meta"><strong>Aluno(a):</strong> ${esc(studentName)}</p>
   ${sectionHtml || '<p><em>Nenhum feedback ainda.</em></p>'}
 </body>
 </html>`;

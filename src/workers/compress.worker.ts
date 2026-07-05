@@ -31,7 +31,7 @@ self.onmessage = async ({ data }: MessageEvent<{ file: File }>) => {
       '-vf', 'scale=-2:720',
       '-c:v', 'libx264',
       '-crf', '28',
-      '-preset', 'superfast',
+      '-preset', 'ultrafast',
       '-c:a', 'aac', '-b:a', '128k',
       '-movflags', '+faststart',
       'output.mp4',

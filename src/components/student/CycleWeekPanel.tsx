@@ -81,23 +81,28 @@ function SessionRows({
         return (
           <li
             key={row.tab}
-            className="grid grid-cols-[1.25rem_minmax(0,1fr)_7.75rem_5.75rem] items-center gap-2 rounded-xl bg-white/50 px-2.5 py-2 dark:bg-slate-800/40"
+            className="grid grid-cols-[1.25rem_minmax(0,1fr)_5.75rem] items-center gap-2 rounded-xl bg-white/50 px-2.5 py-2 dark:bg-slate-800/40 sm:grid-cols-[1.25rem_minmax(0,1fr)_7.75rem_5.75rem]"
           >
             <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-[11px] font-bold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
               {idx + 1}
             </span>
 
-            {/* Name — tapping it opens the session. */}
-            <button
-              onClick={() => onOpen(row)}
-              disabled={busy}
-              className="min-w-0 truncate text-left text-sm font-medium text-slate-800 hover:underline disabled:opacity-60 dark:text-slate-100"
-            >
-              {row.tab}
-            </button>
+            {/* Name (tap to open) + status below it on mobile. */}
+            <div className="min-w-0">
+              <button
+                onClick={() => onOpen(row)}
+                disabled={busy}
+                className="block w-full truncate text-left text-sm font-medium text-slate-800 hover:underline disabled:opacity-60 dark:text-slate-100"
+              >
+                {row.tab}
+              </button>
+              <div className="mt-1 overflow-hidden sm:hidden">
+                <StatusBadge session={row.session} />
+              </div>
+            </div>
 
-            {/* Status — fixed-width middle column, left-aligned. */}
-            <div className="overflow-hidden">
+            {/* Status — fixed-width middle column on sm+ only. */}
+            <div className="hidden overflow-hidden sm:block">
               <StatusBadge session={row.session} />
             </div>
 
@@ -223,7 +228,7 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
             </p>
             {currentWeek?.startedAt instanceof Timestamp && (
               <span className="flex-shrink-0 text-xs font-normal text-slate-400 dark:text-slate-500">
-                Desde {currentWeek.startedAt.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                Desde {currentWeek.startedAt.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
               </span>
             )}
           </div>
@@ -256,7 +261,7 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
 
       {currentWeek && !currentWeekConcluded && !canConcludeWeek && (
         <p className="mt-1.5 text-xs text-slate-400 dark:text-slate-500">
-          Finalize ou pule os treinos desta semana para poder concluí-la.
+          Finalize ou pule os treinos para concluir a semana.
         </p>
       )}
       {currentWeekConcluded && (
