@@ -36,7 +36,7 @@ export function SessionBar({ activeSessionHref, offlineSessionId, className = ''
       {offlineSessionId && (
         <a
           href={`/offline/${offlineSessionId}`}
-          className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-semibold text-orange-600 transition-colors hover:bg-orange-50"
+          className="flex items-center gap-1.5 rounded-full border border-amber-800 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-100"
         >
           <Save className="h-3.5 w-3.5" />
           Offline

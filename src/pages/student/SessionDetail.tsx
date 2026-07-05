@@ -541,6 +541,9 @@ export function SessionDetail() {
 
   // ── Offline export ──────────────────────────────────────────────────────────
 
+  // A snapshot already saved for this session → the button offers to refresh it.
+  const hasOfflineSnapshot = !!session && !!localStorage.getItem(offlineKey(session.id));
+
   const handleSaveOffline = () => {
     if (!session || !cycle || !parsedTab) return;
     setSavingOffline(true);
@@ -858,10 +861,10 @@ export function SessionDetail() {
           <button
             onClick={handleSaveOffline}
             disabled={!parsedTab || savingOffline}
-            className="flex items-center justify-center gap-2 rounded-xl border border-orange-300 bg-orange-50 py-3 text-sm font-semibold text-orange-700 shadow-sm transition-all hover:bg-orange-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-300 dark:hover:bg-orange-950/50"
+            className="flex items-center justify-center gap-2 rounded-xl border border-amber-800 bg-amber-50 py-3 text-sm font-semibold text-amber-800 transition-all hover:bg-amber-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Save className="h-4 w-4" />
-            Salvar para acesso offline
+            {hasOfflineSnapshot ? 'Atualizar treino offline' : 'Salvar para acesso offline'}
           </button>
 
           {!showFinishForm ? (
