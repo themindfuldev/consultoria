@@ -547,6 +547,7 @@ export function SessionDetail() {
     try {
       const snapshot = {
         savedAt: Date.now(),
+        cycleId: cycle.id,
         cycleTitle: cycle.title,
         tabName: session.tabName,
         dateLabel,
@@ -555,7 +556,7 @@ export function SessionDetail() {
         exerciseEntries,
       };
       localStorage.setItem(offlineKey(session.id), JSON.stringify(snapshot));
-      window.open(`/offline/${session.id}`, '_blank');
+      window.location.href = `/offline/${session.id}`;
     } finally {
       setSavingOffline(false);
     }

@@ -10,6 +10,7 @@ const EXPIRY_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 interface OfflineSnapshot {
   savedAt: number;
+  cycleId?: string;
   cycleTitle: string;
   tabName: string;
   dateLabel: string;
@@ -63,11 +64,15 @@ export function OfflineSession() {
   const [{ state, snapshot }] = useState<LoadedSnapshot>(() => loadSnapshot(sessionId));
   const { isDark, toggle } = useDarkMode();
 
-  // Leave the standalone viewer via a full navigation: the normal app +
-  // ProtectedRoute then land a logged-in student on their home page and
-  // everyone else on the login page.
+  // Leave the standalone viewer via a full navigation back to the live session
+  // page. The normal app + ProtectedRoute then land a logged-in student there
+  // and everyone else on the login page. (Falls back to home for older
+  // snapshots saved without a cycleId.)
   const handleBack = () => {
-    window.location.href = '/student';
+    window.location.href =
+      snapshot?.cycleId && sessionId
+        ? `/student/cycles/${snapshot.cycleId}/sessions/${sessionId}`
+        : '/student';
   };
 
   // Same, but also drops the snapshot first.
@@ -145,7 +150,7 @@ export function OfflineSession() {
           className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-6 py-3 text-sm font-semibold text-red-600 transition-all hover:bg-red-50 active:scale-95 dark:border-red-900/50 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-red-950/30"
         >
           <Trash2 className="h-4 w-4" />
-          Descartar treino
+          Descartar treino offline
         </button>
       </div>
     </div>

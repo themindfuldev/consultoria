@@ -12,7 +12,7 @@ interface SessionBarProps {
 
 /**
  * Non-clickable "Treino em andamento" bar with up to two actions: "Abrir" opens
- * the live session, "Offline" opens the saved static snapshot in a new tab.
+ * the live session, "Offline" opens the saved static snapshot (same tab).
  * Shared by the app shell (`Layout`) and the login page (`Landing`).
  */
 export function SessionBar({ activeSessionHref, offlineSessionId, className = '' }: SessionBarProps) {
@@ -36,8 +36,6 @@ export function SessionBar({ activeSessionHref, offlineSessionId, className = ''
       {offlineSessionId && (
         <a
           href={`/offline/${offlineSessionId}`}
-          target="_blank"
-          rel="noopener noreferrer"
           className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-semibold text-orange-600 transition-colors hover:bg-orange-50"
         >
           <Save className="h-3.5 w-3.5" />
