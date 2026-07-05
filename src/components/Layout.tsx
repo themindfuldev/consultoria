@@ -69,7 +69,7 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
               to={homeHref}
               className="flex min-w-0 items-center gap-1.5 text-base font-black text-slate-900 dark:text-white"
             >
-              <img src="/favicon.svg" alt="" className="h-6 w-6 flex-shrink-0" />
+              <img src="/app-icon.png" alt="" className="h-6 w-6 flex-shrink-0" />
               <span className="truncate">{title ?? 'Consultoria'}</span>
             </Link>
           </div>

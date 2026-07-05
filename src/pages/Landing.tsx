@@ -60,7 +60,7 @@ export function Landing() {
       <div className="glass-premium w-full max-w-sm rounded-3xl p-8 text-center shadow-2xl">
         {/* Logo mark */}
         <img
-          src="/favicon.svg"
+          src="/app-icon.png"
           alt="Consultoria"
           className="mx-auto mb-6 h-16 w-16 shadow-lg"
         />

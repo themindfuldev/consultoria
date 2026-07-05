@@ -50,7 +50,7 @@ export function Onboarding() {
       {/* Minimal header */}
       <div className="flex items-center justify-between px-4 py-4">
         <span className="inline-flex items-center gap-1.5 text-base font-black text-slate-900 dark:text-white">
-          <img src="/favicon.svg" alt="" className="h-6 w-6" /> Consultoria
+          <img src="/app-icon.png" alt="" className="h-6 w-6" /> Consultoria
         </span>
         <button
           onClick={toggle}
