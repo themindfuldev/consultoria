@@ -63,32 +63,35 @@ export function buildWeeklyFeedbackHtml(
           const text = ef.textFeedback
             ? esc(ef.textFeedback).replace(/\n/g, '<br>')
             : '<em>Sem comentários.</em>';
+          // (d) label + (c) line break before the text.
           return `
             <h3>${esc(ef.exerciseName)}</h3>
             ${vids.length ? `<p><strong>Vídeos:</strong></p><ul>${videoLinks}</ul>` : ''}
-            <p>${text}</p>`;
+            <p><strong>Feedback:</strong><br>${text}</p>`;
         })
         .join('');
 
       const notes = sec.generalNotes
-        ? `<p><strong>Observações gerais:</strong> ${esc(sec.generalNotes).replace(/\n/g, '<br>')}</p>`
+        ? `<p><strong>Observações gerais:</strong><br>${esc(sec.generalNotes).replace(/\n/g, '<br>')}</p>`
         : '';
 
-      return `<h2>${esc(sec.sessionLabel)}</h2>${exerciseBlocks}${notes}`;
+      // (b) full horizontal line before each training session (incl. the first).
+      return `<hr><h2>${esc(sec.sessionLabel)}</h2>${exerciseBlocks}${notes}`;
     })
-    .join('<hr>');
+    .join('');
 
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8">
 <style>
   body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 24px; color: #1e293b; }
-  h1 { color: #4f46e5; }
-  h2 { color: #334155; margin-top: 28px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }
-  h3 { color: #475569; margin-top: 18px; }
-  hr { border: none; border-top: 2px solid #e2e8f0; margin: 24px 0; }
+  h1 { color: #4f46e5; margin-bottom: 6px; }
+  h2 { color: #334155; margin-top: 8px; }
+  h3 { color: #475569; margin-top: 18px; margin-bottom: 4px; }
+  hr { border: none; border-top: 2px solid #94a3b8; margin: 28px 0 12px; }
   a { color: #4f46e5; }
-  .meta { color: #64748b; font-size: 14px; margin-bottom: 24px; }
+  .meta { color: #64748b; font-size: 14px; }
+  .meta p { margin: 2px 0; }
 </style>
 </head>
 <body>
