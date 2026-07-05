@@ -66,7 +66,7 @@ export function OfflineSession() {
   if (state !== 'ok' || !snapshot) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center dark:bg-slate-950">
-        <span className="text-5xl" aria-hidden>📴</span>
+        <Save className="h-12 w-12 text-slate-400" aria-hidden />
         <p className="text-base font-bold text-slate-900 dark:text-white">
           {state === 'expired'
             ? 'Esse instantâneo expirou'

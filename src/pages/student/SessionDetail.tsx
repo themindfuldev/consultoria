@@ -17,6 +17,7 @@ import {
   where,
 } from 'firebase/firestore';
 import {
+  CheckCircle2,
   ExternalLink,
   Lock,
   MessageSquare,
@@ -26,7 +27,6 @@ import {
   Save,
   Send,
   SkipForward,
-  Square,
   Trash2,
   Upload,
   Video,
@@ -855,7 +855,7 @@ export function SessionDetail() {
           <button
             onClick={handleSaveOffline}
             disabled={!parsedTab || savingOffline}
-            className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            className="flex items-center justify-center gap-2 rounded-xl border border-orange-300 bg-orange-50 py-3 text-sm font-semibold text-orange-700 shadow-sm transition-all hover:bg-orange-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-300 dark:hover:bg-orange-950/50"
           >
             <Save className="h-4 w-4" />
             Salvar para acesso offline
@@ -866,7 +866,7 @@ export function SessionDetail() {
               onClick={() => setShowFinishForm(true)}
               className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-95"
             >
-              <Square className="h-4 w-4" />
+              <CheckCircle2 className="h-4 w-4" />
               Finalizar treino
             </button>
           ) : (
