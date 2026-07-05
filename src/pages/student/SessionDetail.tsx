@@ -23,6 +23,7 @@ import {
   Play,
   PlusCircle,
   RotateCcw,
+  Save,
   Send,
   SkipForward,
   Square,
@@ -856,7 +857,7 @@ export function SessionDetail() {
             disabled={!parsedTab || savingOffline}
             className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
           >
-            <span aria-hidden className="text-base leading-none">📴</span>
+            <Save className="h-4 w-4" />
             Salvar para acesso offline
           </button>
 

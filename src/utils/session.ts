@@ -46,6 +46,7 @@ export function clearOfflineSnapshots(): void {
 
 export interface OfflineRef {
   sessionId: string;
+  cycleTitle: string;
   tabName: string;
   savedAt: number;
 }
@@ -62,11 +63,12 @@ export function findCurrentOfflineSession(now: number = Date.now()): OfflineRef 
     const raw = localStorage.getItem(key);
     if (!raw) continue;
     try {
-      const parsed = JSON.parse(raw) as { savedAt: number; tabName?: string };
+      const parsed = JSON.parse(raw) as { savedAt: number; tabName?: string; cycleTitle?: string };
       if (now - parsed.savedAt > OFFLINE_TTL_MS) { localStorage.removeItem(key); continue; }
       if (!best || parsed.savedAt > best.savedAt) {
         best = {
           sessionId: key.slice(OFFLINE_PREFIX.length),
+          cycleTitle: parsed.cycleTitle ?? '',
           tabName: parsed.tabName ?? 'Treino',
           savedAt: parsed.savedAt,
         };

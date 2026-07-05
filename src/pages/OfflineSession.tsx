@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { Save } from 'lucide-react';
 import { WorkoutPlan } from '../components/student/WorkoutPlan';
 import type { ExerciseEntry } from '../components/student/WorkoutPlan';
 import type { ParsedSheetTab } from '../types';
@@ -83,7 +84,7 @@ export function OfflineSession() {
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       <div className="mx-auto max-w-2xl px-4 py-6">
         <div className="mb-4 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-          <span aria-hidden>📴</span>
+          <Save className="h-4 w-4 flex-shrink-0" />
           Modo offline — instantâneo salvo em {fmtSavedAt(snapshot.savedAt)}
         </div>
 

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Dumbbell, LogOut, Moon, Sun } from 'lucide-react';
+import { ArrowLeft, Dumbbell, LogOut, Moon, Save, Sun } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useActiveSession } from '../hooks/useActiveSession';
 import { useDarkMode } from '../hooks/useDarkMode';
@@ -30,7 +30,7 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
   const { isDark, toggle } = useDarkMode();
   const navigate = useNavigate();
   const location = useLocation();
-  const activeSession = useActiveSession();
+  const active = useActiveSession();
 
   const handleLogOut = async () => {
     await logOut();
@@ -40,8 +40,8 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
   const homeHref = trainerProfile ? '/trainer' : userProfile ? '/student' : '/';
   const mw = MAX_WIDTH_CLASSES[maxWidth];
 
-  const activeSessionHref = activeSession
-    ? `/student/cycles/${activeSession.cycleId}/sessions/${activeSession.id}`
+  const activeSessionHref = active
+    ? `/student/cycles/${active.session.cycleId}/sessions/${active.session.id}`
     : null;
   const showActiveSessionBanner = !!activeSessionHref && location.pathname !== activeSessionHref;
 
@@ -105,13 +105,13 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
       </header>
 
       {/* ── Active-session banner ──────────────────────────────────────────── */}
-      {showActiveSessionBanner && activeSessionHref && (
+      {showActiveSessionBanner && activeSessionHref && active && (
         <Link
           to={activeSessionHref}
           className="sticky top-14 z-30 flex items-center justify-center gap-2 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition-colors hover:bg-indigo-700"
         >
           <Dumbbell className="h-4 w-4" />
-          Ver treino atual
+          Abrir treino em andamento ({[active.cycleTitle, active.session.tabName].filter(Boolean).join(', ')})
         </Link>
       )}
 
@@ -123,8 +123,8 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
           rel="noopener noreferrer"
           className="flex items-center justify-center gap-2 bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition-colors hover:bg-amber-600"
         >
-          <span aria-hidden>📴</span>
-          Abrir treino offline ({offline.tabName})
+          <Save className="h-4 w-4" />
+          Abrir treino em andamento ({[offline.cycleTitle, offline.tabName].filter(Boolean).join(', ')})
         </a>
       )}
 
