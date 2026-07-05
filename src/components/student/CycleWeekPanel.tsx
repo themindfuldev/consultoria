@@ -4,6 +4,7 @@ import { Timestamp } from 'firebase/firestore';
 import {
   CheckCircle2,
   ChevronDown,
+  FileText,
   Flag,
   Lock,
   MessageSquare,
@@ -296,6 +297,18 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
           {actionError && (
             <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{actionError}</p>
           )}
+
+          {/* Weekly feedback Google Doc (if generated) — below all sessions */}
+          {currentWeek.feedbackDocUrl && (
+            <a
+              href={currentWeek.feedbackDocUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-2.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95"
+            >
+              <FileText className="h-4 w-4" /> Ver feedback da semana
+            </a>
+          )}
         </div>
       ) : (
         <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
@@ -348,6 +361,16 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
                         <p className="px-1 py-2 text-xs text-slate-400 dark:text-slate-500">
                           Nenhuma sessão registrada nesta semana.
                         </p>
+                      )}
+                      {week.feedbackDocUrl && (
+                        <a
+                          href={week.feedbackDocUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-2 text-xs font-semibold text-white transition-all hover:bg-blue-700 active:scale-95"
+                        >
+                          <FileText className="h-4 w-4" /> Ver feedback da semana
+                        </a>
                       )}
                     </div>
                   )}

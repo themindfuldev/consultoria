@@ -7,7 +7,7 @@ import { Layout } from '../../components/Layout';
 import { useCycleWeek } from '../../hooks/useCycleWeek';
 import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
 import { CycleWeekPanel } from '../../components/student/CycleWeekPanel';
-import type { Cycle } from '../../types';
+import type { Cycle, Trainer } from '../../types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -26,6 +26,7 @@ export function CycleDetail() {
   useGoogleTokenWarmup();
 
   const [cycle, setCycle] = useState<Cycle | null>(null);
+  const [trainerPhone, setTrainerPhone] = useState('');
   const cycleWeek = useCycleWeek(cycle);
 
   // Replace spreadsheet
@@ -42,6 +43,14 @@ export function CycleDetail() {
       if (snap.exists()) setCycle(snap.data() as Cycle);
     });
   }, [cycleId]);
+
+  // Fetch the trainer's WhatsApp for the trainer-name tooltip.
+  useEffect(() => {
+    if (!cycle?.trainerEmail) return;
+    getDoc(doc(db, 'trainers', cycle.trainerEmail))
+      .then((snap) => { if (snap.exists()) setTrainerPhone((snap.data() as Trainer).whatsappPhone ?? ''); })
+      .catch(() => {/* non-fatal */});
+  }, [cycle?.trainerEmail]);
 
   // ── Replace spreadsheet ─────────────────────────────────────────────────────
 
@@ -79,28 +88,36 @@ export function CycleDetail() {
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
           {cycle?.title ?? '…'}
         </h1>
-        <div className="mt-1 flex items-center gap-3">
-          {cycle?.trainerName && (
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Treinador: {cycle.trainerName}
-            </p>
-          )}
-          {cycle?.googleSheetUrl && (
-            <a
-              href={cycle.googleSheetUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          {cycle?.trainerName ? (
+            <span
+              title={`E-mail: ${cycle.trainerEmail ?? '—'}${trainerPhone ? `\nWhatsApp: +${trainerPhone}` : ''}`}
+              className="cursor-help border-b border-dotted border-slate-400 text-sm text-slate-500 dark:border-slate-500 dark:text-slate-400"
             >
-              <ExternalLink className="h-3 w-3" /> Planilha
-            </a>
+              Treinador: {cycle.trainerName}
+            </span>
+          ) : (
+            <span />
           )}
-          <button
-            onClick={() => { setShowReplaceSheet(true); setReplaceUrl(cycle?.googleSheetUrl ?? ''); setReplaceError(''); }}
-            className="flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-indigo-600 hover:underline dark:text-slate-500 dark:hover:text-indigo-400"
-          >
-            <Pencil className="h-3 w-3" /> Trocar planilha
-          </button>
+
+          <div className="flex flex-shrink-0 items-center gap-2">
+            {cycle?.googleSheetUrl && (
+              <a
+                href={cycle.googleSheetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                <ExternalLink className="h-3.5 w-3.5" /> Abrir planilha
+              </a>
+            )}
+            <button
+              onClick={() => { setShowReplaceSheet(true); setReplaceUrl(cycle?.googleSheetUrl ?? ''); setReplaceError(''); }}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              <Pencil className="h-3.5 w-3.5" /> Trocar planilha
+            </button>
+          </div>
         </div>
       </div>
 

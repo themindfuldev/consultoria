@@ -59,6 +59,9 @@ export function TrainerFeedbackView() {
   const [saving, setSaving] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [saveError, setSaveError] = useState('');
+  // True once this feedback has been responded (status 'complete'): the button
+  // is hidden, but edits keep auto-saving without downgrading it back to draft.
+  const [responded, setResponded] = useState(false);
 
   // ── Load session + related data ─────────────────────────────────────────────
 
@@ -103,6 +106,7 @@ export function TrainerFeedbackView() {
         // Pre-fill form if draft exists
         if (feedbackSnap?.exists()) {
           const fb = feedbackSnap.data() as Feedback;
+          if (fb.status === 'complete') setResponded(true);
           const fMap = new Map<string, string>();
           const mMap = new Map<string, FeedbackMediaFile[]>();
           for (const ef of fb.exerciseFeedback) {
@@ -164,6 +168,8 @@ export function TrainerFeedbackView() {
     setSaving(true);
     setSaveError('');
     try {
+      // An already-responded feedback keeps 'complete' on edit (don't downgrade).
+      const status = responded ? 'complete' : 'draft';
       const exerciseFeedback = buildExerciseFeedbackArray();
       await setDoc(
         doc(db, 'feedback', sessionId!),
@@ -174,7 +180,7 @@ export function TrainerFeedbackView() {
           studentUid: session.studentUid,
           studentName: session.studentName ?? '',
           trainerEmail: session.trainerEmail ?? currentUser.email ?? '',
-          status: 'draft',
+          status,
           exerciseFeedback,
           generalNotes,
           createdAt: serverTimestamp(),
@@ -182,7 +188,7 @@ export function TrainerFeedbackView() {
         { merge: true },
       );
       // Denormalise feedbackStatus on session
-      await updateDoc(doc(db, 'sessions', sessionId!), { feedbackStatus: 'draft' });
+      await updateDoc(doc(db, 'sessions', sessionId!), { feedbackStatus: status });
     } catch {
       setSaveError('Não foi possível salvar o rascunho.');
     } finally {
@@ -384,20 +390,26 @@ export function TrainerFeedbackView() {
 
         {/* Auto-save status */}
         <p className="text-center text-xs text-slate-400 dark:text-slate-500">
-          {saving ? 'Salvando rascunho…' : 'As alterações são salvas automaticamente'}
+          {saving
+            ? 'Salvando…'
+            : responded
+              ? 'Feedback respondido · as alterações são salvas automaticamente'
+              : 'As alterações são salvas automaticamente'}
         </p>
 
-        {/* Action button */}
-        <div className="pb-6">
-          <button
-            onClick={handleComplete}
-            disabled={completing || saving}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-60"
-          >
-            <Send className="h-4 w-4" />
-            {completing ? 'Enviando…' : 'Responder feedback'}
-          </button>
-        </div>
+        {/* Action button — hidden once the feedback has been responded */}
+        {!responded && (
+          <div className="pb-6">
+            <button
+              onClick={handleComplete}
+              disabled={completing || saving}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-60"
+            >
+              <Send className="h-4 w-4" />
+              {completing ? 'Enviando…' : 'Responder feedback'}
+            </button>
+          </div>
+        )}
       </div>
     </Layout>
   );
