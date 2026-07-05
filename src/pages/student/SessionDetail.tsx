@@ -484,7 +484,8 @@ export function SessionDetail() {
       notifyTrainer(
         cycle.trainerEmail,
         'Treino concluído',
-        `Terminei o treino *${session.tabName}* de ${dateLabel}.`,
+        `Terminei o treino *${session.tabName}*` +
+          (session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.'),
       ).catch(() => {/* notification is a convenience, never a blocker */});
 
       // The offline snapshot is no longer useful once the session is done.
@@ -660,12 +661,12 @@ export function SessionDetail() {
   // ── Send the session to the trainer for feedback (via WhatsApp) ──────────────
 
   const handleNotify = () => {
-    if (!session || !cycle || !cycle.trainerEmail) return;
+    // Only sent when there are videos to review.
+    if (!session || !cycle || !cycle.trainerEmail || videos.length === 0) return;
     setNotifying(true);
-    const videoLine = videos.length > 0
-      ? `Enviei ${videos.length} vídeo(s) do treino *${session.tabName}* de ${dateLabel}.\n`
-      : `Enviei o treino *${session.tabName}* de ${dateLabel} para feedback.\n`;
-    const body = videoLine +
+    const weekSuffix = session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.';
+    const body =
+      `Segue(m) para feedback ${videos.length} vídeo(s) do treino *${session.tabName}*${weekSuffix}\n` +
       `Feedback: ${window.location.origin}/trainer/sessions/${session.id}`;
     notifyTrainer(cycle.trainerEmail, 'Treino enviado para feedback', body)
       .then(() => updateDoc(doc(db, 'sessions', session.id), { videosNotifiedAt: serverTimestamp() }))
@@ -1003,7 +1004,7 @@ export function SessionDetail() {
                 Adicionar vídeo
               </button>
 
-              {cycle?.trainerEmail && (
+              {cycle?.trainerEmail && videos.length > 0 && (
                 <button
                   onClick={handleNotify}
                   disabled={notifying}

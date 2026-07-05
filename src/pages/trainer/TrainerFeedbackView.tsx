@@ -243,12 +243,12 @@ export function TrainerFeedbackView() {
 
       // WhatsApp notification to student (number denormalised on the session).
       if (session.studentWhatsapp) {
-        const dateStr = session.date instanceof Timestamp ? fmtDate(session.date) : '';
         const appUrl = window.location.origin;
+        const weekSuffix = session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.';
         openWhatsApp(
           session.studentWhatsapp,
           'Feedback disponível',
-          `Seu feedback do treino *${session.tabName}* de ${dateStr} está pronto!\n` +
+          `Segue o feedback do seu treino *${session.tabName}*${weekSuffix}\n` +
           `${appUrl}/student/sessions/${sessionId}/feedback`,
         );
       }

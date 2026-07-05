@@ -24,7 +24,7 @@ function formatMessage(subject: string, body: string): string {
   return (
     `*[Consultoria]* ${subject}\n\n` +
     `${body}\n\n` +
-    `_-- Acesse a Consultoria: ${window.location.origin}_`
+    `_-- Acessar: ${window.location.origin}_`
   );
 }
 
