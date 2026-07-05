@@ -49,8 +49,8 @@ export function Onboarding() {
     <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-950">
       {/* Minimal header */}
       <div className="flex items-center justify-between px-4 py-4">
-        <span className="text-base font-black text-slate-900 dark:text-white">
-          <span className="text-indigo-600 dark:text-indigo-400">⚡</span> Consultoria
+        <span className="inline-flex items-center gap-1.5 text-base font-black text-slate-900 dark:text-white">
+          <img src="/favicon.svg" alt="" className="h-6 w-6" /> Consultoria
         </span>
         <button
           onClick={toggle}

@@ -59,9 +59,11 @@ export function Landing() {
       {/* Card */}
       <div className="glass-premium w-full max-w-sm rounded-3xl p-8 text-center shadow-2xl">
         {/* Logo mark */}
-        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-600 text-3xl shadow-lg">
-          ⚡
-        </div>
+        <img
+          src="/favicon.svg"
+          alt="Consultoria"
+          className="mx-auto mb-6 h-16 w-16 shadow-lg"
+        />
 
         <h1 className="mb-2 text-3xl font-black tracking-tight text-slate-900 dark:text-white">
           Consultoria
