@@ -8,6 +8,7 @@ import { useCycleWeek } from '../../hooks/useCycleWeek';
 import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
 import { CycleWeekPanel } from '../../components/student/CycleWeekPanel';
 import { Tooltip } from '../../components/Tooltip';
+import { Breadcrumbs } from '../../components/Breadcrumbs';
 import type { Cycle, Trainer } from '../../types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -84,6 +85,13 @@ export function CycleDetail() {
 
   return (
     <Layout title={cycle?.title ?? 'Sessões'} backTo="/student">
+      <Breadcrumbs
+        items={[
+          { label: 'Meus Treinos', to: '/student' },
+          { label: cycle?.title ?? 'Programa' },
+        ]}
+      />
+
       {/* Header */}
       <div className="mb-5">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">

@@ -12,12 +12,13 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { Dumbbell, LayoutDashboard, Send, Video } from 'lucide-react';
+import { Dumbbell, Send, Video } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { openWhatsApp } from '../../services/notifyService';
 import { setKey } from '../../services/sheetsService';
 import { Layout } from '../../components/Layout';
+import { Breadcrumbs } from '../../components/Breadcrumbs';
 import { WorkoutPlan } from '../../components/student/WorkoutPlan';
 import type { ExerciseEntry } from '../../components/student/WorkoutPlan';
 import type {
@@ -296,28 +297,26 @@ export function TrainerFeedbackView() {
 
   return (
     <Layout title="Dar feedback" backTo="/trainer">
+      <Breadcrumbs
+        items={[
+          { label: 'Painel', to: '/trainer' },
+          { label: 'Feedback' },
+        ]}
+      />
+
       {/* Header */}
-      <div className="mb-5 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-            {session?.studentName || 'Aluno'}
-          </h1>
-          <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-            {[
-              cycle?.title,
-              dateLabel,
-              session?.weekNumber ? `Semana ${session.weekNumber}` : null,
-              session?.tabName,
-            ].filter(Boolean).join(' · ')}
-          </p>
-        </div>
-        <button
-          onClick={() => navigate('/trainer')}
-          className="flex flex-shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-        >
-          <LayoutDashboard className="h-3.5 w-3.5" />
-          Meu painel
-        </button>
+      <div className="mb-5">
+        <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+          {session?.studentName || 'Aluno'}
+        </h1>
+        <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+          {[
+            cycle?.title,
+            dateLabel,
+            session?.weekNumber ? `Semana ${session.weekNumber}` : null,
+            session?.tabName,
+          ].filter(Boolean).join(' · ')}
+        </p>
       </div>
 
       {/* Plano de treino — same read-only summary the student sees, if snapshotted */}

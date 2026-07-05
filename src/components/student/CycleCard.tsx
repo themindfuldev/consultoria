@@ -88,14 +88,19 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
       {/* ── Header row ─────────────────────────────────────────────────── */}
       <div className="mb-2 flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <button
-            onClick={() => navigate(`/student/cycles/${cycle.id}`)}
-            className="min-w-0 max-w-full text-left"
-          >
-            <h3 className="truncate text-base font-bold text-slate-900 hover:underline dark:text-white">
-              {cycle.title}
-            </h3>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate(`/student/cycles/${cycle.id}`)}
+              className="min-w-0 text-left"
+            >
+              <h3 className="truncate text-base font-bold text-slate-900 hover:underline dark:text-white">
+                {cycle.title}
+              </h3>
+            </button>
+            <span className={`flex-shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${MODALITY_STYLE[cycle.modality]}`}>
+              {modalityLabel}
+            </span>
+          </div>
           {cycle.trainerName && (
             <div className="mt-0.5">
               <Tooltip
@@ -152,46 +157,42 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
         </div>
       </div>
 
-      {/* ── Badges row ─────────────────────────────────────────────────── */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${MODALITY_STYLE[cycle.modality]}`}>
-          {modalityLabel}
-        </span>
-        {isArchived && (
-          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-500 dark:bg-slate-700 dark:text-slate-400">
-            Arquivado
-          </span>
-        )}
-        <span className="ml-auto text-xs text-slate-400 dark:text-slate-500">
+      {/* ── Current week + start date (same line) ────────────────────────── */}
+      <div className="mb-3 flex items-center justify-between gap-2 text-xs">
+        <div className="flex min-w-0 items-center gap-2">
+          {isArchived ? (
+            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 font-semibold text-slate-500 dark:bg-slate-700 dark:text-slate-400">
+              Arquivado
+            </span>
+          ) : (
+            <>
+              <span className="text-slate-400 dark:text-slate-500">Semana atual:</span>
+              {currentWeek ? (
+                <>
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">
+                    Semana {currentWeek.weekNumber}
+                  </span>
+                  {currentWeekStatus === 'in_progress' && (
+                    <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+                      Em andamento
+                    </span>
+                  )}
+                  {currentWeekStatus === 'completed' && (
+                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                      Concluída
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="text-slate-500 dark:text-slate-400">Ainda não iniciado</span>
+              )}
+            </>
+          )}
+        </div>
+        <span className="flex-shrink-0 text-slate-400 dark:text-slate-500">
           Desde {startedAt}
         </span>
       </div>
-
-      {/* ── Current week (active cycles) ─────────────────────────────────── */}
-      {!isArchived && (
-        <div className="mb-3 flex items-center gap-2 text-xs">
-          <span className="text-slate-400 dark:text-slate-500">Semana atual:</span>
-          {currentWeek ? (
-            <>
-              <span className="font-semibold text-slate-700 dark:text-slate-200">
-                Semana {currentWeek.weekNumber}
-              </span>
-              {currentWeekStatus === 'in_progress' && (
-                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
-                  Em andamento
-                </span>
-              )}
-              {currentWeekStatus === 'completed' && (
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                  Concluída
-                </span>
-              )}
-            </>
-          ) : (
-            <span className="text-slate-500 dark:text-slate-400">Ainda não iniciado</span>
-          )}
-        </div>
-      )}
 
       {/* ── Action buttons ──────────────────────────────────────────────── */}
       <div className="flex gap-2">

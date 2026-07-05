@@ -219,6 +219,11 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
                 Concluída
               </span>
             )}
+            {currentWeek?.startedAt instanceof Timestamp && (
+              <span className="text-xs font-normal text-slate-400 dark:text-slate-500">
+                · Desde {currentWeek.startedAt.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
+              </span>
+            )}
           </p>
         </div>
 

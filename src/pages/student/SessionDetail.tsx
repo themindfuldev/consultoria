@@ -688,7 +688,8 @@ export function SessionDetail() {
     <Layout title={session?.tabName ?? 'Sessão'} backTo={cycleId ? `/student/cycles/${cycleId}` : '/student'}>
       <Breadcrumbs
         items={[
-          { label: cycle?.title ?? 'Ciclo', to: cycleId ? `/student/cycles/${cycleId}` : undefined },
+          { label: 'Meus Treinos', to: '/student' },
+          { label: cycle?.title ?? 'Programa', to: cycleId ? `/student/cycles/${cycleId}` : undefined },
           { label: session?.tabName ?? 'Treino' },
         ]}
       />

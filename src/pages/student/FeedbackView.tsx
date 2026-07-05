@@ -223,7 +223,8 @@ export function FeedbackView() {
     <Layout title="Meu Feedback">
       <Breadcrumbs
         items={[
-          { label: cycle?.title ?? 'Ciclo', to: session ? `/student/cycles/${session.cycleId}` : undefined },
+          { label: 'Meus Treinos', to: '/student' },
+          { label: cycle?.title ?? 'Programa', to: session ? `/student/cycles/${session.cycleId}` : undefined },
           { label: session?.tabName ?? 'Treino', to: session ? `/student/cycles/${session.cycleId}/sessions/${sessionId}` : undefined },
           { label: 'Feedback' },
         ]}
