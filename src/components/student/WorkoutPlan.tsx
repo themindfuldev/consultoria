@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Clock, Weight } from 'lucide-react';
 import { setKey } from '../../services/sheetsService';
+import { YouTubeIcon } from '../icons/YouTubeIcon';
 import type { ParsedSheetTab, PlannedExercise } from '../../types';
 
 // ── Display helpers ───────────────────────────────────────────────────────────
@@ -66,8 +67,19 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
           <div className="divide-y divide-slate-100 dark:divide-slate-700">
             {exercises.map((ex) => (
               <div key={ex.exerciseName} className="px-3 py-2.5">
-                <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-white">
+                <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-white">
                   {ex.exerciseName}
+                  {ex.videoUrl && (
+                    <a
+                      href={ex.videoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="Ver vídeo do exercício"
+                      className="flex-shrink-0 text-red-600 transition-colors hover:text-red-700 dark:text-red-500 dark:hover:text-red-400"
+                    >
+                      <YouTubeIcon className="h-4 w-4" />
+                    </a>
+                  )}
                 </p>
                 {/* Fixed columns so every exercise lines up. Row 1: sets×reps ·
                     carga · descanso · (spacer) · RPE — RPE pinned to the right.

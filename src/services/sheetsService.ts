@@ -66,19 +66,74 @@ export async function parseTrainingTab(
   token: string,
 ): Promise<ParsedSheetTab> {
   const range = encodeURIComponent(`${tabName}!A:H`);
-  const res = await fetch(
-    `${SHEETS_API}/${spreadsheetId}/values/${range}`,
-    { headers: { Authorization: `Bearer ${token}` } },
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Values give us the grid text; a second (grid) read gives us the links
+  // attached to column-A exercise-name cells (YouTube demos). The link read is
+  // best-effort — a failure there must not break parsing.
+  const linkRange = encodeURIComponent(`${tabName}!A:A`);
+  const linkFields = encodeURIComponent(
+    'sheets(data(rowData(values(hyperlink,userEnteredValue,textFormatRuns))))',
   );
+  const [res, linksRes] = await Promise.all([
+    fetch(`${SHEETS_API}/${spreadsheetId}/values/${range}`, { headers }),
+    fetch(`${SHEETS_API}/${spreadsheetId}?ranges=${linkRange}&fields=${linkFields}`, { headers }),
+  ]);
   if (!res.ok) throw new Error(`Sheets API ${res.status}: ${await res.text()}`);
 
   const data = (await res.json()) as { values?: string[][] };
-  return _parseRows(tabName, data.values ?? []);
+  const videoByRow = linksRes.ok
+    ? _extractColumnAVideoLinks(await linksRes.json())
+    : new Map<number, string>();
+  return _parseRows(tabName, data.values ?? [], videoByRow);
+}
+
+// ── Column-A link extraction ──────────────────────────────────────────────────
+
+function isYouTubeUrl(url: string): boolean {
+  return /(?:youtube\.com|youtu\.be)/i.test(url);
+}
+
+/** Pulls a link off a single cell: whole-cell hyperlink, rich-text run link, or a `=HYPERLINK()` formula. */
+function _cellLink(cell: {
+  hyperlink?: string;
+  userEnteredValue?: { formulaValue?: string };
+  textFormatRuns?: Array<{ format?: { link?: { uri?: string } } }>;
+}): string | null {
+  if (typeof cell.hyperlink === 'string' && cell.hyperlink) return cell.hyperlink;
+  for (const run of cell.textFormatRuns ?? []) {
+    const uri = run.format?.link?.uri;
+    if (uri) return uri;
+  }
+  const formula = cell.userEnteredValue?.formulaValue;
+  const m = typeof formula === 'string' ? formula.match(/HYPERLINK\(\s*"([^"]+)"/i) : null;
+  return m ? m[1] : null;
+}
+
+/** Maps 1-based row number → YouTube URL for any column-A cell that links to one. */
+function _extractColumnAVideoLinks(json: {
+  sheets?: Array<{ data?: Array<{ startRow?: number; rowData?: Array<{ values?: unknown[] }> }> }>;
+}): Map<number, string> {
+  const map = new Map<number, string>();
+  const grid = json.sheets?.[0]?.data?.[0];
+  const startRow = grid?.startRow ?? 0;
+  const rowData = grid?.rowData ?? [];
+  for (let i = 0; i < rowData.length; i++) {
+    const cell = rowData[i]?.values?.[0] as Parameters<typeof _cellLink>[0] | undefined;
+    if (!cell) continue;
+    const url = _cellLink(cell);
+    if (url && isYouTubeUrl(url)) map.set(startRow + i + 1, url);
+  }
+  return map;
 }
 
 // ── Row parser ────────────────────────────────────────────────────────────────
 
-function _parseRows(tabName: string, rows: string[][]): ParsedSheetTab {
+function _parseRows(
+  tabName: string,
+  rows: string[][],
+  videoByRow: Map<number, string> = new Map(),
+): ParsedSheetTab {
   const exercises: PlannedExercise[] = [];
   let currentSection = '';
   let inExerciseSection = false;
@@ -163,10 +218,13 @@ function _parseRows(tabName: string, rows: string[][]): ParsedSheetTab {
 
       if (!isContinuation) {
         // New named exercise
+        const videoUrl = videoByRow.get(rowNumber);
         currentExercise = {
           exerciseName: colA,
           section: currentSection,
           setGroups: [],
+          // Only set when present — keeps the object Firestore-safe (no undefined).
+          ...(videoUrl ? { videoUrl } : {}),
         };
         exercises.push(currentExercise);
       }

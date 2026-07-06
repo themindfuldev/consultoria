@@ -278,6 +278,8 @@ export interface PlannedExercise {
   exerciseName: string;
   section: string;          // e.g. "Aquecimento", "Treino", "Extra"
   setGroups: PlannedSetGroup[];
+  /** YouTube link found on the exercise-name cell (column A), if any. */
+  videoUrl?: string;
 }
 
 /** Full parsed content of one training tab. */
