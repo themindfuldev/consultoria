@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, LogOut, Moon, Sun } from 'lucide-react';
+import { ArrowLeft, ClipboardList, LayoutDashboard, LogOut, Moon, Sun, User, Users } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useActiveSession } from '../hooks/useActiveSession';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { findCurrentOfflineSession } from '../utils/session';
-import { Avatar } from './Avatar';
+import { AvatarMenu } from './AvatarMenu';
+import type { AvatarMenuItem } from './AvatarMenu';
 import { SessionBar } from './SessionBar';
 
 interface LayoutProps {
@@ -40,6 +41,19 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
 
   const homeHref = trainerProfile ? '/trainer' : userProfile ? '/student' : '/';
   const mw = MAX_WIDTH_CLASSES[maxWidth];
+
+  // Account dropdown items — differ by role.
+  const menuItems: AvatarMenuItem[] = trainerProfile
+    ? [
+        { label: 'Meu perfil', to: '/trainer/profile', icon: User },
+        { label: 'Meus alunos', to: '/trainer/students', icon: Users },
+        { label: 'Painel do treinador', to: '/trainer', icon: LayoutDashboard },
+      ]
+    : [
+        { label: 'Meu perfil', to: '/student/profile', icon: User },
+        { label: 'Meus treinadores', to: '/student/trainers', icon: Users },
+        { label: 'Meu treino', to: '/student', icon: ClipboardList },
+      ];
 
   const activeSessionHref = activeSession
     ? `/student/cycles/${activeSession.cycleId}/sessions/${activeSession.id}`
@@ -96,10 +110,10 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
 
             {currentUser && (
               <>
-                <Avatar
+                <AvatarMenu
                   photoURL={currentUser.photoURL}
                   displayName={currentUser.displayName}
-                  size="sm"
+                  items={menuItems}
                 />
                 <button
                   onClick={handleLogOut}

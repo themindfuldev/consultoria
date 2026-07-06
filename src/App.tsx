@@ -8,7 +8,11 @@ import { Onboarding } from './pages/Onboarding';
 import { TrainerLogin } from './pages/trainer/TrainerLogin';
 import { TrainerDashboard } from './pages/trainer/TrainerDashboard';
 import { TrainerFeedbackView } from './pages/trainer/TrainerFeedbackView';
+import { TrainerProfile } from './pages/trainer/TrainerProfile';
+import { TrainerStudents } from './pages/trainer/TrainerStudents';
+import { TrainerStudentDetail } from './pages/trainer/TrainerStudentDetail';
 import { StudentDashboard } from './pages/student/StudentDashboard';
+import { StudentProfile } from './pages/student/StudentProfile';
 import { StudentTrainers } from './pages/student/StudentTrainers';
 import { AddCycle } from './pages/student/AddCycle';
 import { CycleDetail } from './pages/student/CycleDetail';
@@ -58,6 +62,30 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/trainer/profile"
+        element={
+          <ProtectedRoute role="trainer">
+            <TrainerProfile />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/trainer/students"
+        element={
+          <ProtectedRoute role="trainer">
+            <TrainerStudents />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/trainer/students/:studentUid"
+        element={
+          <ProtectedRoute role="trainer">
+            <TrainerStudentDetail />
+          </ProtectedRoute>
+        }
+      />
 
       {/* ── Student (Google auth) ──────────────────────────────────────── */}
       <Route
@@ -65,6 +93,14 @@ export default function App() {
         element={
           <ProtectedRoute role="student">
             <StudentDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/student/profile"
+        element={
+          <ProtectedRoute role="student">
+            <StudentProfile />
           </ProtectedRoute>
         }
       />
