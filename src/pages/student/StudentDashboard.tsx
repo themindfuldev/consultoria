@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { ArchiveRestore, ClipboardList, PlusCircle, Users } from 'lucide-react';
+import { ArchiveRestore, ClipboardList, PlusCircle } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
@@ -76,18 +76,11 @@ export function StudentDashboard() {
 
   return (
     <Layout title="Meus Treinos">
-      {/* Greeting + manage trainers */}
-      <div className="mb-2 flex items-start justify-between gap-3">
+      {/* Greeting */}
+      <div className="mb-2">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
           Olá, {userProfile?.displayName?.split(' ')[0]} 💪
         </h1>
-        <button
-          onClick={() => navigate('/student/trainers')}
-          className="flex min-w-[10.5rem] flex-shrink-0 items-center justify-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-        >
-          <Users className="h-3.5 w-3.5" />
-          Meus treinadores
-        </button>
       </div>
 
       {/* Subtitle + view toggle */}
