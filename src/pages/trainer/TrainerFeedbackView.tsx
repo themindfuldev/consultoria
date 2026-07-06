@@ -12,7 +12,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { Dumbbell, NotebookText, Send, Video } from 'lucide-react';
+import { Dumbbell, NotebookText, Send, StickyNote, Video } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { openWhatsApp } from '../../services/notifyService';
@@ -330,6 +330,12 @@ export function TrainerFeedbackView() {
         </div>
       )}
 
+      {/* Vídeos e feedback */}
+      <p className="mb-2 flex items-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        <Video className="h-4 w-4" />
+        <span className="ml-2">Vídeos</span>
+      </p>
+
       {/* Exercise blocks */}
       <div className="flex flex-col gap-6">
         {videos.length === 0 && (
@@ -368,9 +374,10 @@ export function TrainerFeedbackView() {
         )}
 
         {/* General notes */}
-        <div className="glass-premium rounded-2xl p-4">
-          <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            📝 Observações gerais
+        <div className="glass-premium rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
+          <h3 className="mb-2 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            <StickyNote className="h-4 w-4" />
+            Observações gerais
           </h3>
           <textarea
             value={generalNotes}
@@ -433,7 +440,7 @@ function ExerciseBlock({
   onFeedbackChange,
 }: ExerciseBlockProps) {
   return (
-    <div className="glass-premium rounded-2xl p-4">
+    <div className="glass-premium rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
       <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         <Dumbbell className="h-4 w-4 text-indigo-500" />
         {exerciseName}

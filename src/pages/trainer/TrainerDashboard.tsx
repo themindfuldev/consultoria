@@ -14,6 +14,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Mail,
   MessageSquare,
   Pencil,
   Video,
@@ -203,9 +204,12 @@ export function TrainerDashboard() {
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
           Olá{trainerProfile?.name ? `, ${trainerProfile.name.split(' ')[0]}` : ''} 👋
         </h1>
-        <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{trainerEmail}</p>
+        <p className="mt-0.5 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+          <Mail className="h-4 w-4 text-slate-400" />
+          {trainerEmail}
+        </p>
 
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-1 flex items-center gap-2">
           <WhatsAppIcon className="h-4 w-4 text-slate-400" />
           {editingPhone ? (
             <>
@@ -237,7 +241,7 @@ export function TrainerDashboard() {
       </div>
 
       {/* Week widget */}
-      <div className="mb-4 flex items-center gap-2 rounded-2xl bg-white/60 p-2 dark:bg-slate-800/50">
+      <div className="mb-4 flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/60 p-2 dark:border-slate-700 dark:bg-slate-800/50">
         <button
           onClick={() => setWeekStart((w) => addDays(w, -7))}
           aria-label="Semana anterior"
@@ -384,7 +388,7 @@ function Section({
                     <li key={s.id}>
                       <button
                         onClick={() => onOpen(s.id)}
-                        className="glass flex w-full items-center gap-3 rounded-2xl px-4 py-2.5 text-left transition-all active:scale-[0.99]"
+                        className="glass flex w-full items-center gap-3 rounded-2xl border border-slate-200 px-4 py-2.5 text-left transition-all active:scale-[0.99] dark:border-slate-700"
                       >
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
