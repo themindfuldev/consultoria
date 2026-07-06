@@ -2,29 +2,22 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   collection,
-  doc,
   getDocs,
   query,
   Timestamp,
-  updateDoc,
   where,
 } from 'firebase/firestore';
 import {
   CalendarDays,
-  Check,
   ChevronLeft,
   ChevronRight,
-  Mail,
   MessageSquare,
-  Pencil,
   Video,
-  X,
 } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
 import { Avatar } from '../../components/Avatar';
-import { WhatsAppIcon } from '../../components/icons/WhatsAppIcon';
 import type { Session } from '../../types';
 
 // ── Date helpers (local time, Sunday-start week) ──────────────────────────────
@@ -96,11 +89,6 @@ export function TrainerDashboard() {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
 
-  // WhatsApp edit
-  const [editingPhone, setEditingPhone] = useState(false);
-  const [phoneInput, setPhoneInput] = useState('');
-  const [savingPhone, setSavingPhone] = useState(false);
-
   // ── Load all the trainer's sessions ─────────────────────────────────────────
 
   useEffect(() => {
@@ -159,25 +147,6 @@ export function TrainerDashboard() {
   const awaitingGroups = useMemo(() => groupSessions(awaiting, groupBy), [awaiting, groupBy]);
   const respondedGroups = useMemo(() => groupSessions(responded, groupBy), [responded, groupBy]);
 
-  // ── WhatsApp save ───────────────────────────────────────────────────────────
-
-  const startEditPhone = () => {
-    setPhoneInput(trainerProfile?.whatsappPhone ?? '');
-    setEditingPhone(true);
-  };
-  const savePhone = async () => {
-    if (!trainerEmail) return;
-    const cleaned = phoneInput.replace(/\D/g, '');
-    if (cleaned.length < 11) return;
-    setSavingPhone(true);
-    try {
-      await updateDoc(doc(db, 'trainers', trainerEmail), { whatsappPhone: cleaned });
-      setEditingPhone(false);
-    } finally {
-      setSavingPhone(false);
-    }
-  };
-
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (!trainerProfile && !loading) {
@@ -199,45 +168,11 @@ export function TrainerDashboard() {
 
   return (
     <Layout title="Painel do Treinador">
-      {/* Greeting + WhatsApp */}
+      {/* Greeting */}
       <div className="mb-5">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
           Olá{trainerProfile?.name ? `, ${trainerProfile.name.split(' ')[0]}` : ''} 👋
         </h1>
-        <p className="mt-0.5 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-          <Mail className="h-4 w-4 text-slate-400" />
-          {trainerEmail}
-        </p>
-
-        <div className="mt-1 flex items-center gap-2">
-          <WhatsAppIcon className="h-4 w-4 text-slate-400" />
-          {editingPhone ? (
-            <>
-              <input
-                type="tel"
-                value={phoneInput}
-                onChange={(e) => setPhoneInput(e.target.value)}
-                placeholder="+55 11 99999-9999"
-                className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              />
-              <button onClick={savePhone} disabled={savingPhone} aria-label="Salvar" className="rounded-lg bg-emerald-600 p-1.5 text-white hover:bg-emerald-700 disabled:opacity-60">
-                <Check className="h-4 w-4" />
-              </button>
-              <button onClick={() => setEditingPhone(false)} aria-label="Cancelar" className="rounded-lg bg-slate-200 p-1.5 text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200">
-                <X className="h-4 w-4" />
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="text-sm text-slate-600 dark:text-slate-300">
-                {trainerProfile?.whatsappPhone ? `+${trainerProfile.whatsappPhone}` : 'Sem WhatsApp'}
-              </span>
-              <button onClick={startEditPhone} aria-label="Editar WhatsApp" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800">
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
-            </>
-          )}
-        </div>
       </div>
 
       {/* Week widget */}
