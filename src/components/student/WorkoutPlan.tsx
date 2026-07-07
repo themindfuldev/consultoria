@@ -199,49 +199,55 @@ function RpeSelect({
   }, [open]);
 
   const colored = typeof value === 'number';
-  const inputClasses = colored
-    ? `border-transparent font-bold ${rpeChipClasses(value)} placeholder-white/70`
-    : 'border-slate-200 bg-white text-slate-900 placeholder-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500';
+  // A plain button (not a text input) so mobile browsers never auto-zoom the
+  // page on focus — the 1–10 picker below covers every value, so there's no
+  // need to type.
+  const triggerClasses = colored
+    ? `border-transparent font-bold ${rpeChipClasses(value)}`
+    : 'border-slate-200 bg-white text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500';
 
   return (
     <div ref={ref} className="relative w-full sm:w-20">
-      <input
-        type="text"
-        inputMode="numeric"
-        maxLength={2}
-        value={value}
-        onFocus={() => setOpen(true)}
-        onChange={(e) => {
-          // Digits only; empty clears, otherwise clamp to 1–10.
-          const digits = e.target.value.replace(/\D/g, '');
-          if (digits === '') { onChange(''); return; }
-          onChange(Math.min(10, Math.max(1, parseInt(digits, 10))));
-        }}
-        placeholder="RPE"
-        className={`w-full rounded-lg border px-3 py-2 pr-7 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/40 ${inputClasses}`}
-      />
-      <ChevronDown
-        className={`pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${colored ? 'text-white/80' : 'text-slate-400'}`}
-      />
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`flex w-full items-center justify-between gap-1 rounded-lg border px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/40 ${triggerClasses}`}
+      >
+        <span>{colored ? value : 'RPE'}</span>
+        <ChevronDown
+          className={`h-3.5 w-3.5 flex-shrink-0 ${colored ? 'text-white/80' : 'text-slate-400'}`}
+        />
+      </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 grid w-max grid-cols-5 gap-1.5 rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-800">
-          {RPE_VALUES.map((n) => (
+        <div className="absolute right-0 top-full z-30 mt-1 w-max rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+          <div className="grid grid-cols-5 gap-1.5">
+            {RPE_VALUES.map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => {
+                  onChange(n);
+                  setOpen(false);
+                }}
+                className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-transform hover:scale-110 ${rpeChipClasses(n)} ${value === n ? 'ring-2 ring-indigo-500 ring-offset-1 dark:ring-offset-slate-800' : ''}`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          {colored && (
             <button
-              key={n}
               type="button"
-              // pointerdown (not click) so the input doesn't blur and re-close
-              // the menu before the selection registers.
-              onPointerDown={(e) => {
-                e.preventDefault();
-                onChange(n);
+              onClick={() => {
+                onChange('');
                 setOpen(false);
               }}
-              className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-transform hover:scale-110 ${rpeChipClasses(n)} ${value === n ? 'ring-2 ring-indigo-500 ring-offset-1 dark:ring-offset-slate-800' : ''}`}
+              className="mt-1.5 w-full rounded-lg px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700/60"
             >
-              {n}
+              Limpar
             </button>
-          ))}
+          )}
         </div>
       )}
     </div>
