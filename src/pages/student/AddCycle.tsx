@@ -186,7 +186,7 @@ export function AddCycle() {
               </div>
               {selectedTrainerEmail && (
                 <p className="text-xs text-amber-700 dark:text-amber-400">
-                  Lembre-se de compartilhar esta planilha com <strong>{selectedTrainerEmail}</strong> (como leitor).
+                  Lembre-se de compartilhar esta planilha com <strong>{selectedTrainerEmail}</strong>.
                 </p>
               )}
             </Field>
