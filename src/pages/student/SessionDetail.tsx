@@ -793,13 +793,27 @@ export function SessionDetail() {
       />
 
       {/* Session header */}
-      <div className="mb-5">
-        <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-          {session?.weekNumber ? `Semana ${session.weekNumber} · ` : ''}{session?.tabName}
-        </h1>
-        <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-          {cycle?.title} · {dateLabel}
-        </p>
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+            {session?.weekNumber ? `Semana ${session.weekNumber} · ` : ''}{session?.tabName}
+          </h1>
+          <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+            {cycle?.title} · {dateLabel}
+          </p>
+        </div>
+        {/* Save the offline snapshot and jump straight to the offline viewer. */}
+        {phase === 'training' && !readOnly && (
+          <button
+            onClick={handleSaveOffline}
+            disabled={!parsedTab || savingOffline}
+            title={hasOfflineSnapshot ? 'Atualizar e abrir treino offline' : 'Salvar e abrir treino offline'}
+            className="flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-amber-800 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 transition-all hover:bg-amber-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Save className="h-3.5 w-3.5" />
+            Offline
+          </button>
+        )}
       </div>
 
       {/* Read-only notice for sessions in a concluded week */}
@@ -1102,20 +1116,11 @@ export function SessionDetail() {
         </>
       )}
 
-      {/* ── Phase B: training in progress — offline save + finish flow ─────
-          Rendered below the video actions so "Adicionar vídeo" sits above
-          "Salvar para acesso offline". */}
+      {/* ── Phase B: training in progress — finish flow ──────────────────────
+          Offline save/open lives in the header now; this block is just the
+          "Finalizar treino" flow, kept below the video actions. */}
       {phase === 'training' && !readOnly && (
         <div className="mb-5 flex flex-col gap-3">
-          <button
-            onClick={handleSaveOffline}
-            disabled={!parsedTab || savingOffline}
-            className="flex items-center justify-center gap-2 rounded-xl border border-amber-800 bg-amber-50 py-3 text-sm font-semibold text-amber-800 transition-all hover:bg-amber-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Save className="h-4 w-4" />
-            {hasOfflineSnapshot ? 'Atualizar treino offline' : 'Salvar para acesso offline'}
-          </button>
-
           {!showFinishForm ? (
             <button
               onClick={() => setShowFinishForm(true)}
