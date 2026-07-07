@@ -1112,7 +1112,7 @@ export function SessionDetail() {
                   className="flex items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-green-700 active:scale-95 disabled:opacity-60"
                 >
                   <Send className="h-4 w-4" />
-                  Solicitar feedback
+                  {session?.videosNotifiedAt ? 'Re-solicitar feedback' : 'Solicitar feedback'}
                 </button>
               )}
             </div>
