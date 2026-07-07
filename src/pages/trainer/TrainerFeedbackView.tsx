@@ -15,8 +15,10 @@ import {
 import { Dumbbell, NotebookText, Send, StickyNote, Video } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
+import { useVideoCompress } from '../../hooks/useVideoCompress';
 import { openWhatsApp } from '../../services/notifyService';
 import { setKey } from '../../services/sheetsService';
+import { getOrCreateTrainerFeedbackFolder, uploadFileToDrive } from '../../services/driveService';
 import { Layout } from '../../components/Layout';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
 import { WorkoutPlan } from '../../components/student/WorkoutPlan';
@@ -44,7 +46,8 @@ function fmtDate(ts: Timestamp): string {
 
 export function TrainerFeedbackView() {
   const { sessionId } = useParams<{ sessionId: string }>();
-  const { currentUser } = useAuth();
+  const { currentUser, getAccessToken } = useAuth();
+  const { compress } = useVideoCompress();
   const navigate = useNavigate();
 
   const [session, setSession] = useState<Session | null>(null);
@@ -60,6 +63,14 @@ export function TrainerFeedbackView() {
   const [saving, setSaving] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [saveError, setSaveError] = useState('');
+
+  // Trainer response-video upload (one at a time, keyed by exercise name).
+  const [videoUpload, setVideoUpload] = useState<
+    { exerciseName: string; phase: 'compressing' | 'uploading'; progress: number } | null
+  >(null);
+  const [videoError, setVideoError] = useState('');
+  // The trainer's own Drive feedback subfolder for this session, created once.
+  const feedbackFolderRef = useRef<{ rootId: string; subId: string } | null>(null);
   // True once this feedback has been responded (status 'complete'): the button
   // is hidden, but edits keep auto-saving without downgrading it back to draft.
   const [responded, setResponded] = useState(false);
@@ -162,6 +173,64 @@ export function TrainerFeedbackView() {
     return result;
   };
 
+  // ── Upload a trainer response video for one exercise ─────────────────────────
+  // Saved to the trainer's own Drive ("Consultoria Feedback/…"), made
+  // link-viewable so the student can watch it. Filename: "<exercise> - Feedback".
+
+  const handleUploadFeedbackVideo = async (exerciseName: string, file: File) => {
+    if (!session || videoUpload) return;
+    setVideoError('');
+    setVideoUpload({ exerciseName, phase: 'compressing', progress: 0 });
+    try {
+      const token = await getAccessToken();
+
+      const { buffer, compressedSizeMB } = await compress(
+        file,
+        (p) => setVideoUpload((s) => (s ? { ...s, progress: p } : s)),
+      );
+
+      // Ensure the session's feedback subfolder exists once, then reuse it.
+      if (!feedbackFolderRef.current) {
+        const dLabel = session.date instanceof Timestamp ? fmtDate(session.date) : '';
+        const sessionLabel = `${session.tabName}${dLabel ? ` — ${dLabel}` : ''}`;
+        const { subfolder, rootFolderId } = await getOrCreateTrainerFeedbackFolder(
+          session.studentName ?? 'Aluno',
+          sessionLabel,
+          token,
+        );
+        feedbackFolderRef.current = { rootId: rootFolderId, subId: subfolder.id };
+      }
+
+      setVideoUpload((s) => (s ? { ...s, phase: 'uploading', progress: 0 } : s));
+      const uploaded = await uploadFileToDrive(
+        `${exerciseName} - Feedback.mp4`,
+        'video/mp4',
+        buffer,
+        feedbackFolderRef.current.subId,
+        token,
+        (p) => setVideoUpload((s) => (s ? { ...s, progress: p } : s)),
+      );
+
+      const media: FeedbackMediaFile = {
+        driveFileId: uploaded.id,
+        driveFileUrl: uploaded.webViewLink,
+        mediaType: 'video',
+        fileName: `${exerciseName} - Feedback`,
+        sizeMB: compressedSizeMB,
+      };
+      setMediaMap((prev) => {
+        const next = new Map(prev);
+        next.set(exerciseName, [...(next.get(exerciseName) ?? []), media]);
+        return next;
+      });
+      setVideoUpload(null);
+    } catch (err) {
+      console.error('Falha no upload do vídeo de feedback:', err);
+      setVideoError('Não foi possível enviar o vídeo. Tente novamente.');
+      setVideoUpload(null);
+    }
+  };
+
   // ── Save draft ──────────────────────────────────────────────────────────────
 
   const handleSaveDraft = async () => {
@@ -212,7 +281,7 @@ export function TrainerFeedbackView() {
     const t = setTimeout(() => { handleSaveDraft(); }, 1000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feedbackMap, generalNotes]);
+  }, [feedbackMap, generalNotes, mediaMap]);
 
   // ── Complete feedback + WhatsApp + feedbackStatus ────────────────────────────
 
@@ -357,6 +426,9 @@ export function TrainerFeedbackView() {
             onFeedbackChange={(t) =>
               setFeedbackMap((m) => { const n = new Map(m); n.set(exerciseName, t); return n; })
             }
+            onUploadVideo={(f) => handleUploadFeedbackVideo(exerciseName, f)}
+            uploading={videoUpload?.exerciseName === exerciseName ? videoUpload : null}
+            uploadDisabled={!!videoUpload && videoUpload.exerciseName !== exerciseName}
           />
         ))}
 
@@ -370,6 +442,9 @@ export function TrainerFeedbackView() {
             onFeedbackChange={(t) =>
               setFeedbackMap((m) => { const n = new Map(m); n.set('Geral', t); return n; })
             }
+            onUploadVideo={(f) => handleUploadFeedbackVideo('Geral', f)}
+            uploading={videoUpload?.exerciseName === 'Geral' ? videoUpload : null}
+            uploadDisabled={!!videoUpload && videoUpload.exerciseName !== 'Geral'}
           />
         )}
 
@@ -389,9 +464,9 @@ export function TrainerFeedbackView() {
         </div>
 
         {/* Error */}
-        {saveError && (
+        {(saveError || videoError) && (
           <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-950/40 dark:text-red-400">
-            {saveError}
+            {saveError || videoError}
           </p>
         )}
 
@@ -430,6 +505,9 @@ interface ExerciseBlockProps {
   feedbackText: string;
   mediaFiles: FeedbackMediaFile[];
   onFeedbackChange: (text: string) => void;
+  onUploadVideo: (file: File) => void;
+  uploading: { phase: 'compressing' | 'uploading'; progress: number } | null;
+  uploadDisabled: boolean;
 }
 
 function ExerciseBlock({
@@ -438,7 +516,11 @@ function ExerciseBlock({
   feedbackText,
   mediaFiles,
   onFeedbackChange,
+  onUploadVideo,
+  uploading,
+  uploadDisabled,
 }: ExerciseBlockProps) {
+  const fileRef = useRef<HTMLInputElement>(null);
   return (
     <div className="glass-premium rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
       <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -490,6 +572,41 @@ function ExerciseBlock({
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Response-video upload */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="video/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f) onUploadVideo(f);
+        }}
+      />
+      {uploading ? (
+        <div className="rounded-xl bg-indigo-50 p-3 dark:bg-indigo-900/20">
+          <p className="mb-1.5 text-xs font-semibold text-indigo-800 dark:text-indigo-300">
+            {uploading.phase === 'compressing' ? 'Comprimindo vídeo…' : 'Enviando para o Drive…'}
+          </p>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-indigo-200 dark:bg-indigo-800">
+            <div
+              className="h-full rounded-full bg-indigo-600 transition-all duration-300"
+              style={{ width: `${Math.round(uploading.progress * 100)}%` }}
+            />
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploadDisabled}
+          className="flex items-center gap-2 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 transition-colors hover:bg-indigo-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-800 dark:bg-slate-800 dark:text-indigo-300 dark:hover:bg-slate-700"
+        >
+          <Video className="h-4 w-4" />
+          Enviar vídeo de resposta
+        </button>
       )}
     </div>
   );
