@@ -767,9 +767,9 @@ export function SessionDetail() {
     setNotifying(true);
     const weekSuffix = session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.';
     const body =
-      `Segue(m) para feedback ${videos.length} vídeo(s) do treino *${session.tabName}*${weekSuffix}\n` +
-      `Feedback: ${window.location.origin}/trainer/sessions/${session.id}`;
-    notifyTrainer(cycle.trainerEmail, 'Treino enviado para feedback', body)
+      `Há ${videos.length} vídeos do treino *${session.tabName}*${weekSuffix}\n` +
+      `Acessar treino: ${window.location.origin}/trainer/sessions/${session.id}`;
+    notifyTrainer(cycle.trainerEmail, 'Treino disponível para feedback', body)
       .then(() => updateDoc(doc(db, 'sessions', session.id), { videosNotifiedAt: serverTimestamp() }))
       .finally(() => setNotifying(false));
   };

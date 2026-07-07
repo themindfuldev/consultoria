@@ -319,9 +319,9 @@ export function TrainerFeedbackView() {
         const weekSuffix = session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.';
         openWhatsApp(
           session.studentWhatsapp,
-          'Feedback disponível',
+          'Feedback de treino disponível',
           `Segue o feedback do seu treino *${session.tabName}*${weekSuffix}\n` +
-          `${appUrl}/student/sessions/${sessionId}/feedback`,
+          `Acessar feedback: ${appUrl}/student/sessions/${sessionId}/feedback`,
         );
       }
 

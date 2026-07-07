@@ -135,9 +135,8 @@ export function StudentTrainers() {
   const sendConfirmation = (whatsappPhone: string, trainerEmail: string) => {
     const url = `${window.location.origin}/trainer/login`;
     const body =
-      `Olá! Cadastrei você no Consultoria para receber feedbacks de treinos. ` +
-      `Confirme seu acesso clicando no link abaixo:\n` +
-      `URL: ${url}\n` +
+      `Olá! Cadastrei você no Consultoria para feedbacks de treinos.\n` +
+      `Confirme seu acesso clicando neste link: ${url}\n` +
       `E-mail: ${trainerEmail}`;
     openWhatsApp(whatsappPhone, 'Confirmação de cadastro', body);
   };

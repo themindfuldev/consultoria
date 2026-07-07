@@ -14,17 +14,21 @@ import type { Trainer } from '../types';
  * Standard branded layout for every outbound WhatsApp message (WhatsApp markup:
  * `*bold*`, `_italic_`):
  *
- *   *[Consultoria]* {subject}
+ *   *[Consultoria]*
+ *   {subject}
  *
  *   {body}
  *
- *   _-- Acesse a Consultoria: {baseUrl}_
+ *   Grato,
+ *
+ *   _-- Consultoria ({baseUrl})_
  */
 function formatMessage(subject: string, body: string): string {
   return (
-    `*[Consultoria]* ${subject}\n\n` +
+    `*[Consultoria]*\n${subject}\n\n` +
     `${body}\n\n` +
-    `_-- Acessar: ${window.location.origin}_`
+    `Grato,\n\n` +
+    `_-- Consultoria (${window.location.origin})_`
   );
 }
 
