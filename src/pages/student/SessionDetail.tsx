@@ -129,6 +129,10 @@ function NotifyTrainerCheckbox({
 
 // ── Upload state per video ────────────────────────────────────────────────────
 
+/** Max videos selectable/uploadable in one batch — compressed and uploaded
+ *  sequentially, so a larger cap is fine. */
+const MAX_VIDEOS_PER_UPLOAD = 10;
+
 interface UploadState {
   fileName: string;
   originalMB: number;
@@ -578,7 +582,7 @@ export function SessionDetail() {
   // ── File selected ───────────────────────────────────────────────────────────
 
   const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []).slice(0, 3);
+    const files = Array.from(e.target.files ?? []).slice(0, MAX_VIDEOS_PER_UPLOAD);
     if (files.length === 0) return;
     setPendingFiles(files);
     setPendingTags(files.map(() => ({ selected: '', custom: '' })));
