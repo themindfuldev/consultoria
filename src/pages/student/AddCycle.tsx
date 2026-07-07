@@ -268,17 +268,17 @@ export function AddCycle() {
         {/* ── Actions ────────────────────────────────────────────────────── */}
         <div className="flex gap-3 pt-1">
           <button
-            onClick={() => navigate('/student')}
-            className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-          >
-            Cancelar
-          </button>
-          <button
             onClick={handleSubmit}
             disabled={submitting}
             className="flex-1 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? 'Salvando…' : 'Adicionar programa'}
+          </button>
+          <button
+            onClick={() => navigate('/student')}
+            className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
+            Cancelar
           </button>
         </div>
       </div>

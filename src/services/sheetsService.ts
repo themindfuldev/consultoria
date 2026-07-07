@@ -334,9 +334,15 @@ export function setKey(exerciseName: string, index: number, rowNumber?: number):
  * Returns a deduplicated list of exercise names from a parsed tab, **in
  * spreadsheet order** (first occurrence wins). Used to pre-populate the
  * video-tagging dropdown so it mirrors the sheet, not alphabetical order.
+ * Warm-up ("Aquecimento") exercises are excluded — students don't film those.
  */
 export function getExerciseNames(tab: ParsedSheetTab): string[] {
   return Array.from(
-    new Set(tab.exercises.map((e) => e.exerciseName).filter(Boolean)),
+    new Set(
+      tab.exercises
+        .filter((e) => !/aquecimento/i.test(e.section))
+        .map((e) => e.exerciseName)
+        .filter(Boolean),
+    ),
   );
 }

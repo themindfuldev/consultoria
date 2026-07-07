@@ -953,18 +953,18 @@ export function SessionDetail() {
               )}
               <div className="flex gap-3">
                 <button
-                  onClick={() => setShowFinishForm(false)}
-                  disabled={finishing}
-                  className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                >
-                  Voltar
-                </button>
-                <button
                   onClick={handleFinishSession}
                   disabled={!postEnergy || !postFeeling || finishing}
                   className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {finishing ? 'Concluindo…' : 'Concluir treino'}
+                </button>
+                <button
+                  onClick={() => setShowFinishForm(false)}
+                  disabled={finishing}
+                  className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                >
+                  Voltar
                 </button>
               </div>
             </div>
@@ -1009,16 +1009,16 @@ export function SessionDetail() {
                     )}
                     <div className="flex justify-end gap-2">
                       <button
-                        onClick={() => setEditingVideoId(null)}
-                        className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200"
-                      >
-                        Cancelar
-                      </button>
-                      <button
                         onClick={() => saveEditVideo(v)}
                         className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
                       >
                         Salvar
+                      </button>
+                      <button
+                        onClick={() => setEditingVideoId(null)}
+                        className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200"
+                      >
+                        Cancelar
                       </button>
                     </div>
                   </div>
@@ -1210,7 +1210,7 @@ export function SessionDetail() {
                     </div>
 
                     <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      Exercício (opcional)
+                      Exercício
                     </label>
                     <select
                       value={tag.selected}
@@ -1240,17 +1240,17 @@ export function SessionDetail() {
 
             <div className="flex gap-3">
               <button
-                onClick={cancelPending}
-                className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-              >
-                Cancelar
-              </button>
-              <button
                 onClick={handleUpload}
                 className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95"
               >
                 <Upload className="h-4 w-4" />
                 Comprimir e enviar
+              </button>
+              <button
+                onClick={cancelPending}
+                className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              >
+                Cancelar
               </button>
             </div>
           </div>

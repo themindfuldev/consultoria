@@ -192,17 +192,17 @@ export function CycleDetail() {
 
               <div className="flex gap-3 pt-1">
                 <button
-                  onClick={() => { setShowReplaceSheet(false); setReplaceUrl(''); setReplaceError(''); }}
-                  className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                >
-                  Cancelar
-                </button>
-                <button
                   onClick={handleReplaceSheet}
                   disabled={replacing}
                   className="flex-1 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {replacing ? 'Salvando…' : 'Salvar'}
+                </button>
+                <button
+                  onClick={() => { setShowReplaceSheet(false); setReplaceUrl(''); setReplaceError(''); }}
+                  className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                >
+                  Cancelar
                 </button>
               </div>
             </div>
