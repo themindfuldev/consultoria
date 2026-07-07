@@ -1099,10 +1099,10 @@ export function SessionDetail() {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={!!uploadState && uploadState.phase !== 'error'}
-                className="flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-white py-3 text-sm font-semibold text-indigo-700 shadow-sm transition-all hover:bg-indigo-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-800 dark:bg-slate-800 dark:text-indigo-300 dark:hover:bg-slate-700"
+                className="mb-2 flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-white py-3 text-sm font-semibold text-indigo-700 shadow-sm transition-all hover:bg-indigo-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-800 dark:bg-slate-800 dark:text-indigo-300 dark:hover:bg-slate-700"
               >
                 <PlusCircle className="h-4 w-4" />
-                Adicionar vídeo
+                Adicionar vídeos
               </button>
 
               {phase === 'done' && cycle?.trainerEmail && videos.length > 0 && (
