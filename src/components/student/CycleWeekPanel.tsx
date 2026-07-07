@@ -210,11 +210,11 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            {currentWeek ? 'Semana atual' : 'Ciclo ainda não iniciado'}
+            Semana atual
           </p>
           <div className="flex items-center justify-between gap-3">
             <p className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-white">
-              {currentWeek ? `Semana ${currentWeek.weekNumber}` : 'Comece a primeira semana'}
+              {currentWeek ? `Semana ${currentWeek.weekNumber}` : 'Ciclo ainda não iniciado'}
               {currentWeekStatus === 'in_progress' && (
                 <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
                   Em andamento
@@ -246,8 +246,10 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
           </button>
         )}
 
-        {/* Start the next week (current one concluded, or no week yet) */}
-        {canStartNextWeek && (
+        {/* Start the next week after concluding the current one (inline). The
+            initial "cycle not started" case renders its button full-width at
+            the bottom instead — see below. */}
+        {canStartNextWeek && currentWeek && (
           <button
             onClick={startWeek}
             disabled={startingWeek}
@@ -323,10 +325,21 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
           )}
         </div>
       ) : (
-        <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
-          <Lock className="h-3.5 w-3.5" />
-          Comece a semana para ver os treinos.
-        </p>
+        <>
+          <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+            Comece a semana para ver os treinos.
+          </p>
+          {canStartNextWeek && (
+            <button
+              onClick={startWeek}
+              disabled={startingWeek}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Play className="h-3.5 w-3.5" />
+              {startingWeek ? 'Iniciando…' : `Começar Semana ${nextWeekNumber}`}
+            </button>
+          )}
+        </>
       )}
 
       {/* ── Past weeks (read-only accordions) ────────────────────────────── */}
