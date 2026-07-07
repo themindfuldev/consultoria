@@ -252,8 +252,14 @@ function _parseSetGroup(
 ): PlannedSetGroup {
   const sets = parseInt(rawSets) || 1;
 
+  // Keep the full text unless the cell is a plain integer. `parseInt` alone
+  // would swallow everything after the leading number ("10 cada" → 10, "20s"
+  // → 20, "6-8" → 6), so only coerce when the whole value is digits.
+  const trimmedReps = (rawReps ?? '').trim();
   const reps: number | string =
-    rawReps === '--' || !rawReps ? '--' : (parseInt(rawReps) || rawReps);
+    trimmedReps === '--' || !trimmedReps
+      ? '--'
+      : /^\d+$/.test(trimmedReps) ? parseInt(trimmedReps, 10) : trimmedReps;
 
   const load: number | string =
     rawLoad === 'ESCOLHER' ? 'ESCOLHER' :
