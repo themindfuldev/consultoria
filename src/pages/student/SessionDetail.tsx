@@ -22,6 +22,7 @@ import {
   Lock,
   MessageSquare,
   NotebookText,
+  Pencil,
   Play,
   PlusCircle,
   RotateCcw,
@@ -130,9 +131,12 @@ function NotifyTrainerCheckbox({
 interface UploadState {
   fileName: string;
   originalMB: number;
-  phase: 'compressing' | 'uploading' | 'done' | 'error';
+  phase: 'compressing' | 'uploading' | 'error';
   progress: number; // 0–1
   error?: string;
+  /** 1-based position and total when several videos are uploaded in one batch. */
+  index?: number;
+  total?: number;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -161,11 +165,15 @@ export function SessionDetail() {
   // Per-video upload state (shown during active upload)
   const [uploadState, setUploadState] = useState<UploadState | null>(null);
 
-  // Preview sheet state
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [selectedExercise, setSelectedExercise] = useState('');
-  const [customExercise, setCustomExercise] = useState('');
+  // Preview sheet state — up to 3 videos at once, each with its own tag.
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [pendingTags, setPendingTags] = useState<{ selected: string; custom: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Inline exercise editing on an already-uploaded video
+  const [editingVideoId, setEditingVideoId] = useState<string | null>(null);
+  const [editSelected, setEditSelected] = useState('');
+  const [editCustom, setEditCustom] = useState('');
 
   // Notification state (video-ready notification)
   const [notifying, setNotifying] = useState(false);
@@ -568,41 +576,35 @@ export function SessionDetail() {
   // ── File selected ───────────────────────────────────────────────────────────
 
   const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setPendingFile(file);
+    const files = Array.from(e.target.files ?? []).slice(0, 3);
+    if (files.length === 0) return;
+    setPendingFiles(files);
+    setPendingTags(files.map(() => ({ selected: '', custom: '' })));
     e.target.value = '';
   };
+
+  const updateTag = (i: number, patch: Partial<{ selected: string; custom: string }>) =>
+    setPendingTags((prev) => prev.map((t, idx) => (idx === i ? { ...t, ...patch } : t)));
+
+  const cancelPending = () => { setPendingFiles([]); setPendingTags([]); };
 
   // ── Upload flow ─────────────────────────────────────────────────────────────
 
   const handleUpload = async () => {
-    if (!pendingFile || !currentUser || !session || !cycle) return;
+    if (pendingFiles.length === 0 || !currentUser || !session || !cycle) return;
 
-    const exerciseName =
-      selectedExercise === '__custom__'
-        ? customExercise.trim() || undefined
-        : selectedExercise || undefined;
-
-    const originalMB = pendingFile.size / 1_048_576;
-    setUploadState({ fileName: pendingFile.name, originalMB, phase: 'compressing', progress: 0 });
-    setPendingFile(null);
-    setSelectedExercise('');
-    setCustomExercise('');
+    const files = pendingFiles;
+    const tags = pendingTags;
+    const total = files.length;
+    cancelPending(); // close the sheet; progress shows below
 
     try {
       const token = await getAccessToken();
 
-      // Step 1 — compress
-      const { buffer, compressedSizeMB } = await compress(
-        pendingFile,
-        (p) => setUploadState((s) => s ? { ...s, progress: p } : s),
-      );
-
-      // Step 2 — ensure session folder exists
+      // Ensure the session's Drive folder exists once, up front, then reuse it
+      // for every video in the batch.
       let folderId = session.driveFolderId;
       let folderUrl = session.driveFolderUrl;
-
       if (!folderId) {
         const sessionDate = session.date instanceof Timestamp ? session.date.toDate() : new Date();
         const dateStr = session.date instanceof Timestamp
@@ -634,50 +636,94 @@ export function SessionDetail() {
         setSession((prev) => prev ? { ...prev, driveFolderId: folderId!, driveFolderUrl: folderUrl! } : prev);
       }
 
-      // Step 3 — upload
-      setUploadState((s) => s ? { ...s, phase: 'uploading', progress: 0 } : s);
+      // Compress + upload each file sequentially (compression is CPU-heavy).
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const tag = tags[i] ?? { selected: '', custom: '' };
+        const exerciseName =
+          tag.selected === '__custom__'
+            ? tag.custom.trim() || undefined
+            : tag.selected || undefined;
+        const originalMB = file.size / 1_048_576;
 
-      const uploaded = await uploadFileToDrive(
-        `${session.tabName} - ${exerciseName ?? 'video'}_${Date.now()}.mp4`,
-        'video/mp4',
-        buffer,
-        folderId,
-        token,
-        (p) => setUploadState((s) => s ? { ...s, progress: p } : s),
-      );
+        setUploadState({ fileName: file.name, originalMB, phase: 'compressing', progress: 0, index: i + 1, total });
 
-      // Step 4 — Firestore writes
-      const videoRef = doc(collection(db, 'videos'));
-      await setDoc(videoRef, {
-        id: videoRef.id,
-        sessionId: session.id,
-        cycleId: cycle.id,
-        studentUid: currentUser.uid,
-        trainerEmail: cycle.trainerEmail ?? '',
-        exerciseName: exerciseName ?? null,
-        freeFormDescription: null,
-        driveFileId: uploaded.id,
-        driveFileUrl: uploaded.webViewLink,
-        driveThumbnailUrl: null,
-        originalSizeMB: originalMB,
-        compressedSizeMB,
-        uploadedAt: serverTimestamp(),
-      });
+        const { buffer, compressedSizeMB } = await compress(
+          file,
+          (p) => setUploadState((s) => s ? { ...s, progress: p } : s),
+        );
+
+        setUploadState((s) => s ? { ...s, phase: 'uploading', progress: 0 } : s);
+        const uploaded = await uploadFileToDrive(
+          `${session.tabName} - ${exerciseName ?? 'video'}_${Date.now()}.mp4`,
+          'video/mp4',
+          buffer,
+          folderId,
+          token,
+          (p) => setUploadState((s) => s ? { ...s, progress: p } : s),
+        );
+
+        const videoRef = doc(collection(db, 'videos'));
+        await setDoc(videoRef, {
+          id: videoRef.id,
+          sessionId: session.id,
+          cycleId: cycle.id,
+          studentUid: currentUser.uid,
+          trainerEmail: cycle.trainerEmail ?? '',
+          exerciseName: exerciseName ?? null,
+          freeFormDescription: null,
+          driveFileId: uploaded.id,
+          driveFileUrl: uploaded.webViewLink,
+          driveThumbnailUrl: null,
+          originalSizeMB: originalMB,
+          compressedSizeMB,
+          uploadedAt: serverTimestamp(),
+        });
+      }
 
       if (!session.hasVideos) {
         await updateDoc(doc(db, 'sessions', session.id), { hasVideos: true });
         setSession((prev) => prev ? { ...prev, hasVideos: true } : prev);
       }
 
-      // Keep the "enviado" confirmation until the next upload — the video also
-      // appears in the list below (via the real-time listener), so the student
-      // has two clear signals that it succeeded.
-      setUploadState((s) => s ? { ...s, phase: 'done', progress: 1 } : s);
+      // No confirmation banner — the videos appear in the list below via the
+      // real-time listener.
+      setUploadState(null);
     } catch (err) {
       console.error('Falha no upload do vídeo:', err);
       setUploadState((s) =>
         s ? { ...s, phase: 'error', error: String(err) } : s,
       );
+    }
+  };
+
+  // ── Edit an uploaded video's exercise tag ─────────────────────────────────────
+
+  const startEditVideo = (v: SessionVideo) => {
+    setEditingVideoId(v.id);
+    const name = v.exerciseName ?? '';
+    if (name && exerciseOptions.includes(name)) {
+      setEditSelected(name);
+      setEditCustom('');
+    } else if (name) {
+      setEditSelected('__custom__');
+      setEditCustom(name);
+    } else {
+      setEditSelected('');
+      setEditCustom('');
+    }
+  };
+
+  const saveEditVideo = async (v: SessionVideo) => {
+    const name =
+      editSelected === '__custom__'
+        ? editCustom.trim() || null
+        : editSelected || null;
+    setEditingVideoId(null);
+    try {
+      await updateDoc(doc(db, 'videos', v.id), { exerciseName: name });
+    } catch (err) {
+      console.error('Falha ao atualizar o exercício do vídeo:', err);
     }
   };
 
@@ -939,35 +985,85 @@ export function SessionDetail() {
                 className="glass-premium flex items-center gap-3 rounded-xl p-3"
               >
                 <Video className="h-5 w-5 flex-shrink-0 text-indigo-500" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-slate-800 dark:text-white">
-                    {v.exerciseName ?? 'Vídeo geral'}
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {fmtBytes(v.compressedSizeMB)} comprimido
-                    {v.originalSizeMB > 0 && ` (original: ${fmtBytes(v.originalSizeMB)})`}
-                  </p>
-                </div>
-                <div className="flex flex-shrink-0 items-center gap-1">
-                  <a
-                    href={v.driveFileUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label="Abrir vídeo"
-                    className="rounded-lg p-2 text-indigo-600 transition-colors hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                  </a>
-                  {!readOnly && !feedbackAvailable && (
-                    <button
-                      onClick={() => handleDeleteVideo(v)}
-                      aria-label="Excluir vídeo"
-                      className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
+                {editingVideoId === v.id ? (
+                  <div className="flex min-w-0 flex-1 flex-col gap-2">
+                    <select
+                      value={editSelected}
+                      onChange={(e) => setEditSelected(e.target.value)}
+                      className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
+                      <option value="">Vídeo geral (sem exercício)</option>
+                      {exerciseOptions.map((o) => (
+                        <option key={o} value={o}>{o}</option>
+                      ))}
+                      <option value="__custom__">Outro — descreva</option>
+                    </select>
+                    {editSelected === '__custom__' && (
+                      <input
+                        type="text"
+                        value={editCustom}
+                        onChange={(e) => setEditCustom(e.target.value)}
+                        placeholder="Nome do exercício…"
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
+                      />
+                    )}
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => setEditingVideoId(null)}
+                        className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={() => saveEditVideo(v)}
+                        className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+                      >
+                        Salvar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-800 dark:text-white">
+                        {v.exerciseName ?? 'Vídeo geral'}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {fmtBytes(v.compressedSizeMB)} comprimido
+                        {v.originalSizeMB > 0 && ` (original: ${fmtBytes(v.originalSizeMB)})`}
+                      </p>
+                    </div>
+                    <div className="flex flex-shrink-0 items-center gap-1">
+                      <a
+                        href={v.driveFileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label="Abrir vídeo"
+                        className="rounded-lg p-2 text-indigo-600 transition-colors hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                      {!readOnly && !feedbackAvailable && (
+                        <>
+                          <button
+                            onClick={() => startEditVideo(v)}
+                            aria-label="Editar exercício"
+                            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteVideo(v)}
+                            aria-label="Excluir vídeo"
+                            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
               </li>
             ))}
           </ul>
@@ -977,31 +1073,26 @@ export function SessionDetail() {
       {/* ── Phase C: completed — video feedback flow ─────────────────────── */}
       {phase === 'done' && (
         <>
-          {/* Active upload progress / result */}
+          {/* Active upload progress / error */}
           {uploadState && (
             <div
               className={`mb-4 rounded-2xl p-4 ${
                 uploadState.phase === 'error'
                   ? 'bg-red-50 dark:bg-red-950/30'
-                  : uploadState.phase === 'done'
-                    ? 'bg-emerald-50 dark:bg-emerald-950/30'
-                    : 'bg-indigo-50 dark:bg-indigo-900/20'
+                  : 'bg-indigo-50 dark:bg-indigo-900/20'
               }`}
             >
               <div className="flex items-start justify-between gap-2">
                 <p className={`mb-1.5 text-sm font-semibold ${
                   uploadState.phase === 'error'
                     ? 'text-red-700 dark:text-red-300'
-                    : uploadState.phase === 'done'
-                      ? 'text-emerald-700 dark:text-emerald-300'
-                      : 'text-indigo-800 dark:text-indigo-300'
+                    : 'text-indigo-800 dark:text-indigo-300'
                 }`}>
-                  {uploadState.phase === 'compressing' && 'Comprimindo vídeo…'}
-                  {uploadState.phase === 'uploading' && 'Enviando para o Drive…'}
-                  {uploadState.phase === 'done' && '✅ Vídeo enviado! Veja na lista abaixo.'}
+                  {uploadState.phase === 'compressing' && `Comprimindo vídeo${uploadState.total && uploadState.total > 1 ? ` (${uploadState.index}/${uploadState.total})` : ''}…`}
+                  {uploadState.phase === 'uploading' && `Enviando para o Drive${uploadState.total && uploadState.total > 1 ? ` (${uploadState.index}/${uploadState.total})` : ''}…`}
                   {uploadState.phase === 'error' && '❌ Falha no envio — nada foi salvo.'}
                 </p>
-                {(uploadState.phase === 'done' || uploadState.phase === 'error') && (
+                {uploadState.phase === 'error' && (
                   <button
                     onClick={() => setUploadState(null)}
                     aria-label="Fechar"
@@ -1011,7 +1102,7 @@ export function SessionDetail() {
                   </button>
                 )}
               </div>
-              {uploadState.phase !== 'done' && uploadState.phase !== 'error' && (
+              {uploadState.phase !== 'error' && (
                 <>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-indigo-200 dark:bg-indigo-800">
                     <div
@@ -1043,17 +1134,18 @@ export function SessionDetail() {
                 ref={fileInputRef}
                 type="file"
                 accept="video/*"
+                multiple
                 className="hidden"
                 onChange={handleFileSelected}
               />
 
               <button
                 onClick={() => fileInputRef.current?.click()}
-                disabled={!!uploadState && uploadState.phase !== 'done' && uploadState.phase !== 'error'}
+                disabled={!!uploadState && uploadState.phase !== 'error'}
                 className="flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-white py-3 text-sm font-semibold text-indigo-700 shadow-sm transition-all hover:bg-indigo-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-800 dark:bg-slate-800 dark:text-indigo-300 dark:hover:bg-slate-700"
               >
                 <PlusCircle className="h-4 w-4" />
-                Adicionar vídeo
+                Adicionar vídeo (até 3)
               </button>
 
               {cycle?.trainerEmail && videos.length > 0 && (
@@ -1092,52 +1184,63 @@ export function SessionDetail() {
         </div>
       )}
 
-      {/* ── Preview / exercise-label sheet ────────────────────────────── */}
-      {pendingFile && (
+      {/* ── Preview / exercise-label sheet (up to 3 videos) ───────────────── */}
+      {pendingFiles.length > 0 && (
         <div className="fixed inset-0 z-50 flex items-end bg-black/40 backdrop-blur-sm">
-          <div className="glass-premium w-full rounded-t-2xl p-6 shadow-2xl">
-            <div className="mb-4 flex items-center gap-3">
-              <Video className="h-5 w-5 text-indigo-500" />
-              <div>
-                <p className="max-w-[240px] truncate text-sm font-semibold text-slate-900 dark:text-white">
-                  {pendingFile.name}
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Tamanho original: {fmtBytes(pendingFile.size / 1_048_576)}
-                </p>
-              </div>
-            </div>
+          <div className="glass-premium max-h-[85vh] w-full overflow-y-auto rounded-t-2xl p-6 shadow-2xl">
+            <p className="mb-4 text-sm font-bold text-slate-900 dark:text-white">
+              {pendingFiles.length === 1 ? '1 vídeo para enviar' : `${pendingFiles.length} vídeos para enviar`}
+            </p>
 
-            <div className="mb-4 flex flex-col gap-1.5">
-              <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                Exercício (opcional)
-              </label>
-              <select
-                value={selectedExercise}
-                onChange={(e) => setSelectedExercise(e.target.value)}
-                className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              >
-                <option value="">Selecione ou deixe em branco…</option>
-                {exerciseOptions.map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-                <option value="__custom__">Outro — descreva</option>
-              </select>
+            <div className="mb-4 flex flex-col gap-4">
+              {pendingFiles.map((file, i) => {
+                const tag = pendingTags[i] ?? { selected: '', custom: '' };
+                return (
+                  <div key={i} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                    <div className="mb-2 flex items-center gap-3">
+                      <Video className="h-5 w-5 flex-shrink-0 text-indigo-500" />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+                          {file.name}
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Tamanho original: {fmtBytes(file.size / 1_048_576)}
+                        </p>
+                      </div>
+                    </div>
 
-              {selectedExercise === '__custom__' && (
-                <input
-                  type="text"
-                  value={customExercise}
-                  onChange={(e) => setCustomExercise(e.target.value)}
-                  placeholder="Nome do exercício…"
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              )}
+                    <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      Exercício (opcional)
+                    </label>
+                    <select
+                      value={tag.selected}
+                      onChange={(e) => updateTag(i, { selected: e.target.value })}
+                      className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    >
+                      <option value="">Selecione ou deixe em branco…</option>
+                      {exerciseOptions.map((o) => (
+                        <option key={o} value={o}>{o}</option>
+                      ))}
+                      <option value="__custom__">Outro — descreva</option>
+                    </select>
+
+                    {tag.selected === '__custom__' && (
+                      <input
+                        type="text"
+                        value={tag.custom}
+                        onChange={(e) => updateTag(i, { custom: e.target.value })}
+                        placeholder="Nome do exercício…"
+                        className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             <div className="flex gap-3">
               <button
-                onClick={() => { setPendingFile(null); setSelectedExercise(''); setCustomExercise(''); }}
+                onClick={cancelPending}
                 className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
               >
                 Cancelar
