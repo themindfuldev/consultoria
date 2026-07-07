@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
+import { useToast } from '../../hooks/useToast';
 import { useVideoCompress } from '../../hooks/useVideoCompress';
 import { Layout } from '../../components/Layout';
 import { StarRating } from '../../components/student/StarRating';
@@ -145,6 +146,7 @@ export function SessionDetail() {
   const { cycleId, sessionId } = useParams<{ cycleId: string; sessionId: string }>();
   const { currentUser, userProfile, getAccessToken } = useAuth();
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const { compress } = useVideoCompress();
 
   const [cycle, setCycle] = useState<Cycle | null>(null);
@@ -686,9 +688,14 @@ export function SessionDetail() {
         setSession((prev) => prev ? { ...prev, hasVideos: true } : prev);
       }
 
-      // No confirmation banner — the videos appear in the list below via the
-      // real-time listener.
+      // The videos appear in the list below via the real-time listener; a
+      // transient toast confirms the upload succeeded.
       setUploadState(null);
+      showToast(
+        total > 1
+          ? 'Vídeos adicionados com sucesso!'
+          : 'Vídeo adicionado com sucesso!',
+      );
     } catch (err) {
       console.error('Falha no upload do vídeo:', err);
       setUploadState((s) =>

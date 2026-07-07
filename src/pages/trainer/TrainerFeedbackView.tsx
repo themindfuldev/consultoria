@@ -15,6 +15,7 @@ import {
 import { Dumbbell, NotebookText, Send, StickyNote, Video } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
+import { useToast } from '../../hooks/useToast';
 import { useVideoCompress } from '../../hooks/useVideoCompress';
 import { openWhatsApp } from '../../services/notifyService';
 import { setKey } from '../../services/sheetsService';
@@ -47,6 +48,7 @@ function fmtDate(ts: Timestamp): string {
 export function TrainerFeedbackView() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { currentUser, getAccessToken } = useAuth();
+  const { showToast } = useToast();
   const { compress } = useVideoCompress();
   const navigate = useNavigate();
 
@@ -224,6 +226,7 @@ export function TrainerFeedbackView() {
         return next;
       });
       setVideoUpload(null);
+      showToast('Vídeo adicionado com sucesso!');
     } catch (err) {
       console.error('Falha no upload do vídeo de feedback:', err);
       setVideoError('Não foi possível enviar o vídeo. Tente novamente.');

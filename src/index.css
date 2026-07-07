@@ -63,3 +63,14 @@
   background-size: 400% 400%;
   animation: gradient-bg 15s ease infinite;
 }
+
+/* ── Toast (transient confirmation messages) ──────────────────────────────── */
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-toast-in {
+  animation: toast-in 180ms ease-out;
+}
