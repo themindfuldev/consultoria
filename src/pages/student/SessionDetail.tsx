@@ -908,77 +908,6 @@ export function SessionDetail() {
         </div>
       )}
 
-      {/* ── Phase B: training in progress ────────────────────────────────── */}
-      {phase === 'training' && !readOnly && (
-        <div className="mb-5 flex flex-col gap-3">
-          <button
-            onClick={handleSaveOffline}
-            disabled={!parsedTab || savingOffline}
-            className="flex items-center justify-center gap-2 rounded-xl border border-amber-800 bg-amber-50 py-3 text-sm font-semibold text-amber-800 transition-all hover:bg-amber-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Save className="h-4 w-4" />
-            {hasOfflineSnapshot ? 'Atualizar treino offline' : 'Salvar para acesso offline'}
-          </button>
-
-          {!showFinishForm ? (
-            <button
-              onClick={() => setShowFinishForm(true)}
-              className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-95"
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              Finalizar treino
-            </button>
-          ) : (
-            <div className="glass-premium rounded-2xl p-4">
-              <p className="mb-3 text-sm font-bold text-slate-900 dark:text-white">
-                Preencha abaixo (FINAL DO TREINO)
-              </p>
-
-              <div className="mb-4 flex flex-col gap-1.5">
-                <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                  Qual o seu nível de ânimo?
-                </label>
-                <StarRating value={postEnergy} onChange={setPostEnergy} disabled={finishing} />
-              </div>
-
-              <div className="mb-4 flex flex-col gap-1.5">
-                <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                  Como está se sentindo?
-                </label>
-                <ChoiceButtons
-                  options={POST_FEELING_OPTIONS}
-                  value={postFeeling}
-                  onChange={setPostFeeling}
-                  disabled={finishing}
-                />
-              </div>
-
-              {finishError && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{finishError}</p>}
-
-              {cycle?.trainerEmail && (
-                <NotifyTrainerCheckbox checked={notify} onChange={toggleNotify} />
-              )}
-              <div className="flex gap-3">
-                <button
-                  onClick={handleFinishSession}
-                  disabled={!postEnergy || !postFeeling || finishing}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {finishing ? 'Concluindo…' : 'Concluir treino'}
-                </button>
-                <button
-                  onClick={() => setShowFinishForm(false)}
-                  disabled={finishing}
-                  className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                >
-                  Voltar
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Uploaded videos — shown whenever any exist, regardless of phase. */}
       {videos.length > 0 && (
         <div className="mb-5">
@@ -1155,7 +1084,7 @@ export function SessionDetail() {
                 className="flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-white py-3 text-sm font-semibold text-indigo-700 shadow-sm transition-all hover:bg-indigo-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-800 dark:bg-slate-800 dark:text-indigo-300 dark:hover:bg-slate-700"
               >
                 <PlusCircle className="h-4 w-4" />
-                Adicionar vídeo (até 3)
+                Adicionar vídeo
               </button>
 
               {phase === 'done' && cycle?.trainerEmail && videos.length > 0 && (
@@ -1171,6 +1100,79 @@ export function SessionDetail() {
             </div>
           )}
         </>
+      )}
+
+      {/* ── Phase B: training in progress — offline save + finish flow ─────
+          Rendered below the video actions so "Adicionar vídeo" sits above
+          "Salvar para acesso offline". */}
+      {phase === 'training' && !readOnly && (
+        <div className="mb-5 flex flex-col gap-3">
+          <button
+            onClick={handleSaveOffline}
+            disabled={!parsedTab || savingOffline}
+            className="flex items-center justify-center gap-2 rounded-xl border border-amber-800 bg-amber-50 py-3 text-sm font-semibold text-amber-800 transition-all hover:bg-amber-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Save className="h-4 w-4" />
+            {hasOfflineSnapshot ? 'Atualizar treino offline' : 'Salvar para acesso offline'}
+          </button>
+
+          {!showFinishForm ? (
+            <button
+              onClick={() => setShowFinishForm(true)}
+              className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-95"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              Finalizar treino
+            </button>
+          ) : (
+            <div className="glass-premium rounded-2xl p-4">
+              <p className="mb-3 text-sm font-bold text-slate-900 dark:text-white">
+                Preencha abaixo (FINAL DO TREINO)
+              </p>
+
+              <div className="mb-4 flex flex-col gap-1.5">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  Qual o seu nível de ânimo?
+                </label>
+                <StarRating value={postEnergy} onChange={setPostEnergy} disabled={finishing} />
+              </div>
+
+              <div className="mb-4 flex flex-col gap-1.5">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  Como está se sentindo?
+                </label>
+                <ChoiceButtons
+                  options={POST_FEELING_OPTIONS}
+                  value={postFeeling}
+                  onChange={setPostFeeling}
+                  disabled={finishing}
+                />
+              </div>
+
+              {finishError && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{finishError}</p>}
+
+              {cycle?.trainerEmail && (
+                <NotifyTrainerCheckbox checked={notify} onChange={toggleNotify} />
+              )}
+              <div className="flex gap-3">
+                <button
+                  onClick={handleFinishSession}
+                  disabled={!postEnergy || !postFeeling || finishing}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {finishing ? 'Concluindo…' : 'Concluir treino'}
+                </button>
+                <button
+                  onClick={() => setShowFinishForm(false)}
+                  disabled={finishing}
+                  className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                >
+                  Voltar
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* ── Feedback available: non-clickable banner + "Ver feedback" ────── */}
