@@ -1077,8 +1077,11 @@ export function SessionDetail() {
         </div>
       )}
 
-      {/* ── Phase C: completed — video feedback flow ─────────────────────── */}
-      {phase === 'done' && (
+      {/* ── Videos: upload flow ──────────────────────────────────────────────
+          Available while the session is still in progress (a session can stay
+          open for days) and after it's concluded. Only the "Solicitar feedback"
+          action below is gated to the concluded phase. */}
+      {(phase === 'training' || phase === 'done') && (
         <>
           {/* Active upload progress / error */}
           {uploadState && (
@@ -1155,7 +1158,7 @@ export function SessionDetail() {
                 Adicionar vídeo (até 3)
               </button>
 
-              {cycle?.trainerEmail && videos.length > 0 && (
+              {phase === 'done' && cycle?.trainerEmail && videos.length > 0 && (
                 <button
                   onClick={handleNotify}
                   disabled={notifying}
