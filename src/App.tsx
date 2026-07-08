@@ -18,6 +18,7 @@ import { AddCycle } from './pages/student/AddCycle';
 import { CycleDetail } from './pages/student/CycleDetail';
 import { SessionDetail } from './pages/student/SessionDetail';
 import { FeedbackView } from './pages/student/FeedbackView';
+import { PickerPoc } from './pages/dev/PickerPoc';
 
 export default function App() {
   const { loading } = useAuth();
@@ -144,6 +145,9 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+
+      {/* ── Dev-only: Picker + drive.file write proof-of-concept ───────── */}
+      {import.meta.env.DEV && <Route path="/dev/picker-poc" element={<PickerPoc />} />}
 
       {/* ── Fallback ───────────────────────────────────────────────────── */}
       <Route path="*" element={<Navigate to="/" replace />} />
