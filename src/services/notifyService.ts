@@ -19,15 +19,12 @@ import type { Trainer } from '../types';
  *
  *   {body}
  *
- *   Grato,
- *
  *   _-- Consultoria ({baseUrl})_
  */
 function formatMessage(subject: string, body: string): string {
   return (
     `*[Consultoria]*\n${subject}\n\n` +
     `${body}\n\n` +
-    `Grato,\n\n` +
     `_-- Consultoria (${window.location.origin})_`
   );
 }
