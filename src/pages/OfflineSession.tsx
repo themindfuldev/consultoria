@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { ArrowLeft, Moon, NotebookText, Save, Sun, Trash2 } from 'lucide-react';
+import { ArrowLeft, Clock, Moon, NotebookText, Save, Sun, Trash2 } from 'lucide-react';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { WorkoutPlan } from '../components/student/WorkoutPlan';
 import type { ExerciseEntry } from '../components/student/WorkoutPlan';
+import { formatDuration } from '../utils/duration';
 import type { ParsedSheetTab } from '../types';
 
 const EXPIRY_MS = 4 * 60 * 60 * 1000; // 4 hours
@@ -14,6 +15,8 @@ interface OfflineSnapshot {
   cycleTitle: string;
   tabName: string;
   dateLabel: string;
+  /** Session start time (ms) — powers the live duration. Absent on older snapshots. */
+  startedAt?: number | null;
   parsedTab: ParsedSheetTab;
   preWorkout: { energyLevel: number; feeling: string } | null;
   exerciseEntries: Record<string, ExerciseEntry>;
@@ -21,13 +24,6 @@ interface OfflineSnapshot {
 
 function offlineKey(sessionId: string): string {
   return `offline_session_${sessionId}`;
-}
-
-function fmtSavedAt(ms: number): string {
-  const d = new Date(ms);
-  const date = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-  const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  return `${date} às ${time}`;
 }
 
 interface LoadedSnapshot {
@@ -63,6 +59,16 @@ export function OfflineSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [{ state, snapshot }] = useState<LoadedSnapshot>(() => loadSnapshot(sessionId));
   const { isDark, toggle } = useDarkMode();
+
+  // Tick every minute so the duration keeps counting up while offline.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const durationLabel = snapshot?.startedAt
+    ? formatDuration(now - snapshot.startedAt)
+    : '';
 
   // Leave the standalone viewer via a full navigation back to the live session
   // page. The normal app + ProtectedRoute then land a logged-in student there
@@ -129,15 +135,22 @@ export function OfflineSession() {
       <div className="mx-auto max-w-2xl px-4 py-6">
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-amber-800 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
           <Save className="h-4 w-4 flex-shrink-0" />
-          Treino em andamento offline - salvo em {fmtSavedAt(snapshot.savedAt)}
+          Treino em andamento offline
         </div>
 
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
           {snapshot.tabName}
         </h1>
-        <p className="mb-5 mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
           {snapshot.cycleTitle} · {snapshot.dateLabel}
         </p>
+        {durationLabel && (
+          <p className="mb-5 mt-1 flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <Clock className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+            Duração: {durationLabel}
+          </p>
+        )}
+        {!durationLabel && <div className="mb-5" />}
 
         <p className="mb-2 flex items-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
           <NotebookText className="h-4 w-4" />

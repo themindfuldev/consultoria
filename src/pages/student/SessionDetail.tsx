@@ -60,6 +60,7 @@ import {
 } from '../../services/sheetsService';
 import { notifyTrainer } from '../../services/notifyService';
 import { clearOfflineSnapshots } from '../../utils/session';
+import { formatDuration } from '../../utils/duration';
 import type { Cycle, CycleWeek, ParsedSheetTab, Session, SessionVideo } from '../../types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -75,16 +76,6 @@ const POST_FEELING_OPTIONS = [
 
 function fmtBytes(mb: number): string {
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(mb * 1024).toFixed(0)} KB`;
-}
-
-/** Elapsed time between two timestamps as `HH:mm` (hours can exceed 24). */
-function fmtDuration(start: Timestamp, end: Timestamp): string {
-  const ms = end.toMillis() - start.toMillis();
-  if (ms <= 0) return '';
-  const totalMinutes = Math.floor(ms / 60_000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
 function todayStr(): string {
@@ -234,13 +225,9 @@ export function SessionDetail() {
     ? session.date.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
     : '';
 
-  // Duration of a concluded session (HH:mm), shown in the header. Requires both
-  // the start and finish stamps — legacy sessions missing `startedAt` show none.
-  const durationLabel = session?.status === 'completed'
-    && session.startedAt instanceof Timestamp
-    && session.finishedAt instanceof Timestamp
-    ? fmtDuration(session.startedAt, session.finishedAt)
-    : '';
+  // Ticks every minute so a live (in-progress) session's duration keeps counting
+  // up while the page is open. Only mounts the interval while training.
+  const [now, setNow] = useState(() => Date.now());
 
   // ── Phase derivation ────────────────────────────────────────────────────────
   // No new status enum needed — phase is derived from existing fields.
@@ -248,6 +235,23 @@ export function SessionDetail() {
     !session?.preWorkout ? 'pre'
     : session.status === 'completed' ? 'done'
     : 'training';
+
+  useEffect(() => {
+    if (phase !== 'training') return;
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, [phase]);
+
+  // Duration shown in the header (HH:mm). Starts counting once the session has a
+  // start stamp: live (now − startedAt) while training, frozen (finished −
+  // started) once concluded. Legacy sessions missing `startedAt` show none.
+  const durationLabel = session?.startedAt instanceof Timestamp
+    ? phase === 'done' && session.finishedAt instanceof Timestamp
+      ? formatDuration(session.finishedAt.toMillis() - session.startedAt.toMillis())
+      : phase === 'training'
+        ? formatDuration(now - session.startedAt.toMillis())
+        : ''
+    : '';
 
   // A skipped session opens read-only (Despular to revert) regardless of how far
   // it had progressed before being skipped.
@@ -409,7 +413,9 @@ export function SessionDetail() {
         date: Timestamp.fromDate(new Date(`${todayStr()}T00:00:00`)),
         startedAt: serverTimestamp(),
       });
-      setSession((prev) => (prev ? { ...prev, preWorkout, status: 'in_progress' } : prev));
+      // Optimistic local `startedAt` (the server value resolves a beat later) so
+      // the header duration starts counting immediately, without a reload.
+      setSession((prev) => (prev ? { ...prev, preWorkout, status: 'in_progress', startedAt: Timestamp.now() } : prev));
 
       if (notify) {
         notifyTrainer(
@@ -587,6 +593,8 @@ export function SessionDetail() {
         cycleTitle: cycle.title,
         tabName: session.tabName,
         dateLabel,
+        // Start time (ms) so the offline viewer can keep counting the duration.
+        startedAt: session.startedAt instanceof Timestamp ? session.startedAt.toMillis() : null,
         parsedTab,
         preWorkout: session.preWorkout ?? null,
         exerciseEntries,
