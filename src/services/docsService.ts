@@ -13,6 +13,7 @@
 
 import type { ExerciseFeedback, SessionVideo } from '../types';
 import { deleteDriveFile, makePublicViewer } from './driveService';
+import { linkifyToHtml } from '../utils/linkify';
 
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3';
 
@@ -61,7 +62,7 @@ export function buildWeeklyFeedbackHtml(
             .map((v, i) => `<li><a href="${esc(v.driveFileUrl)}">Vídeo ${i + 1}</a></li>`)
             .join('');
           const text = ef.textFeedback
-            ? esc(ef.textFeedback).replace(/\n/g, '<br>')
+            ? linkifyToHtml(ef.textFeedback)
             : '<em>Sem comentários.</em>';
           // Label + empty line before it, then a line break before the text.
           return `
@@ -73,7 +74,7 @@ export function buildWeeklyFeedbackHtml(
         .join('');
 
       const notes = sec.generalNotes
-        ? `<p></p><p><strong>Observações gerais:</strong><br>${esc(sec.generalNotes).replace(/\n/g, '<br>')}</p>`
+        ? `<p></p><p><strong>Observações gerais:</strong><br>${linkifyToHtml(sec.generalNotes)}</p>`
         : '';
 
       // (b) full horizontal line before each training session (incl. the first).

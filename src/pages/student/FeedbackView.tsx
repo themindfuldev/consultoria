@@ -18,7 +18,33 @@ import { Breadcrumbs } from '../../components/Breadcrumbs';
 import { buildWeeklyFeedbackHtml, replaceWeeklyDoc } from '../../services/docsService';
 import type { WeeklySection } from '../../services/docsService';
 import { getOrCreateWeekFolder } from '../../services/driveService';
+import { tokenizeLinks } from '../../utils/linkify';
 import type { Cycle, CycleWeek, Feedback, Session, SessionVideo, UserProfile } from '../../types';
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Renders plain feedback text with any URLs turned into clickable links. */
+function LinkifiedText({ text }: { text: string }) {
+  return (
+    <>
+      {tokenizeLinks(text).map((t, i) =>
+        t.type === 'url' ? (
+          <a
+            key={i}
+            href={t.value}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="break-words text-indigo-600 underline hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+          >
+            {t.value}
+          </a>
+        ) : (
+          <span key={i}>{t.value}</span>
+        ),
+      )}
+    </>
+  );
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -271,7 +297,7 @@ export function FeedbackView() {
               {/* Trainer text */}
               {ef.textFeedback ? (
                 <p className="mb-3 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">
-                  {ef.textFeedback}
+                  <LinkifiedText text={ef.textFeedback} />
                 </p>
               ) : (
                 <p className="mb-3 text-sm italic text-slate-400 dark:text-slate-500">
@@ -315,7 +341,7 @@ export function FeedbackView() {
               📝 Observações gerais
             </h3>
             <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">
-              {feedback.generalNotes}
+              <LinkifiedText text={feedback.generalNotes} />
             </p>
           </div>
         )}

@@ -43,6 +43,7 @@ function loadPickerApi(): Promise<void> {
 export function PickerPoc() {
   const { getAccessToken } = useAuth();
   const [log, setLog] = useState<string[]>([]);
+  const [directId, setDirectId] = useState('');
   const append = (m: string) => setLog((l) => [...l, `${new Date().toLocaleTimeString()}  ${m}`]);
 
   const apiKey = import.meta.env.VITE_GOOGLE_API_KEY as string | undefined;
@@ -75,7 +76,11 @@ export function PickerPoc() {
           const folder = data.docs?.[0];
           if (!folder) { append('No doc returned.'); return; }
           append(`Picked: "${folder.name}" (id ${folder.id}), owned-by-me=${folder.isOwnedByMe}`);
-          void tryCreateChild(token, folder.id);
+          setDirectId(folder.id);
+          void (async () => {
+            await tryCreateChild(token, folder.id, 'picked folder');
+            await testDescendant(token, folder.id);
+          })();
         })
         .build();
       picker.setVisible(true);
@@ -84,8 +89,9 @@ export function PickerPoc() {
     }
   };
 
-  const tryCreateChild = async (token: string, folderId: string) => {
-    append('Attempting files.create inside the picked folder…');
+  /** Returns the created file id, or null on failure. */
+  const tryCreateChild = async (token: string, folderId: string, label: string): Promise<string | null> => {
+    append(`Attempting files.create inside the ${label}…`);
     const boundary = 'poc_boundary';
     const body =
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
@@ -103,15 +109,49 @@ export function PickerPoc() {
       );
       const text = await res.text();
       if (res.ok) {
-        append(`✅ WRITE SUCCEEDED (${res.status}). drive.file + Picker CAN write to a shared folder.`);
-        append(text);
-      } else {
-        append(`❌ WRITE FAILED (${res.status}). drive.file + Picker CANNOT write here → fall back to trainer's own Drive.`);
-        append(text);
+        append(`✅ WRITE SUCCEEDED (${res.status}) in the ${label}.`);
+        return (JSON.parse(text) as { id: string }).id;
       }
+      append(`❌ WRITE FAILED (${res.status}) in the ${label}. ${text}`);
+      return null;
     } catch (e) {
       append(`❌ Network error: ${String(e)}`);
+      return null;
     }
+  };
+
+  // (c) Does picking the root grant writes to a DESCENDANT subfolder?
+  const testDescendant = async (token: string, parentId: string) => {
+    append('— Descendant test — creating a subfolder inside the picked folder…');
+    try {
+      const res = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: `poc-sub-${Date.now()}`, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }),
+      });
+      const text = await res.text();
+      if (!res.ok) { append(`❌ Subfolder create failed (${res.status}). ${text}`); return; }
+      const subId = (JSON.parse(text) as { id: string }).id;
+      append(`✅ Subfolder created (${subId}). Now writing a file INSIDE the subfolder…`);
+      const fileId = await tryCreateChild(token, subId, 'descendant subfolder');
+      append(fileId
+        ? '✅ (c) Descendant writes WORK → we can drop feedback into the exact session subfolder.'
+        : '❌ (c) Descendant writes FAIL → must write directly into the picked folder.');
+    } catch (e) {
+      append(`❌ ${String(e)}`);
+    }
+  };
+
+  // (b) Does the grant survive without re-picking? Reload the page first, then
+  // paste the folder id from a previous run and click — a fresh token, no Picker.
+  const directWrite = async () => {
+    if (!directId.trim()) { append('Paste a folder id first.'); return; }
+    append('— Persistence test — fresh token, NO Picker…');
+    const token = await getAccessToken();
+    const id = await tryCreateChild(token, directId.trim(), 'folder id (no picker)');
+    append(id
+      ? '✅ (b) Grant PERSISTS → trainer picks once ever; later uploads need no Picker.'
+      : '❌ (b) Grant did NOT persist → trainer must re-pick each session.');
   };
 
   return (
@@ -127,6 +167,25 @@ export function PickerPoc() {
       >
         Run test
       </button>
+
+      <div className="mb-4 rounded-xl border border-slate-200 p-3">
+        <p className="mb-2 text-xs font-semibold text-slate-700">
+          Persistence test (b): after a Run, <strong>reload this page</strong>, then paste the picked
+          folder id here and click — it uses a fresh token and skips the Picker.
+        </p>
+        <div className="flex gap-2">
+          <input
+            value={directId}
+            onChange={(e) => setDirectId(e.target.value)}
+            placeholder="folder id from a previous run"
+            className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+          />
+          <button onClick={directWrite} className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white">
+            Direct write
+          </button>
+        </div>
+      </div>
+
       <pre className="whitespace-pre-wrap rounded-xl bg-slate-900 p-4 text-xs text-slate-100">
         {log.length ? log.join('\n') : 'Log output will appear here…'}
       </pre>
