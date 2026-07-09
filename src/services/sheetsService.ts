@@ -261,15 +261,20 @@ function _parseSetGroup(
       ? '--'
       : /^\d+$/.test(trimmedReps) ? parseInt(trimmedReps, 10) : trimmedReps;
 
+  // Same trap as `reps`: `parseFloat` swallows anything after the leading
+  // number ("60-70" → 60, "8 cada" → 8), so only coerce when the whole cell is
+  // a plain number — otherwise keep the full text the trainer typed.
+  const trimmedLoad = (rawLoad ?? '').trim();
   const load: number | string =
-    rawLoad === 'ESCOLHER' ? 'ESCOLHER' :
-    rawLoad === '--' || !rawLoad ? '--' :
-    (parseFloat(rawLoad) || rawLoad);
+    trimmedLoad === 'ESCOLHER' ? 'ESCOLHER' :
+    trimmedLoad === '--' || !trimmedLoad ? '--' :
+    /^\d+(\.\d+)?$/.test(trimmedLoad) ? parseFloat(trimmedLoad) : trimmedLoad;
 
+  const trimmedRpe = (rawRpe ?? '').trim();
   const rpe: number | string =
-    rawRpe === 'PREENCHER' ? 'PREENCHER' :
-    rawRpe === '--' || !rawRpe ? '--' :
-    (parseFloat(rawRpe) || rawRpe);
+    trimmedRpe === 'PREENCHER' ? 'PREENCHER' :
+    trimmedRpe === '--' || !trimmedRpe ? '--' :
+    /^\d+(\.\d+)?$/.test(trimmedRpe) ? parseFloat(trimmedRpe) : trimmedRpe;
 
   return {
     sets,
