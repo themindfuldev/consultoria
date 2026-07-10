@@ -1196,10 +1196,15 @@ export function SessionDetail() {
               {cycle?.trainerEmail && (
                 <NotifyTrainerCheckbox checked={notify} onChange={toggleNotify} />
               )}
+              {!!uploadState && uploadState.phase !== 'error' && (
+                <p className="mb-2 text-xs text-amber-700 dark:text-amber-400">
+                  Aguarde o envio do vídeo terminar para concluir o treino.
+                </p>
+              )}
               <div className="flex gap-3">
                 <button
                   onClick={handleFinishSession}
-                  disabled={!postEnergy || !postFeeling || finishing}
+                  disabled={!postEnergy || !postFeeling || finishing || (!!uploadState && uploadState.phase !== 'error')}
                   className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {finishing ? 'Concluindo…' : 'Concluir treino'}
