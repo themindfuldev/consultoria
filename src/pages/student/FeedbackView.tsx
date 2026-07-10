@@ -64,6 +64,9 @@ export function FeedbackView() {
   const [creatingDoc, setCreatingDoc] = useState(false);
   const [docUrl, setDocUrl] = useState<string | null>(null);
   const [docError, setDocError] = useState('');
+  // Only true once the doc has been (re)generated in THIS visit — until then we
+  // show "Atualizar", swapping to "Abrir" only after a successful update.
+  const [docReady, setDocReady] = useState(false);
 
   // ── Load everything ─────────────────────────────────────────────────────────
 
@@ -86,6 +89,9 @@ export function FeedbackView() {
         const fb = feedbackSnap.data() as Feedback;
         setSession(s);
         setFeedback(fb);
+        // Persisted flag: once this session generated the weekly doc, the button
+        // is spent — show "Abrir" instead of an actionable "Atualizar".
+        if (s.weeklyFeedbackDocGenerated) setDocReady(true);
 
         // Pre-set the weekly doc URL if this week already has one.
         getDocs(query(
@@ -205,6 +211,14 @@ export function FeedbackView() {
       }
 
       setDocUrl(created.webViewLink);
+      setDocReady(true);
+
+      // Register on the session that the weekly feedback doc was generated
+      // successfully (best-effort — the doc already exists regardless).
+      if (sessionId) {
+        updateDoc(doc(db, 'sessions', sessionId), { weeklyFeedbackDocGenerated: true })
+          .catch(() => {/* non-fatal status flag */});
+      }
     } catch (err) {
       console.error(err);
       setDocError(`Não foi possível criar o documento: ${String(err)}`);
@@ -346,36 +360,37 @@ export function FeedbackView() {
           </div>
         )}
 
-        {/* ── Actions (bottom) ─────────────────────────────────────────── */}
+        {/* ── Actions (bottom) ─────────────────────────────────────────────
+            Once this session has generated the weekly doc (`docReady`, backed
+            by the persisted `weeklyFeedbackDocGenerated` flag), the "Atualizar"
+            action is spent — it becomes an "Abrir" link. This makes the update
+            clickable only once per session. */}
         <div className="flex flex-col gap-2 pb-2">
-          {docUrl && (
+          {docReady ? (
             <a
-              href={docUrl}
+              href={docUrl ?? undefined}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95"
+              aria-disabled={!docUrl}
+              onClick={(e) => { if (!docUrl) e.preventDefault(); }}
+              className={`flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95 ${
+                docUrl ? '' : 'cursor-not-allowed opacity-60'
+              }`}
             >
               <FileText className="h-4 w-4" />
               Abrir feedbacks da semana
               <ExternalLink className="ml-auto h-3.5 w-3.5" />
             </a>
+          ) : (
+            <button
+              onClick={handleCreateDoc}
+              disabled={creatingDoc}
+              className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <FileText className="h-4 w-4" />
+              {creatingDoc ? 'Gerando documento…' : 'Atualizar feedbacks da semana'}
+            </button>
           )}
-          <button
-            onClick={handleCreateDoc}
-            disabled={creatingDoc}
-            className={`flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 ${
-              docUrl
-                ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
-                : 'bg-blue-600 text-white shadow-sm hover:bg-blue-700'
-            }`}
-          >
-            <FileText className="h-4 w-4" />
-            {creatingDoc
-              ? 'Gerando documento…'
-              : docUrl
-                ? 'Atualizar documento da semana'
-                : 'Salvar feedbacks da semana no Google Docs'}
-          </button>
           {docError && (
             <p className="text-xs text-red-600 dark:text-red-400">{docError}</p>
           )}

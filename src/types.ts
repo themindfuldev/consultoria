@@ -172,6 +172,8 @@ export interface Session {
   videosNotifiedAt?: Timestamp;
   /** Denormalised from the feedback doc — avoids N+1 reads on trainer dashboard. */
   feedbackStatus?: 'none' | 'draft' | 'complete';
+  /** True once the student successfully generated/updated the weekly feedback Google Doc from this session. */
+  weeklyFeedbackDocGenerated?: boolean;
   /**
    * Snapshot of the parsed training tab, saved by the student side so the
    * trainer (who has no Google token to read the sheet) can render the same
