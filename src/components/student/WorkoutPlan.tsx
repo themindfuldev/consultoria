@@ -81,10 +81,11 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                     </a>
                   )}
                 </p>
-                {/* Fixed columns so every exercise lines up. Row 1: sets×reps ·
-                    carga · descanso · (spacer) · RPE — RPE pinned to the right.
-                    Row 2: Observações, from the carga column to the full width. */}
-                <div className="grid grid-cols-[3rem_5.5rem_4.5rem_minmax(0,1fr)_5rem] items-center gap-x-3 gap-y-1.5 text-xs">
+                {/* Columns size to their content so nothing overlaps. Row 1:
+                    sets×reps · carga on the left, a flexible spacer, then
+                    descanso · RPE pinned to the right. Row 2: Observações spans
+                    the full width with a small left indent. */}
+                <div className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto_4rem] items-center gap-x-3 gap-y-1.5 text-xs">
                   {ex.setGroups.map((sg, i) => {
                     const key = setKey(ex.exerciseName, i, sg.rowNumber);
                     const entry: ExerciseEntry = entries?.[key] ?? { observations: '', rpe: '' };
@@ -97,11 +98,11 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                     const showObs = editable || !!entry.observations || !!sg.observations;
                     return (
                       <Fragment key={i}>
-                        {/* Row 1 */}
+                        {/* Row 1: sets×reps · carga */}
                         <span className="whitespace-nowrap font-medium text-slate-700 dark:text-slate-300">
                           {sg.sets}×{sg.reps}
                         </span>
-                        <span className="flex items-center gap-1 overflow-hidden whitespace-nowrap text-slate-500 dark:text-slate-400">
+                        <span className="flex items-center gap-1 whitespace-nowrap text-slate-500 dark:text-slate-400">
                           {hasLoad && (
                             <>
                               <Weight className="h-3.5 w-3.5 flex-shrink-0" />
@@ -109,6 +110,9 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                             </>
                           )}
                         </span>
+                        {/* flexible spacer */}
+                        <span />
+                        {/* descanso (duration) · RPE — pinned to the right */}
                         <span className="flex items-center gap-1 whitespace-nowrap text-slate-500 dark:text-slate-400">
                           {rest && (
                             <>
@@ -117,7 +121,6 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                             </>
                           )}
                         </span>
-                        <span />
                         <span className="justify-self-end">
                           {editable ? (
                             <RpeSelect
@@ -131,26 +134,23 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
                           ) : null}
                         </span>
 
-                        {/* Row 2 — Observações: empty col 1, then spans cols 2–5 */}
+                        {/* Row 2 — Observações: full width, small left indent */}
                         {showObs && (
-                          <>
-                            <span />
-                            <div className="col-span-4 mb-2 min-w-0">
-                              {editable ? (
-                                <input
-                                  type="text"
-                                  value={entry.observations}
-                                  onChange={(e) => onEntryChange!(key, { ...entry, observations: e.target.value })}
-                                  placeholder="Observações…"
-                                  className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
-                                />
-                              ) : (
-                                <span className="block w-full rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200">
-                                  {entry.observations || sg.observations}
-                                </span>
-                              )}
-                            </div>
-                          </>
+                          <div className="col-span-full ml-4 mb-2 min-w-0">
+                            {editable ? (
+                              <input
+                                type="text"
+                                value={entry.observations}
+                                onChange={(e) => onEntryChange!(key, { ...entry, observations: e.target.value })}
+                                placeholder="Observações…"
+                                className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
+                              />
+                            ) : (
+                              <span className="block w-full rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200">
+                                {entry.observations || sg.observations}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </Fragment>
                     );
@@ -207,7 +207,7 @@ function RpeSelect({
     : 'border-slate-200 bg-white text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500';
 
   return (
-    <div ref={ref} className="relative w-full sm:w-20">
+    <div ref={ref} className="relative w-full">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
