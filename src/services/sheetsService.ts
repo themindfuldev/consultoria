@@ -33,6 +33,20 @@ const IGNORED_TABS = new Set(['Template', 'Dados', 'Celular']);
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+/** The spreadsheet file's title (its name in Google Drive). */
+export async function getSpreadsheetTitle(
+  spreadsheetId: string,
+  token: string,
+): Promise<string> {
+  const res = await fetch(
+    `${SHEETS_API}/${spreadsheetId}?fields=properties.title`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) throw new Error(`Sheets API ${res.status}: ${await res.text()}`);
+  const data = (await res.json()) as { properties?: { title?: string } };
+  return data.properties?.title ?? '';
+}
+
 /**
  * Returns the list of training-session tab names from the spreadsheet,
  * excluding ignored utility tabs.

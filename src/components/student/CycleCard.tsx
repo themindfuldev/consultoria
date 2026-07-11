@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { doc, deleteField, getDoc, Timestamp, updateDoc } from 'firebase/firestore';
-import { Archive, ClipboardList, ExternalLink, Mail, MoreVertical, RotateCcw } from 'lucide-react';
+import { Archive, ClipboardList, ExternalLink, Mail, MoreVertical, RotateCcw, User } from 'lucide-react';
 import { db } from '../../firebase';
 import { useCycleWeek } from '../../hooks/useCycleWeek';
 import { Tooltip } from '../Tooltip';
@@ -112,8 +112,9 @@ export function CycleCard({ cycle, onError }: CycleCardProps) {
                   </>
                 }
               >
-                <span className="cursor-pointer border-b border-dotted border-slate-400 text-xs text-slate-500 dark:border-slate-500 dark:text-slate-400">
-                  Treinador: {cycle.trainerName}
+                <span className="inline-flex cursor-pointer items-center gap-1 border-b border-dotted border-slate-400 text-xs text-slate-500 dark:border-slate-500 dark:text-slate-400">
+                  <User className="h-3.5 w-3.5 flex-shrink-0" />
+                  {cycle.trainerName}
                 </span>
               </Tooltip>
             </div>

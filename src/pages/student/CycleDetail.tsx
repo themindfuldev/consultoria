@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { collection, doc, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore';
-import { ExternalLink, Mail, Pencil, UserPen } from 'lucide-react';
+import { FileSpreadsheet, Mail, Pencil, User } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
+import { getSpreadsheetTitle } from '../../services/sheetsService';
 import { Layout } from '../../components/Layout';
 import { useCycleWeek } from '../../hooks/useCycleWeek';
 import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
@@ -30,8 +31,9 @@ export function CycleDetail() {
   // Re-authorize Google on open if the (daily-expiring) token is stale.
   useGoogleTokenWarmup();
 
-  const { currentUser } = useAuth();
+  const { currentUser, getAccessToken } = useAuth();
   const [cycle, setCycle] = useState<Cycle | null>(null);
+  const [sheetTitle, setSheetTitle] = useState('');
   const [trainerPhone, setTrainerPhone] = useState('');
   const cycleWeek = useCycleWeek(cycle);
 
@@ -56,6 +58,15 @@ export function CycleDetail() {
       if (snap.exists()) setCycle(snap.data() as Cycle);
     });
   }, [cycleId]);
+
+  // Fetch the spreadsheet's file name for the header link (best-effort).
+  useEffect(() => {
+    if (!cycle?.googleSheetId) return;
+    getAccessToken()
+      .then((token) => getSpreadsheetTitle(cycle.googleSheetId, token))
+      .then((t) => { if (t) setSheetTitle(t); })
+      .catch(() => {/* non-fatal — falls back to a generic label */});
+  }, [cycle?.googleSheetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch the trainer's WhatsApp for the trainer-name tooltip.
   useEffect(() => {
@@ -154,9 +165,36 @@ export function CycleDetail() {
             </span>
           )}
         </div>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="mt-2 flex flex-col gap-1.5">
+          {/* Spreadsheet: sheet icon + file name (link) + edit */}
+          <div className="flex min-w-0 items-center gap-1.5">
+            {cycle?.googleSheetUrl ? (
+              <a
+                href={cycle.googleSheetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+              >
+                <FileSpreadsheet className="h-4 w-4 flex-shrink-0" />
+                <span className="truncate">{sheetTitle || 'Planilha do treino'}</span>
+              </a>
+            ) : (
+              <span className="flex items-center gap-1.5 text-sm text-slate-400 dark:text-slate-500">
+                <FileSpreadsheet className="h-4 w-4 flex-shrink-0" /> Planilha do treino
+              </span>
+            )}
+            <button
+              onClick={() => { setShowReplaceSheet(true); setReplaceUrl(cycle?.googleSheetUrl ?? ''); setReplaceError(''); }}
+              aria-label="Trocar planilha"
+              className="flex-shrink-0 rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-slate-800 dark:hover:text-indigo-400"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {/* Trainer: name (link + tooltip) + switch */}
           {cycle?.trainerName ? (
-            <span className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5">
               <Tooltip
                 content={
                   <>
@@ -173,8 +211,9 @@ export function CycleDetail() {
                   </>
                 }
               >
-                <span className="cursor-pointer border-b border-dotted border-slate-400 text-sm text-slate-500 dark:border-slate-500 dark:text-slate-400">
-                  Treinador: {cycle.trainerName}
+                <span className="flex cursor-pointer items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+                  <User className="h-3.5 w-3.5 flex-shrink-0" />
+                  {cycle.trainerName}
                 </span>
               </Tooltip>
               <button
@@ -182,36 +221,17 @@ export function CycleDetail() {
                 aria-label="Trocar treinador"
                 className="flex-shrink-0 rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-slate-800 dark:hover:text-indigo-400"
               >
-                <UserPen className="h-3.5 w-3.5" />
+                <Pencil className="h-3.5 w-3.5" />
               </button>
-            </span>
+            </div>
           ) : (
             <button
               onClick={openTrainerModal}
-              className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+              className="flex w-fit items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400"
             >
-              <UserPen className="h-3.5 w-3.5 flex-shrink-0" /> Selecionar treinador
+              <User className="h-3.5 w-3.5 flex-shrink-0" /> Selecionar treinador
             </button>
           )}
-
-          <div className="flex flex-shrink-0 items-center gap-2">
-            {cycle?.googleSheetUrl && (
-              <a
-                href={cycle.googleSheetUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-              >
-                <ExternalLink className="h-3.5 w-3.5" /> Abrir planilha
-              </a>
-            )}
-            <button
-              onClick={() => { setShowReplaceSheet(true); setReplaceUrl(cycle?.googleSheetUrl ?? ''); setReplaceError(''); }}
-              className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              <Pencil className="h-3.5 w-3.5" /> Trocar planilha
-            </button>
-          </div>
         </div>
       </div>
 
