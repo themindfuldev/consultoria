@@ -166,6 +166,13 @@ export interface Session {
    * `rpe` is omitted when the student leaves it blank (never coerced to 0).
    */
   exerciseEntries?: Record<string, { observations: string; rpe?: number }>;
+  /**
+   * Set keys (same keying as `exerciseEntries`) the student ticked as completed
+   * while training. Drives the session timeline's dashed→solid connectors.
+   * Independent per set — students may skip exercises, so no fill-along-the-way.
+   * Firestore-only (not written back to the sheet).
+   */
+  completedSets?: Record<string, true>;
   driveFolderId?: string;
   driveFolderUrl?: string;
   hasVideos: boolean;

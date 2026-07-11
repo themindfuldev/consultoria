@@ -1,8 +1,8 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
-import { ChevronDown, Clock, Weight } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, ChevronDown, Clock, SquareChevronRight, Weight } from 'lucide-react';
 import { setKey } from '../../services/sheetsService';
 import { YouTubeIcon } from '../icons/YouTubeIcon';
-import type { ParsedSheetTab, PlannedExercise } from '../../types';
+import type { ParsedSheetTab, PlannedExercise, PlannedSetGroup } from '../../types';
 
 // ── Display helpers ───────────────────────────────────────────────────────────
 
@@ -30,18 +30,52 @@ interface WorkoutPlanProps {
    */
   entries?: Record<string, ExerciseEntry>;
   onEntryChange?: (setKey: string, entry: ExerciseEntry) => void;
+  /**
+   * Set keys the student has ticked as completed. Drives the timeline: the
+   * connector segment leading **into** a set's node is solid when that set is
+   * completed, dashed otherwise. Always rendered (read-only when
+   * `onToggleSet` is omitted).
+   */
+  completedSets?: Record<string, true>;
+  /** Toggles a single set's completion. Presence makes the nodes interactive. */
+  onToggleSet?: (setKey: string, next: boolean) => void;
+}
+
+// A "row" in the flattened timeline: a section label, an exercise name, or a
+// single set (the only kind that carries a node/checkbox).
+type TimelineRow =
+  | { kind: 'section'; id: string; name: string }
+  | { kind: 'exercise'; id: string; name: string; videoUrl?: string }
+  | {
+      kind: 'set';
+      id: string;
+      ex: PlannedExercise;
+      sg: PlannedSetGroup;
+      index: number;
+      setK: string;
+      done: boolean;
+    };
+
+/** Vertical connector classes for a segment. `null` → no line (nothing below). */
+function connectorClasses(done: boolean | null): string | null {
+  if (done === null) return null;
+  return done
+    ? 'border-solid border-emerald-500'
+    : 'border-dashed border-slate-300 dark:border-slate-600';
 }
 
 /**
- * Read-only rendering of a parsed training tab, grouped by section — the
- * student's "reading mode" reference while training. Purely presentational:
- * no Firebase/auth dependencies, so it's reusable from the offline static
- * snapshot page as well as the live session page.
+ * Read-only rendering of a parsed training tab as a GitHub-style vertical
+ * timeline: one continuous rail on the left, a circular checkbox node per set,
+ * and the set details in a card to the right. Purely presentational — no
+ * Firebase/auth dependencies, so it's reusable from the offline static snapshot
+ * page as well as the live session page.
  */
-export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
+export function WorkoutPlan({ tab, entries, onEntryChange, completedSets, onToggleSet }: WorkoutPlanProps) {
   const editable = !!onEntryChange;
+  const interactive = !!onToggleSet;
 
-  // Group exercises by section
+  // Group exercises by section (insertion order preserved).
   const sections = new Map<string, PlannedExercise[]>();
   for (const ex of tab.exercises) {
     const list = sections.get(ex.section) ?? [];
@@ -57,110 +91,172 @@ export function WorkoutPlan({ tab, entries, onEntryChange }: WorkoutPlanProps) {
     );
   }
 
-  return (
-    <div className="flex flex-col gap-3">
-      {[...sections.entries()].map(([sectionName, exercises]) => (
-        <div key={sectionName} className="rounded-xl border border-slate-200 bg-white/60 dark:border-slate-700 dark:bg-slate-800/60">
-          <p className="rounded-t-xl bg-slate-100/80 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-slate-600 dark:bg-slate-700/80 dark:text-slate-300">
-            {sectionName}
-          </p>
-          <div className="divide-y divide-slate-100 dark:divide-slate-700">
-            {exercises.map((ex) => (
-              <div key={ex.exerciseName} className="px-3 py-2.5">
-                <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-white">
-                  {ex.exerciseName}
-                  {ex.videoUrl && (
-                    <a
-                      href={ex.videoUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label="Ver vídeo do exercício"
-                      className="flex-shrink-0 text-red-600 transition-colors hover:text-red-700 dark:text-red-500 dark:hover:text-red-400"
-                    >
-                      <YouTubeIcon className="h-4 w-4" />
-                    </a>
-                  )}
-                </p>
-                {/* Columns size to their content so nothing overlaps. Row 1:
-                    sets×reps · carga on the left, a flexible spacer, then
-                    descanso · RPE pinned to the right. Row 2: Observações spans
-                    the full width with a small left indent. */}
-                <div className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto_4rem] items-center gap-x-3 gap-y-1.5 text-xs">
-                  {ex.setGroups.map((sg, i) => {
-                    const key = setKey(ex.exerciseName, i, sg.rowNumber);
-                    const entry: ExerciseEntry = entries?.[key] ?? { observations: '', rpe: '' };
-                    // RPE chip: student's value when set, otherwise the planned one.
-                    const displayRpe = typeof entry.rpe === 'number'
-                      ? entry.rpe
-                      : (typeof sg.rpe === 'number' ? sg.rpe : null);
-                    const hasLoad = sg.load !== '--' && sg.load !== '' && sg.load != null;
-                    const rest = sg.rest ? sg.rest.replace(/[()]/g, '').trim() : '';
-                    const showObs = editable || !!entry.observations || !!sg.observations;
-                    return (
-                      <Fragment key={i}>
-                        {/* Row 1: sets×reps · carga */}
-                        <span className="whitespace-nowrap font-medium text-slate-700 dark:text-slate-300">
-                          {sg.sets}×{sg.reps}
-                        </span>
-                        <span className="flex items-center gap-1 whitespace-nowrap text-slate-500 dark:text-slate-400">
-                          {hasLoad && (
-                            <>
-                              <Weight className="h-3.5 w-3.5 flex-shrink-0" />
-                              {fmtLoadValue(sg.load)}
-                            </>
-                          )}
-                        </span>
-                        {/* flexible spacer */}
-                        <span />
-                        {/* descanso (duration) · RPE — pinned to the right */}
-                        <span className="flex items-center gap-1 whitespace-nowrap text-slate-500 dark:text-slate-400">
-                          {rest && (
-                            <>
-                              <Clock className="h-3.5 w-3.5 flex-shrink-0" />
-                              {rest}
-                            </>
-                          )}
-                        </span>
-                        <span className="justify-self-end">
-                          {editable ? (
-                            <RpeSelect
-                              value={entry.rpe}
-                              onChange={(rpe) => onEntryChange!(key, { ...entry, rpe })}
-                            />
-                          ) : displayRpe != null ? (
-                            <span className={`inline-block rounded-lg px-2 py-0.5 font-bold ${rpeChipClasses(displayRpe)}`}>
-                              RPE {displayRpe}
-                            </span>
-                          ) : null}
-                        </span>
+  // Flatten into ordered timeline rows.
+  const rows: TimelineRow[] = [];
+  for (const [sectionName, exercises] of sections) {
+    rows.push({ kind: 'section', id: `s:${sectionName}`, name: sectionName });
+    for (const ex of exercises) {
+      rows.push({ kind: 'exercise', id: `e:${sectionName}:${ex.exerciseName}`, name: ex.exerciseName, videoUrl: ex.videoUrl });
+      ex.setGroups.forEach((sg, index) => {
+        const setK = setKey(ex.exerciseName, index, sg.rowNumber);
+        rows.push({ kind: 'set', id: `set:${setK}:${index}`, ex, sg, index, setK, done: !!completedSets?.[setK] });
+      });
+    }
+  }
 
-                        {/* Row 2 — Observações: full width, small left indent */}
-                        {showObs && (
-                          <div className="col-span-full ml-4 mb-2 min-w-0">
-                            {editable ? (
-                              <input
-                                type="text"
-                                value={entry.observations}
-                                onChange={(e) => onEntryChange!(key, { ...entry, observations: e.target.value })}
-                                placeholder="Observações…"
-                                className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
-                              />
-                            ) : (
-                              <span className="block w-full rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200">
-                                {entry.observations || sg.observations}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </div>
+  // For each row, the completion of the nearest set row *after* it — this drives
+  // the connector below headers and the bottom half of a set's rail.
+  const nextSetDone: (boolean | null)[] = new Array(rows.length).fill(null);
+  {
+    let carry: boolean | null = null;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      nextSetDone[i] = carry;
+      if (rows[i].kind === 'set') carry = (rows[i] as Extract<TimelineRow, { kind: 'set' }>).done;
+    }
+  }
+
+  return (
+    <div className="flex flex-col">
+      {rows.map((row, i) => {
+        // ── Section / exercise header: rail passes straight through ──────────
+        if (row.kind !== 'set') {
+          const through = connectorClasses(nextSetDone[i]);
+          return (
+            <div key={row.id} className="flex gap-3">
+              <div className="relative w-6 flex-none">
+                {through && (
+                  <span className={`absolute left-1/2 top-0 bottom-0 -translate-x-1/2 border-l-2 ${through}`} />
+                )}
               </div>
-            ))}
+              <div className={`min-w-0 flex-1 ${row.kind === 'section' ? 'pb-1 pt-3' : 'pt-2'}`}>
+                {row.kind === 'section' ? (
+                  <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    <SquareChevronRight className="h-4 w-4 flex-shrink-0" />
+                    {row.name}
+                  </p>
+                ) : (
+                  <p className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-white">
+                    {row.name}
+                    {row.videoUrl && (
+                      <a
+                        href={row.videoUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label="Ver vídeo do exercício"
+                        className="flex-shrink-0 text-red-600 transition-colors hover:text-red-700 dark:text-red-500 dark:hover:text-red-400"
+                      >
+                        <YouTubeIcon className="h-4 w-4" />
+                      </a>
+                    )}
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        // ── Set row: node + rail (dashed/solid), then the set card ───────────
+        const { sg, setK, done } = row;
+        const entry: ExerciseEntry = entries?.[setK] ?? { observations: '', rpe: '' };
+        const displayRpe = typeof entry.rpe === 'number'
+          ? entry.rpe
+          : (typeof sg.rpe === 'number' ? sg.rpe : null);
+        const hasLoad = sg.load !== '--' && sg.load !== '' && sg.load != null;
+        const rest = sg.rest ? sg.rest.replace(/[()]/g, '').trim() : '';
+        const showObs = editable || !!entry.observations || !!sg.observations;
+
+        const topHalf = connectorClasses(done);
+        const bottomHalf = connectorClasses(nextSetDone[i]);
+        const nodeStyle = done
+          ? 'border-emerald-500 bg-emerald-500 text-white'
+          : 'border-slate-300 bg-white dark:border-slate-500 dark:bg-slate-800';
+
+        return (
+          <div key={row.id} className="flex gap-3">
+            {/* Rail: top half (this set), bottom half (next set), node centered at 18px */}
+            <div className="relative w-6 flex-none">
+              {topHalf && (
+                <span className={`absolute left-1/2 top-0 h-[18px] -translate-x-1/2 border-l-2 ${topHalf}`} />
+              )}
+              {bottomHalf && (
+                <span className={`absolute left-1/2 top-[18px] bottom-0 -translate-x-1/2 border-l-2 ${bottomHalf}`} />
+              )}
+              {interactive ? (
+                <button
+                  type="button"
+                  onClick={() => onToggleSet!(setK, !done)}
+                  aria-pressed={done}
+                  aria-label={done ? 'Marcar série como não concluída' : 'Marcar série como concluída'}
+                  className={`absolute left-1/2 top-[18px] z-10 flex h-[18px] w-[18px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 transition-colors before:absolute before:-inset-2 before:content-[''] ${nodeStyle}`}
+                >
+                  {done && <Check className="h-3 w-3" strokeWidth={3} />}
+                </button>
+              ) : (
+                <span
+                  className={`absolute left-1/2 top-[18px] z-10 flex h-[18px] w-[18px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 ${nodeStyle}`}
+                >
+                  {done && <Check className="h-3 w-3" strokeWidth={3} />}
+                </span>
+              )}
+            </div>
+
+            {/* Set card */}
+            <div className="min-w-0 flex-1 pb-2.5">
+              <div className="rounded-xl border border-slate-200 bg-white/60 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/60">
+                <div className="flex items-center gap-3 text-xs">
+                  <span className="whitespace-nowrap font-medium text-slate-700 dark:text-slate-300">
+                    {sg.sets}×{sg.reps}
+                  </span>
+                  {hasLoad && (
+                    <span className="flex items-center gap-1 whitespace-nowrap text-slate-500 dark:text-slate-400">
+                      <Weight className="h-3.5 w-3.5 flex-shrink-0" />
+                      {fmtLoadValue(sg.load)}
+                    </span>
+                  )}
+                  <span className="flex-1" />
+                  {rest && (
+                    <span className="flex items-center gap-1 whitespace-nowrap text-slate-500 dark:text-slate-400">
+                      <Clock className="h-3.5 w-3.5 flex-shrink-0" />
+                      {rest}
+                    </span>
+                  )}
+                  <span className="flex w-16 flex-none justify-end">
+                    {editable ? (
+                      <RpeSelect
+                        value={entry.rpe}
+                        onChange={(rpe) => onEntryChange!(setK, { ...entry, rpe })}
+                      />
+                    ) : displayRpe != null ? (
+                      <span className={`inline-block rounded-lg px-2 py-0.5 font-bold ${rpeChipClasses(displayRpe)}`}>
+                        RPE {displayRpe}
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+
+                {/* Observações: full width */}
+                {showObs && (
+                  <div className="mt-2 min-w-0">
+                    {editable ? (
+                      <input
+                        type="text"
+                        value={entry.observations}
+                        onChange={(e) => onEntryChange!(setK, { ...entry, observations: e.target.value })}
+                        placeholder="Observações…"
+                        className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
+                      />
+                    ) : (
+                      <span className="block w-full rounded-lg bg-slate-100 px-2 py-1 text-xs text-slate-700 dark:bg-slate-700/60 dark:text-slate-200">
+                        {entry.observations || sg.observations}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

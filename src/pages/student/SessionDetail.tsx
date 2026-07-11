@@ -211,6 +211,12 @@ export function SessionDetail() {
   const entriesInitialized = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Per-set completion (timeline checkboxes) — persisted immediately per toggle.
+  const [completedSets, setCompletedSets] = useState<Record<string, true>>({});
+  useEffect(() => {
+    setCompletedSets(session?.completedSets ?? {});
+  }, [session?.completedSets]);
+
   // Finish-session / post-workout form state
   const [showFinishForm, setShowFinishForm] = useState(false);
   const [postEnergy, setPostEnergy] = useState<1 | 2 | 3 | 4 | 5 | null>(null);
@@ -511,6 +517,25 @@ export function SessionDetail() {
     });
   };
 
+  // ── Toggle a set's completion (timeline checkbox) ───────────────────────────
+  // Independent per set (students may skip exercises) — only the clicked set
+  // changes. Persisted immediately, since it's a discrete action.
+
+  const handleToggleSet = (key: string, next: boolean) => {
+    setCompletedSets((prev) => {
+      const updated = { ...prev };
+      if (next) updated[key] = true;
+      else delete updated[key];
+
+      if (sessionId) {
+        updateDoc(doc(db, 'sessions', sessionId), {
+          [`completedSets.${key}`]: next ? true : deleteField(),
+        }).catch(() => {/* best-effort; local state stays authoritative */});
+      }
+      return updated;
+    });
+  };
+
   // ── Finish session ──────────────────────────────────────────────────────────
 
   const handleFinishSession = async () => {
@@ -602,6 +627,7 @@ export function SessionDetail() {
         parsedTab,
         preWorkout: session.preWorkout ?? null,
         exerciseEntries,
+        completedSets,
       };
       localStorage.setItem(offlineKey(session.id), JSON.stringify(snapshot));
       window.location.href = `/offline/${session.id}`;
@@ -882,6 +908,8 @@ export function SessionDetail() {
             // filled in.
             entries={phase === 'pre' ? undefined : exerciseEntries}
             onEntryChange={phase === 'training' && !readOnly ? handleEntryChange : undefined}
+            completedSets={completedSets}
+            onToggleSet={phase === 'training' && !readOnly ? handleToggleSet : undefined}
           />
         ) : !parsedTabLoading ? (
           <p className="text-xs text-slate-400 dark:text-slate-500 px-1">
@@ -966,8 +994,9 @@ export function SessionDetail() {
       {/* Uploaded videos — shown whenever any exist, regardless of phase. */}
       {videos.length > 0 && (
         <div className="mb-5">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            🎬 Vídeos enviados ({videos.length})
+          <p className="mb-2 flex items-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            <Video className="h-4 w-4" />
+            <span className="ml-2">Vídeos enviados ({videos.length})</span>
           </p>
           <ul className="flex flex-col gap-2">
             {videos.map((v) => (

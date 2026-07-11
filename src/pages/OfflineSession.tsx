@@ -20,6 +20,8 @@ interface OfflineSnapshot {
   parsedTab: ParsedSheetTab;
   preWorkout: { energyLevel: number; feeling: string } | null;
   exerciseEntries: Record<string, ExerciseEntry>;
+  /** Per-set completion at snapshot time. Absent on older snapshots. */
+  completedSets?: Record<string, true>;
 }
 
 function offlineKey(sessionId: string): string {
@@ -156,7 +158,7 @@ export function OfflineSession() {
           <NotebookText className="h-4 w-4" />
           <span className="ml-2">Plano de treino</span>
         </p>
-        <WorkoutPlan tab={snapshot.parsedTab} />
+        <WorkoutPlan tab={snapshot.parsedTab} completedSets={snapshot.completedSets} />
 
         <button
           onClick={handleDiscard}
