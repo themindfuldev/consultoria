@@ -232,20 +232,6 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
             )}
           </div>
         </div>
-
-        {/* Start the next week after concluding the current one (inline). The
-            initial "cycle not started" case renders its button full-width at
-            the bottom instead — see below. */}
-        {canStartNextWeek && currentWeek && (
-          <button
-            onClick={startWeek}
-            disabled={startingWeek}
-            className="flex flex-shrink-0 items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Play className="h-3.5 w-3.5" />
-            {startingWeek ? 'Iniciando…' : `Começar Semana ${nextWeekNumber}`}
-          </button>
-        )}
       </div>
 
       {currentWeek && !currentWeekConcluded && !canConcludeWeek && (
@@ -320,6 +306,18 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
               {concludingWeek ? 'Concluindo…' : `Concluir Semana ${currentWeek!.weekNumber}`}
+            </button>
+          )}
+
+          {/* Start the next week after the current one is concluded */}
+          {canStartNextWeek && (
+            <button
+              onClick={startWeek}
+              disabled={startingWeek}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Play className="h-3.5 w-3.5" />
+              {startingWeek ? 'Iniciando…' : 'Começar próxima semana'}
             </button>
           )}
         </div>
