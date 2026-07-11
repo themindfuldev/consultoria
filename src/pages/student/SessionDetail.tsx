@@ -238,6 +238,10 @@ export function SessionDetail() {
 
   useEffect(() => {
     if (phase !== 'training') return;
+    // Refresh immediately on entering `training` — otherwise `now` is still the
+    // (earlier) mount time when the session is started, making now − startedAt
+    // negative so the duration renders empty until the first minute ticks.
+    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(id);
   }, [phase]);
