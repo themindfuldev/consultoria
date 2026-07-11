@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { collection, deleteField, doc, getDoc, getDocs, query, Timestamp, updateDoc, where } from 'firebase/firestore';
+import { collection, deleteField, doc, getDoc, getDocs, query, Timestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { Archive, ChevronDown, FileSpreadsheet, Mail, MoreVertical, Pencil, RotateCcw, User } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
@@ -14,7 +14,7 @@ import { WhatsAppIcon } from '../../components/icons/WhatsAppIcon';
 import { Tooltip } from '../../components/Tooltip';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
 import { MODALITIES } from '../../types';
-import type { Cycle, Modality, StudentTrainer, Trainer } from '../../types';
+import type { Cycle, Modality, Session, StudentTrainer, Trainer } from '../../types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -22,6 +22,29 @@ import type { Cycle, Modality, StudentTrainer, Trainer } from '../../types';
 function extractSheetId(url: string): string | null {
   const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
   return match ? match[1] : null;
+}
+
+/**
+ * Backfills the cycle's `trainerEmail` onto every session, session-exercise and
+ * video already created for it. These docs copy the trainer at creation time,
+ * so when a student assigns or changes a cycle's trainer partway through, the
+ * pre-existing docs must be updated too — otherwise the trainer can neither see
+ * them on their panel (dashboard query filters on `trainerEmail`) nor open them
+ * (Firestore rules gate trainer reads on the doc's own `trainerEmail`).
+ *
+ * `trainerEmail` is `''` when the trainer is being removed. Idempotent, so it is
+ * safe to re-run (e.g. to heal a cycle whose trainer was set before this fix).
+ */
+async function propagateTrainerToCycleDocs(cycleId: string, trainerEmail: string): Promise<void> {
+  for (const col of ['sessions', 'session_exercises', 'videos'] as const) {
+    const snap = await getDocs(query(collection(db, col), where('cycleId', '==', cycleId)));
+    // Firestore caps a batch at 500 writes — chunk well under it.
+    for (let i = 0; i < snap.docs.length; i += 400) {
+      const batch = writeBatch(db);
+      for (const d of snap.docs.slice(i, i + 400)) batch.update(d.ref, { trainerEmail });
+      await batch.commit();
+    }
+  }
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -86,6 +109,25 @@ export function CycleDetail() {
       .then((t) => { if (t) setSheetTitle(t); })
       .catch(() => {/* non-fatal — falls back to a generic label */});
   }, [cycle?.googleSheetId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // One-time repair for cycles whose trainer was assigned/changed before the
+  // save-time backfill existed: pre-existing sessions/exercises/videos keep the
+  // old (or empty) `trainerEmail`, so the trainer can't see them. Owner-only
+  // (only the student may write these docs), and it writes only when an actual
+  // mismatch is found — so it's a one-shot heal, not a rewrite on every open.
+  const healedRef = useRef(false);
+  useEffect(() => {
+    if (healedRef.current || !cycle || !currentUser || currentUser.uid !== cycle.studentUid) return;
+    healedRef.current = true;
+    const want = cycle.trainerEmail ?? '';
+    (async () => {
+      try {
+        const snap = await getDocs(query(collection(db, 'sessions'), where('cycleId', '==', cycle.id)));
+        const mismatch = snap.docs.some((d) => ((d.data() as Session).trainerEmail ?? '') !== want);
+        if (mismatch) await propagateTrainerToCycleDocs(cycle.id, want);
+      } catch {/* non-fatal — best-effort repair */}
+    })();
+  }, [cycle, currentUser]);
 
   // Fetch the trainer's WhatsApp for the trainer-name tooltip.
   useEffect(() => {
@@ -152,6 +194,8 @@ export function CycleDetail() {
     setSavingTrainer(true);
     try {
       await updateDoc(doc(db, 'cycles', cycle.id), { trainerEmail: opt.email, trainerName: opt.name });
+      // Propagate to sessions/exercises/videos already created for this cycle.
+      await propagateTrainerToCycleDocs(cycle.id, opt.email);
       setCycle((prev) => (prev ? { ...prev, trainerEmail: opt.email, trainerName: opt.name } : prev));
       setShowTrainerModal(false);
     } catch {
@@ -198,6 +242,8 @@ export function CycleDetail() {
         trainerEmail: trainer ? trainer.email : deleteField(),
         trainerName: trainer ? trainer.name : deleteField(),
       });
+      // Propagate the (possibly changed/removed) trainer to already-created docs.
+      await propagateTrainerToCycleDocs(cycle.id, trainer ? trainer.email : '');
       setCycle((prev) => prev ? {
         ...prev,
         title,
