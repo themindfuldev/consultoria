@@ -2,21 +2,38 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   GoogleAuthProvider,
-  isSignInWithEmailLink,
   onAuthStateChanged,
-  sendSignInLinkToEmail,
-  signInWithEmailLink,
   signInWithPopup,
   signOut as fbSignOut,
 } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDocs,
+  limit,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import type { Trainer, UserProfile } from '../types';
 import { AuthContext } from './AuthContextDef';
+import type { Mode } from './AuthContextDef';
 
-/** localStorage key holding the email a trainer requested a sign-in link for. */
-const TRAINER_EMAIL_KEY = 'trainerEmailForSignIn';
+/** localStorage key (per-uid) persisting the account's last chosen mode. */
+const modeKey = (uid: string) => `authMode:${uid}`;
+
+function readStoredMode(uid: string): Mode | null {
+  try {
+    const v = localStorage.getItem(modeKey(uid));
+    return v === 'student' || v === 'trainer' ? v : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * localStorage key caching the Google OAuth access token (+ expiry). Persisting
@@ -50,11 +67,6 @@ function clearStoredToken(): void {
   try { localStorage.removeItem(GOOGLE_TOKEN_KEY); } catch { /* non-fatal */ }
 }
 
-/** True when the current Firebase user signed in via an email link (a trainer). */
-function isEmailLinkUser(user: User | null): boolean {
-  return !!user?.providerData.some((p) => p.providerId === 'password');
-}
-
 /**
  * Resolves once the async-loaded GIS script (`accounts.google.com/gsi/client`)
  * has exposed its OAuth2 API, or rejects after `timeoutMs`. Avoids the race
@@ -81,20 +93,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [trainerProfile, setTrainerProfile] = useState<Trainer | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  // The capability the user is currently acting as. Null until resolved on
+  // sign-in (see the mode-resolution effect); reset to null on sign-out.
+  const [mode, setModeState] = useState<Mode | null>(null);
 
   // uid the current `userProfile` snapshot corresponds to — set only inside
   // the listener callbacks below (never synchronously in the effect body), so
   // "profile loading" can be derived as `currentUser.uid !== profileUid`.
   const [profileUid, setProfileUid] = useState<string | null>(null);
-  // Same pattern for the trainer record — resolved by email, not uid.
+  // Same pattern for the trainer record — resolved by email.
   const [trainerResolvedUid, setTrainerResolvedUid] = useState<string | null>(null);
-
-  // True (synchronously, on first render) while an email sign-in link is being
-  // completed — keeps the app on a loading gate so a ProtectedRoute doesn't
-  // redirect the still-signed-out trainer away before sign-in finishes.
-  const [completingLink, setCompletingLink] = useState(() =>
-    isSignInWithEmailLink(auth, window.location.href),
-  );
+  // uid the resolved `mode` corresponds to — lets us keep the app on the loading
+  // gate until the mode is settled for the current account.
+  const [modeUid, setModeUid] = useState<string | null>(null);
 
   // GIS Token Client — all state kept in refs so it never triggers re-renders.
   // The access token / expiry hydrate from sessionStorage so a refresh reuses a
@@ -121,18 +132,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfileUid(null);
         setTrainerProfile(null);
         setTrainerResolvedUid(null);
+        setModeState(null);
+        setModeUid(null);
         // Clear any cached token when the user signs out.
         accessTokenRef.current = null;
         tokenExpiryRef.current = 0;
         tokenClientRef.current = null;
         inFlightRef.current = null;
         clearStoredToken();
-      } else if (!isEmailLinkUser(user)) {
-        // A Google (student) user has no trainer record — resolve immediately so
-        // trainer loading never blocks. The dedicated effect below handles the
-        // email-link (trainer) case via a Firestore listener.
-        setTrainerProfile(null);
-        setTrainerResolvedUid(user.uid);
       }
     });
     return unsubscribe;
@@ -158,13 +165,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, [currentUser]);
 
-  // ── Trainer record listener (email-link users) ─────────────────────────────
+  // ── Trainer record listener (keyed by verified Google email) ───────────────
 
   useEffect(() => {
-    // Only email-link users are trainers; Google (student) users are resolved
-    // synchronously in the auth listener above, so skip them here.
-    if (!currentUser || !isEmailLinkUser(currentUser) || !currentUser.email) return;
+    if (!currentUser) return;
     const uid = currentUser.uid;
+    // No email → cannot be a trainer. `trainerProfile` is already null (reset on
+    // sign-out) and `trainerLoading` ignores email-less users, so nothing to do.
+    if (!currentUser.email) return;
     const emailKey = currentUser.email.toLowerCase();
     const ref = doc(db, 'trainers', emailKey);
     const unsubscribe = onSnapshot(
@@ -173,7 +181,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (snap.exists()) {
           const t = snap.data() as Trainer;
           setTrainerProfile(t);
-          // First sign-in confirms the account (email ownership is now proven).
+          // First Google sign-in as this trainer confirms the account — the
+          // verified Google email proves ownership of the invited address.
           if (t.status === 'pending') {
             updateDoc(ref, { status: 'confirmed', confirmedAt: serverTimestamp() })
               .catch(() => {/* best-effort — a stale status is non-fatal */});
@@ -191,35 +200,77 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, [currentUser]);
 
-  // ── Complete an email sign-in link, if the URL is one ──────────────────────
+  // ── Resolve the active mode once both profiles have settled ────────────────
 
   useEffect(() => {
-    if (!isSignInWithEmailLink(auth, window.location.href)) return;
-    let email = window.localStorage.getItem(TRAINER_EMAIL_KEY);
-    if (!email) {
-      // Opened on a different device/browser than the request — ask for it.
-      email = window.prompt('Confirme seu e-mail para entrar:') ?? '';
-    }
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+    const email = currentUser.email;
+    // Wait until both the student profile and the trainer record are resolved
+    // for this uid — the default depends on both. Email-less users can't be
+    // trainers, so their trainer record never "resolves" a uid; skip that gate.
+    if (profileUid !== uid) return;
+    if (email && trainerResolvedUid !== uid) return;
+    // Already resolved for this account.
+    if (modeUid === uid) return;
 
-    const run = email
-      ? signInWithEmailLink(auth, email, window.location.href).then(() => {
-          window.localStorage.removeItem(TRAINER_EMAIL_KEY);
-          // Drop the oobCode query params, keeping the path → the trainer lands
-          // back on the feedback/dashboard page they originally opened.
-          const url = new URL(window.location.href);
-          window.history.replaceState({}, '', url.pathname + url.hash);
-        })
-      : Promise.resolve();
-
-    run
-      .catch(() => {/* invalid/expired link — the login page will let them retry */})
-      .finally(() => setCompletingLink(false));
-  }, []);
+    // Resolution runs asynchronously (a cycle lookup is needed in one branch),
+    // so every setState below lands in a promise callback rather than the
+    // synchronous effect body.
+    let cancelled = false;
+    (async () => {
+      let resolved: Mode;
+      if (!trainerProfile) {
+        // Not invited as a trainer → always student.
+        resolved = 'student';
+      } else {
+        // Returning eligible user → honour their remembered choice; otherwise
+        // default to student only if they are an established student (profile +
+        // at least one cycle), else trainer. Persist whichever we resolve.
+        const stored = readStoredMode(uid);
+        if (stored) {
+          resolved = stored;
+        } else {
+          let hasCycle = false;
+          if (userProfile) {
+            try {
+              const snap = await getDocs(
+                query(collection(db, 'cycles'), where('studentUid', '==', uid), limit(1)),
+              );
+              hasCycle = !snap.empty;
+            } catch {
+              hasCycle = false;
+            }
+          }
+          resolved = userProfile && hasCycle ? 'student' : 'trainer';
+          try { localStorage.setItem(modeKey(uid), resolved); } catch { /* non-fatal */ }
+        }
+      }
+      if (cancelled) return;
+      setModeState(resolved);
+      setModeUid(uid);
+    })();
+    return () => { cancelled = true; };
+  }, [currentUser, profileUid, trainerResolvedUid, trainerProfile, userProfile, modeUid]);
 
   // True between picking up a new `currentUser` and the first profile snapshot
   // for that uid arriving — derived so no synchronous setState is needed above.
   const profileLoading = !!currentUser && profileUid !== currentUser.uid;
-  const trainerLoading = !!currentUser && trainerResolvedUid !== currentUser.uid;
+  // Email-less users can't be trainers, so their trainer record never resolves a
+  // uid — don't let that keep the app on the loading gate.
+  const trainerLoading =
+    !!currentUser && !!currentUser.email && trainerResolvedUid !== currentUser.uid;
+  // True until the active mode is resolved for the current account.
+  const modeLoading = !!currentUser && modeUid !== currentUser.uid;
+
+  // Switch the active capability, persisting the choice for this account.
+  const setMode = useCallback((next: Mode) => {
+    const uid = currentUser?.uid;
+    if (!uid) return;
+    try { localStorage.setItem(modeKey(uid), next); } catch { /* non-fatal */ }
+    setModeState(next);
+    setModeUid(uid);
+  }, [currentUser]);
 
   // ── Auth actions ────────────────────────────────────────────────────────────
 
@@ -245,13 +296,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       storeToken(accessTokenRef.current, tokenExpiryRef.current);
     }
     // Auth state propagates via onAuthStateChanged — no manual state update needed.
-  }, []);
-
-  const sendTrainerMagicLink = useCallback(async (email: string, nextPath: string) => {
-    const cleanEmail = email.trim().toLowerCase();
-    const url = `${window.location.origin}${nextPath}`;
-    window.localStorage.setItem(TRAINER_EMAIL_KEY, cleanEmail);
-    await sendSignInLinkToEmail(auth, cleanEmail, { url, handleCodeInApp: true });
   }, []);
 
   const logOut = useCallback(async () => {
@@ -326,7 +370,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return inFlightRef.current;
   }, []);
 
-  const loading = authLoading || profileLoading || trainerLoading || completingLink;
+  const loading = authLoading || profileLoading || trainerLoading || modeLoading;
 
   return (
     <AuthContext.Provider
@@ -334,9 +378,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         currentUser,
         userProfile,
         trainerProfile,
+        trainerEligible: !!trainerProfile,
+        mode,
+        setMode,
         loading,
         signInWithGoogle,
-        sendTrainerMagicLink,
         logOut,
         getAccessToken,
         isGoogleTokenValid,

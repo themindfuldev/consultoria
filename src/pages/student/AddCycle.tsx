@@ -155,7 +155,7 @@ export function AddCycle() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <Layout title="Adicionar Programa" backTo="/student">
+    <Layout title="Adicionar programa" backTo="/student">
       <div className="mb-6">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">Novo programa de treino</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">

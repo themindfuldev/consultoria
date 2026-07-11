@@ -260,7 +260,7 @@ export function FeedbackView() {
     : '';
 
   return (
-    <Layout title="Meu Feedback">
+    <Layout title="Meu feedback">
       <Breadcrumbs
         items={[
           { label: 'Meus Treinos', to: '/student' },

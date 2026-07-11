@@ -1,19 +1,22 @@
+import { useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { LoadingSpinner } from './LoadingSpinner';
 
 interface ProtectedRouteProps {
   children: ReactNode;
   /**
-   * Which kind of user this route is for:
-   * - 'student' → Google-authenticated student with a `users` profile
-   * - 'trainer' → email-link-authenticated trainer with a `trainers` record
+   * Which section this route belongs to:
+   * - 'student'  → requires a `users` profile (the Google account is a student)
+   * - 'trainer'  → requires trainer eligibility (invited as a trainer by email)
+   * A single account may hold both capabilities and switch between them; the
+   * active `mode` is kept in sync with whichever section is being viewed.
    */
   role?: 'trainer' | 'student';
   /**
-   * When false, the route is accessible to a signed-in student without a
-   * Firestore profile yet. Used for the /onboarding route. Defaults to true.
+   * When false, the route is accessible to a signed-in user without a Firestore
+   * student profile yet. Used for the /onboarding route. Defaults to true.
    */
   requireProfile?: boolean;
 }
@@ -23,36 +26,36 @@ export function ProtectedRoute({
   role,
   requireProfile = true,
 }: ProtectedRouteProps) {
-  const { currentUser, userProfile, trainerProfile, loading } = useAuth();
-  const location = useLocation();
+  const { currentUser, userProfile, trainerEligible, mode, setMode, loading } = useAuth();
+
+  // Keep the active mode in sync with the section being viewed, so the header
+  // menu and the post-login default landing reflect where the user actually is.
+  // Only switches when the user has the capability for this route — the guards
+  // below handle users who don't.
+  useEffect(() => {
+    if (loading || !currentUser || !role) return;
+    if (role === 'trainer' && trainerEligible && mode !== 'trainer') setMode('trainer');
+    if (role === 'student' && mode !== 'student') setMode('student');
+  }, [loading, currentUser, role, trainerEligible, mode, setMode]);
 
   if (loading) return <LoadingSpinner />;
 
+  // Every protected route requires a signed-in account.
+  if (!currentUser) return <Navigate to="/" replace />;
+
   // ── Trainer routes ──────────────────────────────────────────────────────────
   if (role === 'trainer') {
-    if (!currentUser) {
-      // Bounce to the trainer login, remembering where they were headed so the
-      // magic link returns them here.
-      const next = encodeURIComponent(location.pathname + location.search);
-      return <Navigate to={`/trainer/login?next=${next}`} replace />;
-    }
-    // Signed-in student landing on a trainer route → send them home.
-    if (userProfile) return <Navigate to="/student" replace />;
+    // Not invited as a trainer → nothing to see here; send to the student side.
+    if (!trainerEligible) return <Navigate to="/student" replace />;
     return <>{children}</>;
   }
 
-  // ── Student routes ────────────────────────────────────────────────────────────
+  // ── Student routes (and the profile-less /onboarding route) ─────────────────
 
-  // Must be authenticated.
-  if (!currentUser) return <Navigate to="/" replace />;
-
-  // A trainer (email-link) landing on a student route → send to their dashboard.
-  if (trainerProfile && !userProfile) return <Navigate to="/trainer" replace />;
-
-  // If requireProfile, must have a Firestore student profile.
+  // If a student profile is required, bounce to onboarding until it exists.
   if (requireProfile && !userProfile) return <Navigate to="/onboarding" replace />;
 
-  // If the user has a profile but is on /onboarding, redirect them home.
+  // Already onboarded but sitting on /onboarding → send home.
   if (!requireProfile && userProfile) return <Navigate to="/student" replace />;
 
   return <>{children}</>;

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CircleUser, ClipboardList, LayoutDashboard, LogOut, Moon, Sun, Users } from 'lucide-react';
+import { ArrowLeft, ArrowLeftRight, CircleUser, ClipboardList, LayoutDashboard, LogOut, Moon, Sun, Users } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useActiveSession } from '../hooks/useActiveSession';
 import { useDarkMode } from '../hooks/useDarkMode';
@@ -28,7 +28,7 @@ const MAX_WIDTH_CLASSES: Record<NonNullable<LayoutProps['maxWidth']>, string> = 
 };
 
 export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProps) {
-  const { currentUser, userProfile, trainerProfile, logOut } = useAuth();
+  const { currentUser, userProfile, trainerEligible, mode, setMode, logOut } = useAuth();
   const { isDark, toggle } = useDarkMode();
   const navigate = useNavigate();
   const location = useLocation();
@@ -41,18 +41,38 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
 
   const mw = MAX_WIDTH_CLASSES[maxWidth];
 
-  // Account dropdown items — differ by role.
-  const menuItems: AvatarMenuItem[] = trainerProfile
+  // Account dropdown items — differ by the active mode.
+  const menuItems: AvatarMenuItem[] = mode === 'trainer'
     ? [
         { label: 'Meu perfil', to: '/trainer/profile', icon: CircleUser },
-        { label: 'Meus alunos', to: '/trainer/students', icon: Users },
         { label: 'Painel do treinador', to: '/trainer', icon: LayoutDashboard },
+        { label: 'Meus alunos', to: '/trainer/students', icon: Users },
       ]
     : [
         { label: 'Meu perfil', to: '/student/profile', icon: CircleUser },
+        { label: 'Meus treinos', to: '/student', icon: ClipboardList },
         { label: 'Meus treinadores', to: '/student/trainers', icon: Users },
-        { label: 'Meu treino', to: '/student', icon: ClipboardList },
       ];
+
+  // Accounts invited as a trainer can switch modes — a divided item at the
+  // bottom that jumps to the other section (and remembers the choice).
+  if (trainerEligible) {
+    menuItems.push(
+      mode === 'trainer'
+        ? {
+            label: 'Modo Aluno',
+            icon: ArrowLeftRight,
+            divider: true,
+            onClick: () => { setMode('student'); navigate('/student'); },
+          }
+        : {
+            label: 'Modo Treinador',
+            icon: ArrowLeftRight,
+            divider: true,
+            onClick: () => { setMode('trainer'); navigate('/trainer'); },
+          },
+    );
+  }
 
   const activeSessionHref = activeSession
     ? `/student/cycles/${activeSession.cycleId}/sessions/${activeSession.id}`
@@ -61,7 +81,7 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
   // An offline snapshot available in localStorage → an "Offline" action that
   // opens the static viewer in a new tab. Students only — never surface a
   // leftover snapshot to a trainer.
-  const offline = userProfile ? findCurrentOfflineSession() : null;
+  const offline = mode === 'student' && userProfile ? findCurrentOfflineSession() : null;
 
   // "Treino em andamento" bar: shown while a workout is open (live session
   // and/or a saved offline snapshot), but hidden while viewing that very

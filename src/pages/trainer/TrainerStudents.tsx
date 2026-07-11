@@ -39,7 +39,7 @@ export function TrainerStudents() {
   }, [trainerEmail]);
 
   return (
-    <Layout title="Meus Alunos" backTo="/trainer">
+    <Layout title="Meus alunos" backTo="/trainer">
       <div className="mb-6">
         <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 dark:text-white">
           <Users className="h-5 w-5 text-indigo-500" />

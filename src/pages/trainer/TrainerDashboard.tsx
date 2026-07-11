@@ -151,7 +151,7 @@ export function TrainerDashboard() {
 
   if (!trainerProfile && !loading) {
     return (
-      <Layout title="Painel do Treinador">
+      <Layout title="Painel do treinador">
         <div className="rounded-2xl border-2 border-dashed border-slate-200 px-4 py-12 text-center dark:border-slate-700">
           <p className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">
             Conta de treinador não encontrada.
@@ -167,7 +167,7 @@ export function TrainerDashboard() {
   const isCurrentWeek = weekStart.getTime() === startOfWeek(new Date()).getTime();
 
   return (
-    <Layout title="Painel do Treinador">
+    <Layout title="Painel do treinador">
       {/* Greeting */}
       <div className="mb-5">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">

@@ -3,10 +3,10 @@ import type { Timestamp } from 'firebase/firestore';
 // ── User ──────────────────────────────────────────────────────────────────────
 
 /**
- * A student's account. Students are the only Google-authenticated users — the
- * app needs their Google token to read/write their Sheet and Drive. Trainers
- * are NOT students and have no `users` doc (they authenticate via email link;
- * see `Trainer`).
+ * A student's account, keyed by Firebase uid. Everyone authenticates with
+ * Google; a `users` doc is created at onboarding when the account first acts as
+ * a student (the app needs the Google token to read/write their Sheet & Drive).
+ * The same account may additionally be a trainer — see `Trainer`.
  */
 export interface UserProfile {
   uid: string;
@@ -24,9 +24,10 @@ export interface UserProfile {
 
 /**
  * A trainer record. Registered by a student (email + WhatsApp), globally unique
- * by email. Trainers don't use Google — they authenticate by clicking a Firebase
- * email sign-in link, which verifies email ownership. The first time a trainer
- * signs in, their `status` flips `pending → confirmed`.
+ * by email. Its existence is what makes a Google account "trainer-eligible".
+ * The invited person confirms by signing in with Google using that same email
+ * (the verified Google email proves ownership), which flips `status`
+ * `pending → confirmed` on first sign-in.
  */
 export interface Trainer {
   /** Document ID = trainer's email, lowercased (stable, unique). */

@@ -15,6 +15,6 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 
-// Send Firebase Auth emails (e.g. the trainer sign-in link) using Firebase's
-// built-in Brazilian Portuguese templates — the app is PT-BR only.
+// Localize the Google sign-in flow and any Firebase Auth emails to Brazilian
+// Portuguese — the app is PT-BR only.
 auth.languageCode = 'pt-BR';

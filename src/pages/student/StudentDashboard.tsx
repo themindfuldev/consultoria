@@ -75,7 +75,7 @@ export function StudentDashboard() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <Layout title="Meus Treinos">
+    <Layout title="Meus treinos">
       {/* Greeting */}
       <div className="mb-2">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">

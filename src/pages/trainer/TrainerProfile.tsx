@@ -39,7 +39,7 @@ export function TrainerProfile() {
   };
 
   return (
-    <Layout title="Meu Perfil" backTo="/trainer">
+    <Layout title="Meu perfil" backTo="/trainer">
       <Breadcrumbs
         items={[
           { label: 'Painel do Treinador', to: '/trainer' },

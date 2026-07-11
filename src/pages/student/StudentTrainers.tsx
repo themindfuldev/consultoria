@@ -133,11 +133,10 @@ export function StudentTrainers() {
   };
 
   const sendConfirmation = (whatsappPhone: string, trainerEmail: string) => {
-    const url = `${window.location.origin}/trainer/login`;
+    const url = window.location.origin;
     const body =
       `Olá! Cadastrei você no Consultoria para feedbacks de treinos.\n` +
-      `Confirme seu acesso clicando neste link: ${url}\n` +
-      `E-mail: ${trainerEmail}`;
+      `Acesse ${url} e entre com o Google usando este e-mail: ${trainerEmail}`;
     openWhatsApp(whatsappPhone, 'Confirmação de cadastro', body);
   };
 
@@ -153,7 +152,7 @@ export function StudentTrainers() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <Layout title="Meus Treinadores" backTo="/student">
+    <Layout title="Meus treinadores" backTo="/student">
       <div className="mb-6">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
           Meus treinadores
@@ -296,8 +295,8 @@ export function StudentTrainers() {
             {saving ? 'Cadastrando…' : 'Cadastrar e enviar confirmação'}
           </button>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Enviaremos um link de confirmação pelo WhatsApp. O treinador confirma
-            entrando com o e-mail cadastrado.
+            Enviaremos um convite pelo WhatsApp. O treinador confirma entrando com
+            o Google usando o e-mail cadastrado.
           </p>
         </div>
       </div>

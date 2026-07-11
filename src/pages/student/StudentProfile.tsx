@@ -38,7 +38,7 @@ export function StudentProfile() {
   };
 
   return (
-    <Layout title="Meu Perfil" backTo="/student">
+    <Layout title="Meu perfil" backTo="/student">
       <Breadcrumbs
         items={[
           { label: 'Meus Treinos', to: '/student' },

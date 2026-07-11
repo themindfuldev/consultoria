@@ -2,23 +2,31 @@ import { createContext } from 'react';
 import type { User } from 'firebase/auth';
 import type { Trainer, UserProfile } from '../types';
 
+/** Which capability the signed-in user is currently acting as. */
+export type Mode = 'student' | 'trainer';
+
 export interface AuthContextValue {
   currentUser: User | null;
-  /** The signed-in student's profile (Google auth). Null for trainers/guests. */
+  /** The signed-in user's student profile (`users/{uid}`). Null until onboarding. */
   userProfile: UserProfile | null;
   /**
-   * The signed-in trainer's record (email-link auth), matched by verified email.
-   * Null for students/guests. Mutually exclusive with `userProfile` in practice.
+   * The signed-in user's trainer record (`trainers/{email}`), matched by their
+   * verified Google email. Present iff another student has invited this email as
+   * a trainer. A single account may hold both this and `userProfile`.
    */
   trainerProfile: Trainer | null;
-  /** True while the initial auth state and/or Firestore profile are loading. */
+  /** True when a trainer record exists for this account (i.e. invited as a trainer). */
+  trainerEligible: boolean;
+  /**
+   * The capability the user is currently acting as. Null only while still being
+   * resolved on sign-in (the app stays on the loading gate until it settles).
+   */
+  mode: Mode | null;
+  /** Switch the active capability. Persists the choice per-account (localStorage). */
+  setMode: (mode: Mode) => void;
+  /** True while the initial auth state, Firestore profiles, and/or mode are loading. */
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
-  /**
-   * Sends a passwordless Firebase sign-in link to a trainer's email. `nextPath`
-   * is where the trainer lands (authenticated) after clicking the link.
-   */
-  sendTrainerMagicLink: (email: string, nextPath: string) => Promise<void>;
   logOut: () => Promise<void>;
   /**
    * Returns a valid Google OAuth access token for Sheets/Drive API calls.

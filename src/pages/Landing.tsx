@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Moon, Sun } from 'lucide-react';
+import { Moon, Sun } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { LoadingSpinner } from '../components/LoadingSpinner';
@@ -8,25 +8,24 @@ import { SessionBar } from '../components/SessionBar';
 import { findCurrentOfflineSession } from '../utils/session';
 
 export function Landing() {
-  const { currentUser, userProfile, trainerProfile, loading, signInWithGoogle } = useAuth();
+  const { currentUser, userProfile, mode, loading, signInWithGoogle } = useAuth();
   const { isDark, toggle } = useDarkMode();
   const navigate = useNavigate();
   const [signingIn, setSigningIn] = useState(false);
   const [authError, setAuthError] = useState('');
 
-  // Redirect once auth + profile are resolved.
+  // Redirect once auth, profiles and the active mode are resolved. `mode` is
+  // resolved by AuthContext (remembered choice, else a sensible default), so we
+  // just route to that section's home.
   useEffect(() => {
-    if (loading || !currentUser) return;
-    // Email-link users are trainers — never route them into student onboarding,
-    // even if their trainer record hasn't loaded/been created yet.
-    const isTrainerUser = currentUser.providerData.some((p) => p.providerId === 'password');
-    const dest = trainerProfile || isTrainerUser
+    if (loading || !currentUser || !mode) return;
+    const dest = mode === 'trainer'
       ? '/trainer'
       : userProfile
         ? '/student'
         : '/onboarding';
     navigate(dest, { replace: true });
-  }, [loading, currentUser, userProfile, trainerProfile, navigate]);
+  }, [loading, currentUser, userProfile, mode, navigate]);
 
   if (loading) return <LoadingSpinner />;
   if (currentUser) return <LoadingSpinner message="Redirecionando..." />;
@@ -83,10 +82,7 @@ export function Landing() {
           Seus treinos. Seu progresso. Seu treinador.
         </p>
 
-        {/* Google Sign-In button */}
-        <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
-          É aluno?
-        </p>
+        {/* Google Sign-In button — the single entry point for everyone. */}
         <button
           onClick={handleSignIn}
           disabled={signingIn}
@@ -121,20 +117,6 @@ export function Landing() {
         {authError && (
           <p className="mt-4 text-sm text-red-600 dark:text-red-400">{authError}</p>
         )}
-
-        {/* Trainer entry point — no Google, email magic-link instead */}
-        <div className="mt-6 border-t border-slate-200 pt-5 dark:border-slate-700">
-          <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
-            É treinador?
-          </p>
-          <button
-            onClick={() => navigate('/trainer/login')}
-            className="flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 shadow-md transition-all hover:bg-slate-50 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-          >
-            <Mail className="h-5 w-5 flex-shrink-0" />
-            Entrar com link no e-mail
-          </button>
-        </div>
 
         <p className="mt-6 text-xs text-slate-500 dark:text-slate-400">
           Ao entrar, você concorda com o uso dos seus dados para fins de acompanhamento de treino.
