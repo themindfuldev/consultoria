@@ -27,7 +27,6 @@ import {
   Play,
   PlusCircle,
   RotateCcw,
-  Save,
   Send,
   SkipForward,
   Trash2,
@@ -223,9 +222,6 @@ export function SessionDetail() {
   const [postFeeling, setPostFeeling] = useState<typeof POST_FEELING_OPTIONS[number] | null>(null);
   const [finishing, setFinishing] = useState(false);
   const [finishError, setFinishError] = useState('');
-
-  // Offline export
-  const [savingOffline, setSavingOffline] = useState(false);
 
   const dateLabel = session?.date instanceof Timestamp
     ? session.date.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -607,15 +603,16 @@ export function SessionDetail() {
     }
   };
 
-  // ── Offline export ──────────────────────────────────────────────────────────
+  // ── Automatic offline snapshot ───────────────────────────────────────────────
+  // While the workout is in progress, keep a fresh read-only snapshot in
+  // localStorage. If the student gets logged out mid-session (token expiry), the
+  // same session URL — now unauthenticated — falls back to rendering this
+  // snapshot. Debounced so rapid edits (notes/RPE/set toggles) coalesce.
 
-  // A snapshot already saved for this session → the button offers to refresh it.
-  const hasOfflineSnapshot = !!session && !!localStorage.getItem(offlineKey(session.id));
-
-  const handleSaveOffline = () => {
+  useEffect(() => {
+    if (phase !== 'training' || readOnly) return;
     if (!session || !cycle || !parsedTab) return;
-    setSavingOffline(true);
-    try {
+    const id = setTimeout(() => {
       const snapshot = {
         savedAt: Date.now(),
         cycleId: cycle.id,
@@ -629,12 +626,12 @@ export function SessionDetail() {
         exerciseEntries,
         completedSets,
       };
-      localStorage.setItem(offlineKey(session.id), JSON.stringify(snapshot));
-      window.location.href = `/offline/${session.id}`;
-    } finally {
-      setSavingOffline(false);
-    }
-  };
+      try {
+        localStorage.setItem(offlineKey(session.id), JSON.stringify(snapshot));
+      } catch {/* storage full / unavailable — offline fallback is best-effort */}
+    }, 800);
+    return () => clearTimeout(id);
+  }, [phase, readOnly, session, cycle, parsedTab, dateLabel, exerciseEntries, completedSets]);
 
   // ── File selected ───────────────────────────────────────────────────────────
 
@@ -854,32 +851,18 @@ export function SessionDetail() {
       />
 
       {/* Session header */}
-      <div className="mb-5 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-            {session?.weekNumber ? `Semana ${session.weekNumber} · ` : ''}{session?.tabName}
-          </h1>
-          <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-            {cycle?.title} · {dateLabel}
+      <div className="mb-5 min-w-0">
+        <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+          {session?.weekNumber ? `Semana ${session.weekNumber} · ` : ''}{session?.tabName}
+        </h1>
+        <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+          {cycle?.title} · {dateLabel}
+        </p>
+        {durationLabel && (
+          <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <Clock className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+            Duração: {durationLabel}
           </p>
-          {durationLabel && (
-            <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200">
-              <Clock className="h-4 w-4 text-slate-400 dark:text-slate-500" />
-              Duração: {durationLabel}
-            </p>
-          )}
-        </div>
-        {/* Save the offline snapshot and jump straight to the offline viewer. */}
-        {phase === 'training' && !readOnly && (
-          <button
-            onClick={handleSaveOffline}
-            disabled={!parsedTab || savingOffline}
-            title={hasOfflineSnapshot ? 'Atualizar e abrir treino offline' : 'Salvar e abrir treino offline'}
-            className="flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-amber-800 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 transition-all hover:bg-amber-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Save className="h-3.5 w-3.5" />
-            Offline
-          </button>
         )}
       </div>
 
@@ -1187,8 +1170,9 @@ export function SessionDetail() {
       )}
 
       {/* ── Phase B: training in progress — finish flow ──────────────────────
-          Offline save/open lives in the header now; this block is just the
-          "Finalizar treino" flow, kept below the video actions. */}
+          The offline snapshot is maintained automatically in the background;
+          this block is just the "Finalizar treino" flow, below the video
+          actions. */}
       {phase === 'training' && !readOnly && (
         <div className="mb-5 flex flex-col gap-3">
           {!showFinishForm ? (

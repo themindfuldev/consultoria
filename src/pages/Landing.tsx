@@ -47,18 +47,22 @@ export function Landing() {
   };
 
   // A saved offline snapshot can be reopened straight from the login screen,
-  // even while logged out.
+  // even while logged out. It opens the normal session URL, which — with no
+  // auth — falls back to the static snapshot viewer.
   const offline = findCurrentOfflineSession();
+  const offlineHref = offline?.cycleId
+    ? `/student/cycles/${offline.cycleId}/sessions/${offline.sessionId}`
+    : null;
 
   return (
     <div className="animated-gradient relative flex min-h-screen flex-col">
-      {offline && <SessionBar offlineSessionId={offline.sessionId} className="z-30" />}
+      {offlineHref && <SessionBar offlineHref={offlineHref} className="z-30" />}
 
       {/* Dark mode toggle */}
       <button
         onClick={toggle}
         aria-label={isDark ? 'Ativar modo claro' : 'Ativar modo escuro'}
-        className={`absolute right-4 rounded-full p-2 text-white/80 transition-colors hover:bg-white/10 ${offline ? 'top-16' : 'top-4'}`}
+        className={`absolute right-4 rounded-full p-2 text-white/80 transition-colors hover:bg-white/10 ${offlineHref ? 'top-16' : 'top-4'}`}
       >
         {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
       </button>

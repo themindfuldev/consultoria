@@ -3,7 +3,7 @@ import { useAuth } from './hooks/useAuth';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { Landing } from './pages/Landing';
-import { OfflineSession } from './pages/OfflineSession';
+import { SessionRoute } from './pages/student/SessionRoute';
 import { Onboarding } from './pages/Onboarding';
 import { TrainerDashboard } from './pages/trainer/TrainerDashboard';
 import { TrainerFeedbackView } from './pages/trainer/TrainerFeedbackView';
@@ -15,7 +15,6 @@ import { StudentProfile } from './pages/student/StudentProfile';
 import { StudentTrainers } from './pages/student/StudentTrainers';
 import { AddCycle } from './pages/student/AddCycle';
 import { CycleDetail } from './pages/student/CycleDetail';
-import { SessionDetail } from './pages/student/SessionDetail';
 import { FeedbackView } from './pages/student/FeedbackView';
 import { PickerPoc } from './pages/dev/PickerPoc';
 
@@ -30,8 +29,6 @@ export default function App() {
     <Routes>
       {/* ── Public ─────────────────────────────────────────────────────── */}
       <Route path="/" element={<Landing />} />
-      {/* Standalone static snapshot viewer — outside auth, survives logout/timeout */}
-      <Route path="/offline/:sessionId" element={<OfflineSession />} />
 
       {/* ── Onboarding: auth required, NO profile required ─────────────── */}
       <Route
@@ -126,13 +123,11 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      {/* Public: signed-in students get the live session; signed-out users
+          fall back to the read-only offline snapshot (single URL, auto-switch). */}
       <Route
         path="/student/cycles/:cycleId/sessions/:sessionId"
-        element={
-          <ProtectedRoute role="student">
-            <SessionDetail />
-          </ProtectedRoute>
-        }
+        element={<SessionRoute />}
       />
       <Route
         path="/student/sessions/:sessionId/feedback"

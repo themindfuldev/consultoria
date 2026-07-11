@@ -72,15 +72,11 @@ export function OfflineSession() {
     ? formatDuration(now - snapshot.startedAt)
     : '';
 
-  // Leave the standalone viewer via a full navigation back to the live session
-  // page. The normal app + ProtectedRoute then land a logged-in student there
-  // and everyone else on the login page. (Falls back to home for older
-  // snapshots saved without a cycleId.)
+  // The offline viewer only ever renders while signed out (SessionRoute sends
+  // signed-in students to the live page). "Back" therefore returns to the login
+  // screen, where they can sign in and resume the live session.
   const handleBack = () => {
-    window.location.href =
-      snapshot?.cycleId && sessionId
-        ? `/student/cycles/${snapshot.cycleId}/sessions/${sessionId}`
-        : '/student';
+    window.location.href = '/';
   };
 
   // Same, but also drops the snapshot first.

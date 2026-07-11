@@ -4,7 +4,6 @@ import { ArrowLeft, ArrowLeftRight, CircleUser, ClipboardList, LayoutDashboard, 
 import { useAuth } from '../hooks/useAuth';
 import { useActiveSession } from '../hooks/useActiveSession';
 import { useDarkMode } from '../hooks/useDarkMode';
-import { findCurrentOfflineSession } from '../utils/session';
 import { AvatarMenu } from './AvatarMenu';
 import type { AvatarMenuItem } from './AvatarMenu';
 import { SessionBar } from './SessionBar';
@@ -28,7 +27,7 @@ const MAX_WIDTH_CLASSES: Record<NonNullable<LayoutProps['maxWidth']>, string> = 
 };
 
 export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProps) {
-  const { currentUser, userProfile, trainerEligible, mode, setMode, logOut } = useAuth();
+  const { currentUser, trainerEligible, mode, setMode, logOut } = useAuth();
   const { isDark, toggle } = useDarkMode();
   const navigate = useNavigate();
   const location = useLocation();
@@ -78,19 +77,13 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
     ? `/student/cycles/${activeSession.cycleId}/sessions/${activeSession.id}`
     : null;
 
-  // An offline snapshot available in localStorage → an "Offline" action that
-  // opens the static viewer in a new tab. Students only — never surface a
-  // leftover snapshot to a trainer.
-  const offline = mode === 'student' && userProfile ? findCurrentOfflineSession() : null;
-
-  // "Treino em andamento" bar: shown while a workout is open (live session
-  // and/or a saved offline snapshot), but hidden while viewing that very
-  // session's page.
+  // "Treino em andamento" bar: shown while a live session is open, but hidden
+  // while viewing that very session's page. (The offline snapshot is now an
+  // automatic, invisible fallback of the session page — surfaced only on the
+  // signed-out login screen, never inside the authenticated app.)
   const currentSessionId = location.pathname.match(/\/sessions\/([^/]+)/)?.[1];
-  const onOwnSessionPage =
-    (!!activeSession && currentSessionId === activeSession.id) ||
-    (!!offline && currentSessionId === offline.sessionId);
-  const showSessionBar = (!!activeSession || !!offline) && !onOwnSessionPage;
+  const onOwnSessionPage = !!activeSession && currentSessionId === activeSession.id;
+  const showSessionBar = !!activeSession && !onOwnSessionPage;
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-950">
@@ -148,7 +141,6 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
       {showSessionBar && (
         <SessionBar
           activeSessionHref={activeSessionHref}
-          offlineSessionId={offline?.sessionId ?? null}
           className="sticky top-14 z-30"
         />
       )}

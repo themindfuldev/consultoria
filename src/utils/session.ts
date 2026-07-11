@@ -46,13 +46,17 @@ export function clearOfflineSnapshots(): void {
 
 export interface OfflineRef {
   sessionId: string;
+  /** Cycle the snapshot belongs to — lets callers build the full session URL.
+   *  Absent on older snapshots saved before cycleId was stored. */
+  cycleId?: string;
   tabName: string;
   savedAt: number;
 }
 
 /**
  * Returns the most recent non-expired offline snapshot in localStorage (pruning
- * expired ones), or null. Powers the "offline session available" banner.
+ * expired ones), or null. Powers the login-page "offline session available"
+ * entry that lets a signed-out student reopen their in-progress workout.
  */
 export function findCurrentOfflineSession(now: number = Date.now()): OfflineRef | null {
   let best: OfflineRef | null = null;
@@ -62,11 +66,12 @@ export function findCurrentOfflineSession(now: number = Date.now()): OfflineRef 
     const raw = localStorage.getItem(key);
     if (!raw) continue;
     try {
-      const parsed = JSON.parse(raw) as { savedAt: number; tabName?: string };
+      const parsed = JSON.parse(raw) as { savedAt: number; tabName?: string; cycleId?: string };
       if (now - parsed.savedAt > OFFLINE_TTL_MS) { localStorage.removeItem(key); continue; }
       if (!best || parsed.savedAt > best.savedAt) {
         best = {
           sessionId: key.slice(OFFLINE_PREFIX.length),
+          cycleId: parsed.cycleId,
           tabName: parsed.tabName ?? 'Treino',
           savedAt: parsed.savedAt,
         };
