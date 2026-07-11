@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { Archive, ArchiveRestore, ClipboardList, PlusCircle, Users } from 'lucide-react';
+import { Archive, ClipboardList, PlusCircle, Users } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
@@ -86,21 +86,25 @@ export function StudentDashboard() {
       {/* Subtitle + view toggle */}
       <div className="mb-4 flex items-center justify-between gap-3">
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          {activeCycles.length === 0
-            ? 'Adicione seu primeiro programa de treino abaixo.'
-            : `${activeCycles.length} programa${activeCycles.length !== 1 ? 's' : ''} ativo${activeCycles.length !== 1 ? 's' : ''}.`}
+          {showArchived
+            ? `${archivedCycles.length} programa${archivedCycles.length !== 1 ? 's' : ''} arquivado${archivedCycles.length !== 1 ? 's' : ''}.`
+            : activeCycles.length === 0
+              ? 'Adicione seu primeiro programa de treino abaixo.'
+              : `${activeCycles.length} programa${activeCycles.length !== 1 ? 's' : ''} ativo${activeCycles.length !== 1 ? 's' : ''}.`}
         </p>
         {archivedCycles.length > 0 && (
           <button
             onClick={() => setShowArchived((s) => !s)}
-            className={`flex flex-shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${
+            aria-label={showArchived ? 'Ver programas ativos' : 'Ver programas arquivados'}
+            aria-pressed={showArchived}
+            title={showArchived ? 'Ver ativos' : 'Ver arquivados'}
+            className={`flex flex-shrink-0 items-center justify-center rounded-xl p-2 transition-colors ${
               showArchived
                 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
                 : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
             }`}
           >
-            <ArchiveRestore className="h-3.5 w-3.5" />
-            {showArchived ? 'Ver ativos' : `Ver arquivados (${archivedCycles.length})`}
+            <Archive className="h-4 w-4" />
           </button>
         )}
       </div>
