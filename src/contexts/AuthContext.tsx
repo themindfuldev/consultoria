@@ -19,10 +19,11 @@ import { AuthContext } from './AuthContextDef';
 const TRAINER_EMAIL_KEY = 'trainerEmailForSignIn';
 
 /**
- * sessionStorage key caching the Google OAuth access token (+ expiry) for the
- * current tab session. Persisting it here (rather than memory-only) means a page
- * refresh reuses the still-valid token instead of re-opening the GIS popup. It's
- * per-tab and cleared on tab close or sign-out — not localStorage.
+ * localStorage key caching the Google OAuth access token (+ expiry). Persisting
+ * it in localStorage (not sessionStorage) means it survives closing the tab, so
+ * a return visit within the token's ~1h lifetime reuses the still-valid token
+ * instead of re-opening the Google authorization popup. Always guarded by the
+ * stored expiry, and cleared on sign-out.
  */
 const GOOGLE_TOKEN_KEY = 'googleAccessToken';
 
@@ -30,7 +31,7 @@ interface StoredToken { token: string | null; expiry: number; }
 
 function readStoredToken(): StoredToken {
   try {
-    const raw = sessionStorage.getItem(GOOGLE_TOKEN_KEY);
+    const raw = localStorage.getItem(GOOGLE_TOKEN_KEY);
     if (!raw) return { token: null, expiry: 0 };
     const parsed = JSON.parse(raw) as StoredToken;
     // Ignore an already-expired cached token.
@@ -42,11 +43,11 @@ function readStoredToken(): StoredToken {
 }
 
 function storeToken(token: string, expiry: number): void {
-  try { sessionStorage.setItem(GOOGLE_TOKEN_KEY, JSON.stringify({ token, expiry })); } catch { /* storage full/blocked — non-fatal */ }
+  try { localStorage.setItem(GOOGLE_TOKEN_KEY, JSON.stringify({ token, expiry })); } catch { /* storage full/blocked — non-fatal */ }
 }
 
 function clearStoredToken(): void {
-  try { sessionStorage.removeItem(GOOGLE_TOKEN_KEY); } catch { /* non-fatal */ }
+  try { localStorage.removeItem(GOOGLE_TOKEN_KEY); } catch { /* non-fatal */ }
 }
 
 /** True when the current Firebase user signed in via an email link (a trainer). */
