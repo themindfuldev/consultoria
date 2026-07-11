@@ -165,58 +165,6 @@ export function AddCycle() {
 
       <div className="flex flex-col gap-5">
 
-        {/* ── Trainer selector (optional) ────────────────────────────────── */}
-        {!loadingTrainers && (
-          trainers.length > 0 ? (
-            <Field label="Treinador (opcional)">
-              <div className="relative">
-                <select
-                  value={selectedTrainerEmail}
-                  onChange={(e) => setSelectedTrainerEmail(e.target.value)}
-                  className={selectCls}
-                >
-                  <option value="">Sem treinador</option>
-                  {trainers.map((t) => (
-                    <option key={t.email} value={t.email}>
-                      {t.name} — {t.email}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              </div>
-              {selectedTrainerEmail && (
-                <p className="text-xs text-amber-700 dark:text-amber-400">
-                  Lembre-se de compartilhar esta planilha com <strong>{selectedTrainerEmail}</strong>.
-                </p>
-              )}
-            </Field>
-          ) : (
-            <p className="rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-              Você ainda não cadastrou nenhum treinador. Você pode adicionar o
-              programa sem treinador e cadastrar um depois em{' '}
-              <Link to="/student/trainers" className="font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
-                Meus treinadores
-              </Link>.
-            </p>
-          )
-        )}
-
-        {/* ── Google Sheets URL ──────────────────────────────────────────── */}
-        <Field label="Link da planilha do Google Sheets" error={urlError}>
-          <div className="relative">
-            <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="url"
-              value={sheetUrl}
-              onChange={(e) => { setSheetUrl(e.target.value); setUrlError(''); }}
-              onBlur={validateUrl}
-              placeholder="https://docs.google.com/spreadsheets/d/…"
-              autoComplete="off"
-              className={`${inputCls} pl-10`}
-            />
-          </div>
-        </Field>
-
         {/* ── Program title ──────────────────────────────────────────────── */}
         <Field label="Nome do programa">
           <input
@@ -256,6 +204,58 @@ export function AddCycle() {
               className={inputCls}
             />
           </Field>
+        )}
+
+        {/* ── Google Sheets URL ──────────────────────────────────────────── */}
+        <Field label="Link da planilha do Google Sheets" error={urlError}>
+          <div className="relative">
+            <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              type="url"
+              value={sheetUrl}
+              onChange={(e) => { setSheetUrl(e.target.value); setUrlError(''); }}
+              onBlur={validateUrl}
+              placeholder="https://docs.google.com/spreadsheets/d/…"
+              autoComplete="off"
+              className={`${inputCls} pl-10`}
+            />
+          </div>
+        </Field>
+
+        {/* ── Trainer selector (optional) ────────────────────────────────── */}
+        {!loadingTrainers && (
+          trainers.length > 0 ? (
+            <Field label="Treinador (opcional)">
+              <div className="relative">
+                <select
+                  value={selectedTrainerEmail}
+                  onChange={(e) => setSelectedTrainerEmail(e.target.value)}
+                  className={selectCls}
+                >
+                  <option value="">Sem treinador</option>
+                  {trainers.map((t) => (
+                    <option key={t.email} value={t.email}>
+                      {t.name} — {t.email}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              </div>
+              {selectedTrainerEmail && (
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  Lembre-se de compartilhar esta planilha com <strong>{selectedTrainerEmail}</strong>.
+                </p>
+              )}
+            </Field>
+          ) : (
+            <p className="rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+              Você ainda não cadastrou nenhum treinador. Você pode adicionar o
+              programa sem treinador e cadastrar um depois em{' '}
+              <Link to="/student/trainers" className="font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
+                Meus treinadores
+              </Link>.
+            </p>
+          )
         )}
 
         {/* ── Error message ──────────────────────────────────────────────── */}

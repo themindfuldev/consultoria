@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { collection, doc, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore';
-import { FileSpreadsheet, Mail, Pencil, User } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { collection, deleteField, doc, getDoc, getDocs, query, Timestamp, updateDoc, where } from 'firebase/firestore';
+import { Archive, ChevronDown, FileSpreadsheet, Mail, MoreVertical, Pencil, RotateCcw, User } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { getSpreadsheetTitle } from '../../services/sheetsService';
@@ -13,7 +13,8 @@ import { MODALITY_STYLE } from '../../components/student/modality';
 import { WhatsAppIcon } from '../../components/icons/WhatsAppIcon';
 import { Tooltip } from '../../components/Tooltip';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
-import type { Cycle, StudentTrainer, Trainer } from '../../types';
+import { MODALITIES } from '../../types';
+import type { Cycle, Modality, StudentTrainer, Trainer } from '../../types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -32,10 +33,28 @@ export function CycleDetail() {
   useGoogleTokenWarmup();
 
   const { currentUser, getAccessToken } = useAuth();
+  const navigate = useNavigate();
   const [cycle, setCycle] = useState<Cycle | null>(null);
   const [sheetTitle, setSheetTitle] = useState('');
   const [trainerPhone, setTrainerPhone] = useState('');
   const cycleWeek = useCycleWeek(cycle);
+
+  // ⋯ options menu (Editar / Arquivar / Restaurar)
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState('');
+
+  // Edit-program modal (Nome · Modalidade · Planilha · Treinador)
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editModality, setEditModality] = useState<Modality | ''>('');
+  const [editModalityCustom, setEditModalityCustom] = useState('');
+  const [editSheetUrl, setEditSheetUrl] = useState('');
+  const [editTrainerEmail, setEditTrainerEmail] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  const isArchived = cycle?.status === 'archived';
 
   // Replace spreadsheet
   const [showReplaceSheet, setShowReplaceSheet] = useState(false);
@@ -142,6 +161,91 @@ export function CycleDetail() {
     }
   };
 
+  // ── Options menu: edit / archive / restore ──────────────────────────────────
+
+  const openEditModal = () => {
+    setEditTitle(cycle?.title ?? '');
+    setEditModality(cycle?.modality ?? '');
+    setEditModalityCustom(cycle?.modalityCustom ?? '');
+    setEditSheetUrl(cycle?.googleSheetUrl ?? '');
+    setEditTrainerEmail(cycle?.trainerEmail ?? '');
+    setEditError('');
+    setMenuOpen(false);
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!cycle) return;
+    const title = editTitle.trim();
+    if (!title) { setEditError('Dê um nome para este programa.'); return; }
+    if (!editModality) { setEditError('Selecione a modalidade.'); return; }
+    if (editModality === 'Outro' && !editModalityCustom.trim()) { setEditError('Descreva a modalidade.'); return; }
+    const sheetId = extractSheetId(editSheetUrl.trim());
+    if (!sheetId) { setEditError('Cole um link válido do Google Sheets.'); return; }
+
+    setEditError('');
+    setSavingEdit(true);
+    const url = editSheetUrl.trim();
+    const custom = editModality === 'Outro' ? editModalityCustom.trim() : '';
+    const trainer = trainerOptions.find((t) => t.email === editTrainerEmail);
+    try {
+      await updateDoc(doc(db, 'cycles', cycle.id), {
+        title,
+        modality: editModality,
+        modalityCustom: custom ? custom : deleteField(),
+        googleSheetId: sheetId,
+        googleSheetUrl: url,
+        trainerEmail: trainer ? trainer.email : deleteField(),
+        trainerName: trainer ? trainer.name : deleteField(),
+      });
+      setCycle((prev) => prev ? {
+        ...prev,
+        title,
+        modality: editModality as Modality,
+        modalityCustom: custom || undefined,
+        googleSheetId: sheetId,
+        googleSheetUrl: url,
+        trainerEmail: trainer?.email,
+        trainerName: trainer?.name,
+      } : prev);
+      setShowEditModal(false);
+    } catch {
+      setEditError('Não foi possível salvar as alterações. Tente novamente.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleArchive = async () => {
+    if (!cycle) return;
+    setMenuOpen(false);
+    if (!window.confirm(`Arquivar o programa "${cycle.title}"?`)) return;
+    setBusy(true);
+    setActionError('');
+    try {
+      await updateDoc(doc(db, 'cycles', cycle.id), { status: 'archived', archivedAt: Timestamp.now() });
+      navigate('/student');
+    } catch {
+      setActionError('Não foi possível arquivar o programa. Tente novamente.');
+      setBusy(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!cycle) return;
+    setMenuOpen(false);
+    setBusy(true);
+    setActionError('');
+    try {
+      await updateDoc(doc(db, 'cycles', cycle.id), { status: 'active', archivedAt: deleteField() });
+      setCycle((prev) => (prev ? { ...prev, status: 'active' } : prev));
+    } catch {
+      setActionError('Não foi possível restaurar o programa. Tente novamente.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -155,16 +259,66 @@ export function CycleDetail() {
 
       {/* Header */}
       <div className="mb-5">
-        <div className="flex items-center gap-2">
-          <h1 className="min-w-0 truncate text-xl font-bold text-slate-900 dark:text-white">
-            {cycle?.title ?? '…'}
-          </h1>
+        <div className="flex items-start gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <h1 className="min-w-0 truncate text-xl font-bold text-slate-900 dark:text-white">
+              {cycle?.title ?? '…'}
+            </h1>
+            {cycle && (
+              <span className={`flex-shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${MODALITY_STYLE[cycle.modality]}`}>
+                {cycle.modality === 'Outro' && cycle.modalityCustom ? cycle.modalityCustom : cycle.modality}
+              </span>
+            )}
+          </div>
+
+          {/* ⋯ options menu */}
           {cycle && (
-            <span className={`flex-shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${MODALITY_STYLE[cycle.modality]}`}>
-              {cycle.modality === 'Outro' && cycle.modalityCustom ? cycle.modalityCustom : cycle.modality}
-            </span>
+            <div className="relative flex-shrink-0">
+              <button
+                onClick={() => setMenuOpen((o) => !o)}
+                disabled={busy}
+                aria-label="Opções"
+                className="rounded-full p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-60 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+              >
+                <MoreVertical className="h-5 w-5" />
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                  <div className="absolute right-0 top-9 z-20 w-40 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                    <button
+                      onClick={openEditModal}
+                      className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
+                    >
+                      <Pencil className="h-4 w-4 text-indigo-600" />
+                      Editar
+                    </button>
+                    {isArchived ? (
+                      <button
+                        onClick={handleRestore}
+                        className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
+                      >
+                        <RotateCcw className="h-4 w-4 text-emerald-600" />
+                        Restaurar
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleArchive}
+                        className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
+                      >
+                        <Archive className="h-4 w-4 text-amber-600" />
+                        Arquivar
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
+        {actionError && (
+          <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">{actionError}</p>
+        )}
         <div className="mt-2 flex flex-col gap-1.5">
           {/* Spreadsheet: sheet icon + file name (link) + edit */}
           <div className="flex min-w-0 items-center gap-1.5">
@@ -239,6 +393,125 @@ export function CycleDetail() {
       {cycle && (
         <div className="glass-premium mb-5 rounded-2xl p-4">
           <CycleWeekPanel cycleWeek={cycleWeek} />
+        </div>
+      )}
+
+      {/* ── Edit program (Nome · Modalidade · Planilha · Treinador) ────── */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/40 backdrop-blur-sm">
+          <div className="glass-premium max-h-[85vh] w-full overflow-y-auto rounded-t-2xl p-6 shadow-2xl">
+            <h2 className="mb-4 text-lg font-bold text-slate-900 dark:text-white">
+              Editar programa
+            </h2>
+
+            <div className="flex flex-col gap-4">
+              {/* Nome do programa */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  Nome do programa
+                </label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => { setEditTitle(e.target.value); setEditError(''); }}
+                  placeholder="ex: Força — Bloco 1"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
+                />
+              </div>
+
+              {/* Modalidade */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  Modalidade
+                </label>
+                <div className="relative">
+                  <select
+                    value={editModality}
+                    onChange={(e) => { setEditModality(e.target.value as Modality | ''); setEditError(''); }}
+                    className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-3 pr-10 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  >
+                    <option value="">Selecione a modalidade…</option>
+                    {MODALITIES.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                </div>
+                {editModality === 'Outro' && (
+                  <input
+                    type="text"
+                    value={editModalityCustom}
+                    onChange={(e) => { setEditModalityCustom(e.target.value); setEditError(''); }}
+                    placeholder="Descreva a modalidade…"
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
+                  />
+                )}
+              </div>
+
+              {/* Planilha */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  Planilha
+                </label>
+                <input
+                  type="text"
+                  value={editSheetUrl}
+                  onChange={(e) => { setEditSheetUrl(e.target.value); setEditError(''); }}
+                  placeholder="https://docs.google.com/spreadsheets/d/…"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
+                />
+              </div>
+
+              {/* Treinador */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  Treinador
+                </label>
+                {trainerOptions.length === 0 ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Nenhum treinador cadastrado.{' '}
+                    <Link to="/student/trainers" className="font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
+                      Cadastrar
+                    </Link>
+                  </p>
+                ) : (
+                  <div className="relative">
+                    <select
+                      value={editTrainerEmail}
+                      onChange={(e) => setEditTrainerEmail(e.target.value)}
+                      className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-3 pr-10 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    >
+                      <option value="">Sem treinador</option>
+                      {trainerOptions.map((t) => (
+                        <option key={t.email} value={t.email}>{t.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  </div>
+                )}
+              </div>
+
+              {editError && (
+                <p className="text-xs text-red-600 dark:text-red-400">{editError}</p>
+              )}
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={savingEdit}
+                  className="flex-1 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingEdit ? 'Salvando…' : 'Salvar'}
+                </button>
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
