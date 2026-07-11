@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Mail, Moon, Sun } from 'lucide-react';
+import { ArrowLeft, Mail, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useDarkMode } from '../../hooks/useDarkMode';
 
@@ -117,9 +117,9 @@ export function TrainerLogin() {
 
         <button
           onClick={() => navigate('/')}
-          className="mt-6 text-xs text-slate-500 hover:underline dark:text-slate-400"
+          className="mt-6 flex items-center gap-1 text-xs text-slate-500 hover:underline dark:text-slate-400"
         >
-          ← Voltar
+          <ArrowLeft className="h-3.5 w-3.5" /> Voltar
         </button>
       </div>
     </div>

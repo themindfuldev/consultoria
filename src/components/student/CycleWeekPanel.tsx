@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   ChevronDown,
   FileText,
-  Flag,
   Lock,
   MessageSquare,
   Play,
@@ -319,7 +318,7 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
               disabled={concludingWeek}
               className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-emerald-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Flag className="h-3.5 w-3.5" />
+              <CheckCircle2 className="h-3.5 w-3.5" />
               {concludingWeek ? 'Concluindo…' : `Concluir Semana ${currentWeek!.weekNumber}`}
             </button>
           )}

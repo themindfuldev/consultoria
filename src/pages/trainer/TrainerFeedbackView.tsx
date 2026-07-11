@@ -12,7 +12,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { Dumbbell, NotebookText, Send, StickyNote, Video } from 'lucide-react';
+import { Dumbbell, Mic, NotebookText, Send, StickyNote, Video } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/useToast';
@@ -570,7 +570,8 @@ function ExerciseBlock({
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
               >
-                {m.mediaType === 'audio' ? '🎤' : '🎬'} {m.fileName}
+                {m.mediaType === 'audio' ? <Mic className="h-3.5 w-3.5 flex-shrink-0" /> : <Video className="h-3.5 w-3.5 flex-shrink-0" />}
+                {m.fileName}
               </a>
             </li>
           ))}

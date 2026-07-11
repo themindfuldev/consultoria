@@ -1113,7 +1113,7 @@ export function SessionDetail() {
                 }`}>
                   {uploadState.phase === 'compressing' && `Comprimindo vídeo${uploadState.total && uploadState.total > 1 ? ` (${uploadState.index}/${uploadState.total})` : ''}…`}
                   {uploadState.phase === 'uploading' && `Enviando para o Drive${uploadState.total && uploadState.total > 1 ? ` (${uploadState.index}/${uploadState.total})` : ''}…`}
-                  {uploadState.phase === 'error' && '❌ Falha no envio — nada foi salvo.'}
+                  {uploadState.phase === 'error' && 'Falha no envio — nada foi salvo.'}
                 </p>
                 {uploadState.phase === 'error' && (
                   <button

@@ -10,7 +10,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { ChevronLeft, Dumbbell, ExternalLink, FileText } from 'lucide-react';
+import { ArrowLeft, Dumbbell, ExternalLink, FileText, MessageSquare, StickyNote } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
@@ -272,8 +272,9 @@ export function FeedbackView() {
 
       {/* Header */}
       <div className="mb-5">
-        <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-          {session?.weekNumber ? `Semana ${session.weekNumber} · ` : ''}{session?.tabName} · Feedback
+        <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 dark:text-white">
+          <MessageSquare className="h-5 w-5 flex-shrink-0 text-emerald-500" />
+          <span>{session?.weekNumber ? `Semana ${session.weekNumber} · ` : ''}{session?.tabName} · Feedback</span>
         </h1>
         <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
           {cycle?.title} · {dateLabel}
@@ -351,8 +352,8 @@ export function FeedbackView() {
         {/* General notes */}
         {feedback.generalNotes && (
           <div className="glass-premium rounded-2xl p-4">
-            <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              📝 Observações gerais
+            <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <StickyNote className="h-4 w-4" /> Observações gerais
             </h3>
             <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">
               <LinkifiedText text={feedback.generalNotes} />
@@ -399,7 +400,7 @@ export function FeedbackView() {
             onClick={() => session && navigate(`/student/cycles/${session.cycleId}/sessions/${sessionId}`)}
             className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
           >
-            <ChevronLeft className="h-4 w-4" />
+            <ArrowLeft className="h-4 w-4" />
             Ver treino
           </button>
         </div>
