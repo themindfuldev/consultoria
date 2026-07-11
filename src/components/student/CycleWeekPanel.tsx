@@ -234,18 +234,6 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
           </div>
         </div>
 
-        {/* Conclude the current week (all sessions terminal, not yet concluded) */}
-        {canConcludeWeek && (
-          <button
-            onClick={concludeWeek}
-            disabled={concludingWeek}
-            className="flex flex-shrink-0 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-emerald-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Flag className="h-3.5 w-3.5" />
-            {concludingWeek ? 'Concluindo…' : `Concluir Semana ${currentWeek!.weekNumber}`}
-          </button>
-        )}
-
         {/* Start the next week after concluding the current one (inline). The
             initial "cycle not started" case renders its button full-width at
             the bottom instead — see below. */}
@@ -322,6 +310,18 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
             >
               <FileText className="h-4 w-4" /> Ver feedback da semana
             </a>
+          )}
+
+          {/* Conclude the current week (all sessions terminal, not yet concluded) */}
+          {canConcludeWeek && (
+            <button
+              onClick={concludeWeek}
+              disabled={concludingWeek}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-emerald-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Flag className="h-3.5 w-3.5" />
+              {concludingWeek ? 'Concluindo…' : `Concluir Semana ${currentWeek!.weekNumber}`}
+            </button>
           )}
         </div>
       ) : (
