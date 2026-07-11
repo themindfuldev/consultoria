@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { ExternalLink, Mail, Pencil } from 'lucide-react';
+import { Link, useParams } from 'react-router-dom';
+import { collection, doc, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore';
+import { ExternalLink, Mail, Pencil, UserPen } from 'lucide-react';
 import { db } from '../../firebase';
+import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
 import { useCycleWeek } from '../../hooks/useCycleWeek';
 import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
@@ -11,7 +12,7 @@ import { MODALITY_STYLE } from '../../components/student/modality';
 import { WhatsAppIcon } from '../../components/icons/WhatsAppIcon';
 import { Tooltip } from '../../components/Tooltip';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
-import type { Cycle, Trainer } from '../../types';
+import type { Cycle, StudentTrainer, Trainer } from '../../types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ export function CycleDetail() {
   // Re-authorize Google on open if the (daily-expiring) token is stale.
   useGoogleTokenWarmup();
 
+  const { currentUser } = useAuth();
   const [cycle, setCycle] = useState<Cycle | null>(null);
   const [trainerPhone, setTrainerPhone] = useState('');
   const cycleWeek = useCycleWeek(cycle);
@@ -38,6 +40,13 @@ export function CycleDetail() {
   const [replaceUrl, setReplaceUrl] = useState('');
   const [replaceError, setReplaceError] = useState('');
   const [replacing, setReplacing] = useState(false);
+
+  // Select / switch trainer
+  const [trainerOptions, setTrainerOptions] = useState<{ email: string; name: string }[]>([]);
+  const [showTrainerModal, setShowTrainerModal] = useState(false);
+  const [trainerChoice, setTrainerChoice] = useState('');
+  const [savingTrainer, setSavingTrainer] = useState(false);
+  const [trainerError, setTrainerError] = useState('');
 
   // ── Load cycle doc ──────────────────────────────────────────────────────────
 
@@ -83,6 +92,45 @@ export function CycleDetail() {
     }
   };
 
+  // ── Load the student's registered trainers (for the selector) ───────────────
+
+  useEffect(() => {
+    if (!currentUser) return;
+    getDocs(query(collection(db, 'student_trainers'), where('studentUid', '==', currentUser.uid)))
+      .then((snap) => {
+        setTrainerOptions(
+          snap.docs.map((d) => {
+            const link = d.data() as StudentTrainer;
+            return { email: link.trainerEmail, name: link.trainerName ?? link.trainerEmail };
+          }),
+        );
+      })
+      .catch(() => {/* non-fatal — selector just shows an empty state */});
+  }, [currentUser]);
+
+  const openTrainerModal = () => {
+    setTrainerChoice(cycle?.trainerEmail ?? '');
+    setTrainerError('');
+    setShowTrainerModal(true);
+  };
+
+  const handleSaveTrainer = async () => {
+    if (!cycle || !trainerChoice) return;
+    const opt = trainerOptions.find((t) => t.email === trainerChoice);
+    if (!opt) return;
+    setTrainerError('');
+    setSavingTrainer(true);
+    try {
+      await updateDoc(doc(db, 'cycles', cycle.id), { trainerEmail: opt.email, trainerName: opt.name });
+      setCycle((prev) => (prev ? { ...prev, trainerEmail: opt.email, trainerName: opt.name } : prev));
+      setShowTrainerModal(false);
+    } catch {
+      setTrainerError('Não foi possível salvar o treinador. Tente novamente.');
+    } finally {
+      setSavingTrainer(false);
+    }
+  };
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -108,28 +156,42 @@ export function CycleDetail() {
         </div>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           {cycle?.trainerName ? (
-            <Tooltip
-              content={
-                <>
-                  <span className="flex items-center gap-1.5">
-                    <Mail className="h-3.5 w-3.5 flex-shrink-0" />
-                    {cycle.trainerEmail ?? '—'}
-                  </span>
-                  {trainerPhone && (
-                    <span className="mt-0.5 flex items-center gap-1.5">
-                      <WhatsAppIcon className="h-3.5 w-3.5 flex-shrink-0" />
-                      +{trainerPhone}
+            <span className="flex items-center gap-1.5">
+              <Tooltip
+                content={
+                  <>
+                    <span className="flex items-center gap-1.5">
+                      <Mail className="h-3.5 w-3.5 flex-shrink-0" />
+                      {cycle.trainerEmail ?? '—'}
                     </span>
-                  )}
-                </>
-              }
-            >
-              <span className="cursor-pointer border-b border-dotted border-slate-400 text-sm text-slate-500 dark:border-slate-500 dark:text-slate-400">
-                Treinador: {cycle.trainerName}
-              </span>
-            </Tooltip>
+                    {trainerPhone && (
+                      <span className="mt-0.5 flex items-center gap-1.5">
+                        <WhatsAppIcon className="h-3.5 w-3.5 flex-shrink-0" />
+                        +{trainerPhone}
+                      </span>
+                    )}
+                  </>
+                }
+              >
+                <span className="cursor-pointer border-b border-dotted border-slate-400 text-sm text-slate-500 dark:border-slate-500 dark:text-slate-400">
+                  Treinador: {cycle.trainerName}
+                </span>
+              </Tooltip>
+              <button
+                onClick={openTrainerModal}
+                aria-label="Trocar treinador"
+                className="flex-shrink-0 rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-slate-800 dark:hover:text-indigo-400"
+              >
+                <UserPen className="h-3.5 w-3.5" />
+              </button>
+            </span>
           ) : (
-            <span />
+            <button
+              onClick={openTrainerModal}
+              className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+            >
+              <UserPen className="h-3.5 w-3.5 flex-shrink-0" /> Selecionar treinador
+            </button>
           )}
 
           <div className="flex flex-shrink-0 items-center gap-2">
@@ -157,6 +219,78 @@ export function CycleDetail() {
       {cycle && (
         <div className="glass-premium mb-5 rounded-2xl p-4">
           <CycleWeekPanel cycleWeek={cycleWeek} />
+        </div>
+      )}
+
+      {/* ── Select / switch trainer ───────────────────────────────────── */}
+      {showTrainerModal && (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/40 backdrop-blur-sm">
+          <div className="glass-premium w-full rounded-t-2xl p-6 shadow-2xl">
+            <h2 className="mb-1 text-lg font-bold text-slate-900 dark:text-white">
+              Selecionar treinador
+            </h2>
+            <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+              Escolha o treinador responsável por este programa.
+            </p>
+
+            {trainerOptions.length === 0 ? (
+              <>
+                <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+                  Você ainda não cadastrou treinadores.{' '}
+                  <Link
+                    to="/student/trainers"
+                    className="font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                  >
+                    Cadastrar em Meus Treinadores
+                  </Link>
+                </p>
+                <button
+                  onClick={() => setShowTrainerModal(false)}
+                  className="w-full rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                >
+                  Fechar
+                </button>
+              </>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    Treinador
+                  </label>
+                  <select
+                    value={trainerChoice}
+                    onChange={(e) => { setTrainerChoice(e.target.value); setTrainerError(''); }}
+                    className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  >
+                    <option value="">Selecione um treinador…</option>
+                    {trainerOptions.map((t) => (
+                      <option key={t.email} value={t.email}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {trainerError && (
+                  <p className="text-xs text-red-600 dark:text-red-400">{trainerError}</p>
+                )}
+
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={handleSaveTrainer}
+                    disabled={!trainerChoice || savingTrainer}
+                    className="flex-1 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {savingTrainer ? 'Salvando…' : 'Salvar'}
+                  </button>
+                  <button
+                    onClick={() => setShowTrainerModal(false)}
+                    className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

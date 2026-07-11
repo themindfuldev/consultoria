@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { ArchiveRestore, ClipboardList, PlusCircle } from 'lucide-react';
+import { Archive, ArchiveRestore, ClipboardList, PlusCircle, Users } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
@@ -116,7 +116,7 @@ export function StudentDashboard() {
       {visibleCycles.length === 0 ? (
         showArchived ? (
           <EmptyState
-            icon="🗄️"
+            icon={<Archive className="mx-auto h-10 w-10 text-slate-400 dark:text-slate-500" />}
             title="Nenhum programa arquivado"
             description="Programas que você arquivar aparecem aqui."
           />
@@ -145,15 +145,26 @@ export function StudentDashboard() {
         </ul>
       )}
 
-      {/* Add program — below all training cycles */}
-      {!showArchived && visibleCycles.length > 0 && (
-        <button
-          onClick={() => navigate('/student/add-cycle')}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95"
-        >
-          <PlusCircle className="h-4 w-4" />
-          Adicionar programa
-        </button>
+      {/* Add program + trainers — below all training cycles */}
+      {!showArchived && (
+        <div className="mt-4 flex flex-col gap-2">
+          {visibleCycles.length > 0 && (
+            <button
+              onClick={() => navigate('/student/add-cycle')}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95"
+            >
+              <PlusCircle className="h-4 w-4" />
+              Adicionar programa
+            </button>
+          )}
+          <button
+            onClick={() => navigate('/student/trainers')}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
+            <Users className="h-4 w-4" />
+            Meus treinadores
+          </button>
+        </div>
       )}
     </Layout>
   );

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ClipboardList, LayoutDashboard, LogOut, Moon, Sun, User, Users } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { ArrowLeft, CircleUser, ClipboardList, LayoutDashboard, LogOut, Moon, Sun, Users } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useActiveSession } from '../hooks/useActiveSession';
 import { useDarkMode } from '../hooks/useDarkMode';
@@ -39,18 +39,17 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
     navigate('/');
   };
 
-  const homeHref = trainerProfile ? '/trainer' : userProfile ? '/student' : '/';
   const mw = MAX_WIDTH_CLASSES[maxWidth];
 
   // Account dropdown items — differ by role.
   const menuItems: AvatarMenuItem[] = trainerProfile
     ? [
-        { label: 'Meu perfil', to: '/trainer/profile', icon: User },
+        { label: 'Meu perfil', to: '/trainer/profile', icon: CircleUser },
         { label: 'Meus alunos', to: '/trainer/students', icon: Users },
         { label: 'Painel do treinador', to: '/trainer', icon: LayoutDashboard },
       ]
     : [
-        { label: 'Meu perfil', to: '/student/profile', icon: User },
+        { label: 'Meu perfil', to: '/student/profile', icon: CircleUser },
         { label: 'Meus treinadores', to: '/student/trainers', icon: Users },
         { label: 'Meu treino', to: '/student', icon: ClipboardList },
       ];
@@ -89,13 +88,10 @@ export function Layout({ children, title, backTo, maxWidth = '2xl' }: LayoutProp
                 <ArrowLeft className="h-5 w-5" />
               </button>
             )}
-            <Link
-              to={homeHref}
-              className="flex min-w-0 items-center gap-1.5 text-base font-black text-slate-900 dark:text-white"
-            >
+            <div className="flex min-w-0 items-center gap-1.5 text-base font-black text-slate-900 dark:text-white">
               <img src="/app-icon.png" alt="" className="h-6 w-6 flex-shrink-0" />
               <span className="truncate">{title ?? 'Consultoria'}</span>
-            </Link>
+            </div>
           </div>
 
           {/* Right-side controls */}
