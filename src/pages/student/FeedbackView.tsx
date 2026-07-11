@@ -273,7 +273,7 @@ export function FeedbackView() {
       {/* Header */}
       <div className="mb-5">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-          {session?.weekNumber ? `Semana ${session.weekNumber} · ` : ''}{session?.tabName} · Feedback do treinador
+          {session?.weekNumber ? `Semana ${session.weekNumber} · ` : ''}{session?.tabName} · Feedback
         </h1>
         <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
           {cycle?.title} · {dateLabel}
