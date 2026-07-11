@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   MessageSquare,
+  Users,
   Video,
 } from 'lucide-react';
 import { db } from '../../firebase';
@@ -255,6 +256,17 @@ export function TrainerDashboard() {
             emptyText="Nenhum feedback respondido nesta semana."
             onOpen={(id) => navigate(`/trainer/sessions/${id}`)}
           />
+
+          {/* Students — below the week's feedback sections */}
+          <div className="mt-4">
+            <button
+              onClick={() => navigate('/trainer/students')}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              <Users className="h-4 w-4" />
+              Meus alunos
+            </button>
+          </div>
         </>
       )}
 
