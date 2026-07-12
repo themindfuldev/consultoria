@@ -95,7 +95,7 @@ function SessionRows({
               >
                 {row.tab}
               </button>
-              <div className="mt-1 overflow-hidden sm:hidden">
+              <div className="mt-0.5 overflow-hidden sm:hidden">
                 <StatusBadge session={row.session} />
               </div>
             </div>
