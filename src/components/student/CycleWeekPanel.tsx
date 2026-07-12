@@ -242,7 +242,7 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
       {currentWeekConcluded && (
         <p className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
           <Lock className="h-3.5 w-3.5" />
-          Semana concluída — os treinos estão em modo somente leitura.
+          Semana concluída.
         </p>
       )}
       {weekError && (

@@ -381,13 +381,14 @@ export function TrainerFeedbackView() {
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
           {session?.studentName || 'Aluno'}
         </h1>
-        <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mt-0.5 text-sm font-semibold text-slate-700 dark:text-slate-200">
           {[
-            cycle?.title,
-            dateLabel,
             session?.weekNumber ? `Semana ${session.weekNumber}` : null,
             session?.tabName,
           ].filter(Boolean).join(' · ')}
+        </p>
+        <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+          {[cycle?.title, dateLabel].filter(Boolean).join(' · ')}
         </p>
       </div>
 
