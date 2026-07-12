@@ -870,7 +870,7 @@ export function SessionDetail() {
       {weekConcluded && (
         <div className="mb-5 flex items-center gap-2 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
           <Lock className="h-4 w-4 flex-shrink-0" />
-          Semana concluída — esta sessão é somente leitura.
+          Semana concluída.
         </div>
       )}
 
