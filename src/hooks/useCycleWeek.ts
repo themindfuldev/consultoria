@@ -84,12 +84,21 @@ export function useCycleWeek(cycle: Cycle | null) {
   };
 
   useEffect(() => {
-    if (!cycle?.googleSheetId) return;
+    if (!cycle?.googleSheetId || sessionsLoading) return;
+    // `startWeek` pre-creates one session per tab, each carrying its `tabName`
+    // and `order` — so once the current week has sessions the rows can be built
+    // entirely from Firestore and the live Sheets round-trip is unnecessary.
+    // Only fetch the tab list when we actually need it: no started week yet, or
+    // a week with no sessions. (Tabs added to the sheet mid-week surface on the
+    // next "Começar semana", which always re-reads live, or via retry.)
+    const cw = weeks[0] ?? null;
+    const weekHasSessions = !!cw && sessions.some((s) => s.weekNumber === cw.weekNumber);
+    if (weekHasSessions) return;
     // `loadSheetTabs` is also called from the "Tentar novamente" retry action —
     // the standard fetch-with-retry shape, intentionally not split in two.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadSheetTabs(cycle.googleSheetId);
-  }, [cycle?.googleSheetId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cycle?.googleSheetId, sessionsLoading, sessions, weeks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── All sessions for this cycle ──────────────────────────────────────────────
 

@@ -87,6 +87,9 @@ export interface Cycle {
   studentWhatsapp?: string;
   googleSheetId: string;
   googleSheetUrl: string;
+  /** Cached spreadsheet file name (resolved from the Sheets API) for instant
+   *  display; refreshed in the background when the page loads. */
+  googleSheetTitle?: string;
   title: string;
   modality: Modality;
   modalityCustom?: string;

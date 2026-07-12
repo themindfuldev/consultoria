@@ -101,12 +101,20 @@ export function CycleDetail() {
     });
   }, [cycleId]);
 
-  // Fetch the spreadsheet's file name for the header link (best-effort).
+  // Spreadsheet file name for the header link. Show the cached value on the
+  // cycle doc instantly, then refresh from the Sheets API in the background and
+  // persist it if it changed (stale-while-revalidate — no placeholder flash).
   useEffect(() => {
     if (!cycle?.googleSheetId) return;
     getAccessToken()
       .then((token) => getSpreadsheetTitle(cycle.googleSheetId, token))
-      .then((t) => { if (t) setSheetTitle(t); })
+      .then((t) => {
+        if (!t) return;
+        setSheetTitle(t);
+        if (t !== cycle.googleSheetTitle) {
+          updateDoc(doc(db, 'cycles', cycle.id), { googleSheetTitle: t }).catch(() => {/* best-effort */});
+        }
+      })
       .catch(() => {/* non-fatal — falls back to a generic label */});
   }, [cycle?.googleSheetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -376,7 +384,7 @@ export function CycleDetail() {
                 className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400"
               >
                 <FileSpreadsheet className="h-4 w-4 flex-shrink-0" />
-                <span className="truncate">{sheetTitle || 'Planilha do treino'}</span>
+                <span className="truncate">{sheetTitle || cycle?.googleSheetTitle || 'Planilha do treino'}</span>
               </a>
             ) : (
               <span className="flex items-center gap-1.5 text-sm text-slate-400 dark:text-slate-500">

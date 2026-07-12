@@ -128,6 +128,15 @@ function NotifyTrainerCheckbox({
   );
 }
 
+/**
+ * In-memory parsed-plan cache, keyed by sessionId, for the lifetime of the
+ * browser session (module scope). The first open of a session fetches + parses
+ * the sheet live; re-opening it within the same session serves the cache
+ * instead of re-hitting the Sheets API. A full reload clears it, so a fresh
+ * parse still lands (and picks up any trainer edits).
+ */
+const planCache = new Map<string, ParsedSheetTab>();
+
 // ── Upload state per video ────────────────────────────────────────────────────
 
 /** Max videos selectable/uploadable in one batch — compressed and uploaded
@@ -322,28 +331,38 @@ export function SessionDetail() {
   // ── Load parsed sheet tab for this session ──────────────────────────────────
 
   useEffect(() => {
-    if (!cycle?.googleSheetId || !session?.tabName) return;
+    if (!cycle?.googleSheetId || !session?.tabName || !sessionId) return;
+
+    // Instant paint: reuse this browser session's cached parse, else the
+    // persisted snapshot (session.plan) written on a previous open.
+    const seed = planCache.get(sessionId) ?? session.plan ?? null;
+    if (seed) {
+      setParsedTab(seed);
+      setExerciseOptions((prev) => Array.from(new Set([...getExerciseNames(seed), ...prev])));
+    }
+
+    // Fetch live only the first time this session is opened this browser
+    // session; afterwards the cache serves it (a reload clears it → refetch,
+    // which also catches any trainer edits to the sheet).
+    if (planCache.has(sessionId)) return;
+
     setParsedTabLoading(true);
     getAccessToken()
       .then((token) => parseTrainingTab(cycle.googleSheetId, session.tabName, token))
       .then((tab) => {
+        planCache.set(sessionId, tab);
         setParsedTab(tab);
         // Snapshot the plan onto the session so the (Google-less) trainer can
         // render the same "Plano de treino". JSON round-trip strips undefined
         // (Firestore rejects it). Best-effort — never blocks the view.
-        if (sessionId) {
-          updateDoc(doc(db, 'sessions', sessionId), { plan: JSON.parse(JSON.stringify(tab)) })
-            .catch(() => {/* non-fatal */});
-        }
+        updateDoc(doc(db, 'sessions', sessionId), { plan: JSON.parse(JSON.stringify(tab)) })
+          .catch(() => {/* non-fatal */});
         // Sheet order first, then any extra video-only names appended (no sort).
-        const sheetNames = getExerciseNames(tab);
-        setExerciseOptions((prev) =>
-          Array.from(new Set([...sheetNames, ...prev])),
-        );
+        setExerciseOptions((prev) => Array.from(new Set([...getExerciseNames(tab), ...prev])));
       })
       .catch(() => {/* non-fatal — sheet might not have this tab yet */})
       .finally(() => setParsedTabLoading(false));
-  }, [cycle?.googleSheetId, session?.tabName]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cycle?.googleSheetId, session?.tabName, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Seed per-set entries once, from the sheet (preloaded) + saved values ─────
   // Needs the parsed tab so every set is pre-filled with the trainer's
