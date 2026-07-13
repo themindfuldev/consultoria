@@ -9,7 +9,7 @@ import {
   MessageSquare,
   Play,
   RefreshCw,
-  RotateCcw,
+  SkipBack,
   SkipForward,
 } from 'lucide-react';
 import type { useCycleWeek } from '../../hooks/useCycleWeek';
@@ -124,7 +124,7 @@ function SessionRows({
                   aria-label="Despular" title="Despular"
                   className="rounded-lg border border-slate-200 p-1.5 text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
                 >
-                  <RotateCcw className="h-4 w-4" />
+                  <SkipBack className="h-4 w-4" />
                 </button>
               )}
               <button

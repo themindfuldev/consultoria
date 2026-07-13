@@ -660,6 +660,14 @@ export function SessionDetail() {
     setPendingFiles(files);
     setPendingTags(files.map(() => ({ selected: '', custom: '' })));
     e.target.value = '';
+    // Reassure the student their selection landed before the (slower)
+    // compress/upload work begins.
+    showToast(
+      files.length > 1
+        ? `${files.length} vídeos selecionados`
+        : 'Vídeo selecionado',
+      3000,
+    );
   };
 
   const updateTag = (i: number, patch: Partial<{ selected: string; custom: string }>) =>
