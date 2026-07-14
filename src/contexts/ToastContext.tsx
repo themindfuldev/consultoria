@@ -31,7 +31,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[100] flex flex-col items-center gap-2 px-4">
+      {/* Sits well above the bottom edge on phones so it clears iOS Safari's
+          floating toolbar / home-indicator (which would otherwise hide it);
+          drops back to a tight offset on larger screens. */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-[100] flex flex-col items-center gap-2 px-4 sm:bottom-6">
         {toasts.map((t) => (
           <div
             key={t.id}

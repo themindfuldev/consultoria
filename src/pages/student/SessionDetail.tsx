@@ -26,8 +26,8 @@ import {
   Pencil,
   Play,
   PlusCircle,
-  RotateCcw,
   Send,
+  SkipBack,
   SkipForward,
   Trash2,
   Upload,
@@ -272,6 +272,13 @@ export function SessionDetail() {
   // it had progressed before being skipped.
   const isSkipped = session?.status === 'skipped';
   const readOnly = weekConcluded || isSkipped;
+
+  // Before the session is under way (not started, or skipped and awaiting
+  // "Despular"), the call-to-action box goes above the workout plan so the
+  // student acts first and reads the plan below. Once training/done, the plan
+  // returns to the top since that's what they're actively working through.
+  const actionsFirst =
+    (phase === 'pre' && !readOnly) || (isSkipped && !weekConcluded);
 
   // Once the trainer's feedback is in, the session is locked: no more video
   // add/delete or re-sending for feedback.
@@ -867,6 +874,36 @@ export function SessionDetail() {
     );
   }
 
+  // Workout plan preview — placed above or below the action box depending on
+  // `actionsFirst` (see below), so it's declared once and rendered in one slot.
+  const planSection = (
+    <div className="mb-5">
+      <p className="mb-2 flex items-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        <NotebookText className="h-4 w-4" />
+        <span className="ml-2">Plano de treino</span>
+        {parsedTabLoading && (
+          <span className="ml-2 h-3 w-3 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+        )}
+      </p>
+      {parsedTab ? (
+        <WorkoutPlan
+          tab={parsedTab}
+          // Editable while training; read-only (but still shown) once done or
+          // when the week is concluded, so the student can review what they
+          // filled in.
+          entries={phase === 'pre' ? undefined : exerciseEntries}
+          onEntryChange={phase === 'training' && !readOnly ? handleEntryChange : undefined}
+          completedSets={completedSets}
+          onToggleSet={phase === 'training' && !readOnly ? handleToggleSet : undefined}
+        />
+      ) : !parsedTabLoading ? (
+        <p className="text-xs text-slate-400 dark:text-slate-500 px-1">
+          Não foi possível carregar o plano desta aba.
+        </p>
+      ) : null}
+    </div>
+  );
+
   return (
     <Layout title={session?.tabName ?? 'Sessão'} backTo={cycleId ? `/student/cycles/${cycleId}` : '/student'}>
       <Breadcrumbs
@@ -901,32 +938,9 @@ export function SessionDetail() {
         </div>
       )}
 
-      {/* ── Reading mode: workout plan, always expanded ─────────────────── */}
-      <div className="mb-5">
-        <p className="mb-2 flex items-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-          <NotebookText className="h-4 w-4" />
-          <span className="ml-2">Plano de treino</span>
-          {parsedTabLoading && (
-            <span className="ml-2 h-3 w-3 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-          )}
-        </p>
-        {parsedTab ? (
-          <WorkoutPlan
-            tab={parsedTab}
-            // Editable while training; read-only (but still shown) once done or
-            // when the week is concluded, so the student can review what they
-            // filled in.
-            entries={phase === 'pre' ? undefined : exerciseEntries}
-            onEntryChange={phase === 'training' && !readOnly ? handleEntryChange : undefined}
-            completedSets={completedSets}
-            onToggleSet={phase === 'training' && !readOnly ? handleToggleSet : undefined}
-          />
-        ) : !parsedTabLoading ? (
-          <p className="text-xs text-slate-400 dark:text-slate-500 px-1">
-            Não foi possível carregar o plano desta aba.
-          </p>
-        ) : null}
-      </div>
+      {/* Reading mode: workout plan. Above the action box while training/done,
+          below it before the session is under way (see `actionsFirst`). */}
+      {!actionsFirst && planSection}
 
       {/* ── Phase A0: skipped — read-only until un-skipped ───────────────── */}
       {isSkipped && !weekConcluded && (
@@ -944,7 +958,7 @@ export function SessionDetail() {
             disabled={unskipping}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <RotateCcw className="h-4 w-4" />
+            <SkipBack className="h-4 w-4" />
             {unskipping ? 'Despulando…' : 'Despular'}
           </button>
         </div>
@@ -1000,6 +1014,9 @@ export function SessionDetail() {
           </button>
         </div>
       )}
+
+      {/* Workout plan below the action box before the session is under way. */}
+      {actionsFirst && planSection}
 
       {/* Uploaded videos — shown whenever any exist, regardless of phase. */}
       {videos.length > 0 && (
