@@ -44,6 +44,8 @@ import { ChoiceButtons } from '../../components/student/ChoiceButtons';
 import { WorkoutPlan } from '../../components/student/WorkoutPlan';
 import type { ExerciseEntry } from '../../components/student/WorkoutPlan';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
+import { VideoThumb } from '../../components/UploadedVideoCard';
+import { fmtBytes } from '../../utils/format';
 import {
   deleteDriveFile,
   getCycleWeekLabel,
@@ -72,38 +74,6 @@ const POST_FEELING_OPTIONS = [
 ] as const;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function fmtBytes(mb: number): string {
-  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(mb * 1024).toFixed(0)} KB`;
-}
-
-/**
- * Square thumbnail for an uploaded video, sized to match the three text lines
- * beside it. Uses the stored thumbnail if present, otherwise Drive's thumbnail
- * endpoint (works when the user's Google session can read the file); falls back
- * to a video icon in the same fixed footprint if neither loads.
- */
-function VideoThumb({ video }: { video: SessionVideo }) {
-  const [errored, setErrored] = useState(false);
-  const src =
-    video.driveThumbnailUrl ??
-    `https://drive.google.com/thumbnail?id=${video.driveFileId}&sz=w200`;
-  return (
-    <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-indigo-50 dark:bg-indigo-900/30">
-      {src && !errored ? (
-        <img
-          src={src}
-          alt=""
-          referrerPolicy="no-referrer"
-          onError={() => setErrored(true)}
-          className="h-full w-full object-cover"
-        />
-      ) : (
-        <Video className="h-6 w-6 text-indigo-500" />
-      )}
-    </div>
-  );
-}
 
 function todayStr(): string {
   // Local date (not toISOString, which is UTC and would drift +1 day in the
@@ -1056,7 +1026,7 @@ export function SessionDetail() {
             {videos.map((v) => (
               <li
                 key={v.id}
-                className="glass-premium flex items-center gap-3 rounded-xl p-3"
+                className="glass-premium flex items-stretch gap-3 rounded-xl p-3"
               >
                 <VideoThumb video={v} />
                 {editingVideoId === v.id ? (
@@ -1064,7 +1034,7 @@ export function SessionDetail() {
                     <select
                       value={editSelected}
                       onChange={(e) => setEditSelected(e.target.value)}
-                      className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     >
                       <option value="">Vídeo geral (sem exercício)</option>
                       {exerciseOptions.map((o) => (
@@ -1078,7 +1048,7 @@ export function SessionDetail() {
                         value={editCustom}
                         onChange={(e) => setEditCustom(e.target.value)}
                         placeholder="Nome do exercício…"
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
                       />
                     )}
                     <div className="flex justify-end gap-2">
@@ -1097,54 +1067,53 @@ export function SessionDetail() {
                     </div>
                   </div>
                 ) : (
-                  <>
-                    <div className="min-w-0 flex-1">
-                      {/* Exercise name + tiny inline edit pencil (matches the
-                          sheet/trainer name pattern on the cycle page). */}
-                      <div className="flex items-center gap-1.5">
-                        <p className="truncate text-sm font-medium text-slate-800 dark:text-white">
-                          {v.exerciseName ?? 'Vídeo geral'}
-                        </p>
-                        {!readOnly && !feedbackAvailable && (
-                          <button
-                            onClick={() => startEditVideo(v)}
-                            aria-label="Editar exercício"
-                            className="flex-shrink-0 rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-slate-800 dark:hover:text-indigo-400"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {fmtBytes(v.compressedSizeMB)} comprimido
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    {/* First line: exercise name (full width) + tiny inline edit
+                        pencil. The open/trash actions live on the second line so
+                        the name can use the full card width. */}
+                    <div className="flex items-center gap-1.5">
+                      <p className="truncate text-sm font-medium text-slate-800 dark:text-white">
+                        {v.exerciseName ?? 'Vídeo geral'}
                       </p>
-                      {v.originalSizeMB > 0 && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          original: {fmtBytes(v.originalSizeMB)}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex flex-shrink-0 items-center gap-1">
-                      <a
-                        href={v.driveFileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label="Abrir vídeo"
-                        className="rounded-lg p-2 text-indigo-600 transition-colors hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
                       {!readOnly && !feedbackAvailable && (
                         <button
-                          onClick={() => handleDeleteVideo(v)}
-                          aria-label="Excluir vídeo"
-                          className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
+                          onClick={() => startEditVideo(v)}
+                          aria-label="Editar exercício"
+                          className="flex-shrink-0 rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-slate-800 dark:hover:text-indigo-400"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Pencil className="h-3.5 w-3.5" />
                         </button>
                       )}
                     </div>
-                  </>
+                    {/* Second line: size (top-left) and open/trash (bottom-right). */}
+                    <div className="flex flex-1 items-end justify-between gap-2">
+                      <p className="self-start text-xs text-slate-500 dark:text-slate-400">
+                        {fmtBytes(v.compressedSizeMB)}
+                        {v.originalSizeMB > 0 &&
+                          ` (original: ${fmtBytes(v.originalSizeMB)})`}
+                      </p>
+                      <div className="flex flex-shrink-0 items-center gap-1">
+                        <a
+                          href={v.driveFileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label="Abrir vídeo"
+                          className="rounded-lg p-2 text-indigo-600 transition-colors hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                        {!readOnly && !feedbackAvailable && (
+                          <button
+                            onClick={() => handleDeleteVideo(v)}
+                            aria-label="Excluir vídeo"
+                            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 )}
               </li>
             ))}

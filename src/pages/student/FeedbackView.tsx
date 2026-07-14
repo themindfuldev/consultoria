@@ -15,6 +15,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
+import { ReadOnlyVideoCard } from '../../components/UploadedVideoCard';
 import { buildWeeklyFeedbackHtml, replaceWeeklyDoc } from '../../services/docsService';
 import type { WeeklySection } from '../../services/docsService';
 import { getOrCreateWeekFolder } from '../../services/driveService';
@@ -294,17 +295,13 @@ export function FeedbackView() {
 
               {/* Student's videos */}
               {exerciseVideos.length > 0 && (
-                <div className="mb-3 flex flex-col gap-1.5">
+                <div className="mb-3 flex flex-col gap-2">
                   {exerciseVideos.map((v, i) => (
-                    <a
+                    <ReadOnlyVideoCard
                       key={v.id}
-                      href={v.driveFileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 rounded-xl bg-slate-100/60 px-3 py-2 text-xs font-medium text-indigo-700 hover:underline dark:bg-slate-700/60 dark:text-indigo-300"
-                    >
-                      ▶ Meu vídeo {i + 1}
-                    </a>
+                      video={v}
+                      title={`Meu vídeo ${i + 1}`}
+                    />
                   ))}
                 </div>
               )}

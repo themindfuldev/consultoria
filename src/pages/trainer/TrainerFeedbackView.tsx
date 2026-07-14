@@ -22,6 +22,7 @@ import { setKey } from '../../services/sheetsService';
 import { getOrCreateTrainerFeedbackFolder, uploadFileToDrive } from '../../services/driveService';
 import { Layout } from '../../components/Layout';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
+import { ReadOnlyVideoCard } from '../../components/UploadedVideoCard';
 import { WorkoutPlan } from '../../components/student/WorkoutPlan';
 import type { ExerciseEntry } from '../../components/student/WorkoutPlan';
 import type {
@@ -535,19 +536,7 @@ function ExerciseBlock({
       {/* Videos */}
       <div className="mb-3 flex flex-col gap-2">
         {videos.map((v, i) => (
-          <a
-            key={v.id}
-            href={v.driveFileUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 rounded-xl bg-slate-100/60 px-3 py-2.5 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-100 dark:bg-slate-700/60 dark:text-indigo-300"
-          >
-            <Video className="h-5 w-5 flex-shrink-0 text-indigo-500" />
-            Vídeo {i + 1}
-            <span className="ml-auto text-xs text-slate-400">
-              {(v.compressedSizeMB).toFixed(1)} MB
-            </span>
-          </a>
+          <ReadOnlyVideoCard key={v.id} video={v} title={`Vídeo ${i + 1}`} />
         ))}
       </div>
 
