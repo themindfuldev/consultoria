@@ -77,6 +77,34 @@ function fmtBytes(mb: number): string {
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(mb * 1024).toFixed(0)} KB`;
 }
 
+/**
+ * Square thumbnail for an uploaded video, sized to match the three text lines
+ * beside it. Uses the stored thumbnail if present, otherwise Drive's thumbnail
+ * endpoint (works when the user's Google session can read the file); falls back
+ * to a video icon in the same fixed footprint if neither loads.
+ */
+function VideoThumb({ video }: { video: SessionVideo }) {
+  const [errored, setErrored] = useState(false);
+  const src =
+    video.driveThumbnailUrl ??
+    `https://drive.google.com/thumbnail?id=${video.driveFileId}&sz=w200`;
+  return (
+    <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-indigo-50 dark:bg-indigo-900/30">
+      {src && !errored ? (
+        <img
+          src={src}
+          alt=""
+          referrerPolicy="no-referrer"
+          onError={() => setErrored(true)}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <Video className="h-6 w-6 text-indigo-500" />
+      )}
+    </div>
+  );
+}
+
 function todayStr(): string {
   // Local date (not toISOString, which is UTC and would drift +1 day in the
   // evening for negative-UTC zones).
@@ -667,14 +695,6 @@ export function SessionDetail() {
     setPendingFiles(files);
     setPendingTags(files.map(() => ({ selected: '', custom: '' })));
     e.target.value = '';
-    // Reassure the student their selection landed before the (slower)
-    // compress/upload work begins.
-    showToast(
-      files.length > 1
-        ? `${files.length} vídeos selecionados`
-        : 'Vídeo selecionado',
-      3000,
-    );
   };
 
   const updateTag = (i: number, patch: Partial<{ selected: string; custom: string }>) =>
@@ -691,6 +711,13 @@ export function SessionDetail() {
     const tags = pendingTags;
     const total = files.length;
     cancelPending(); // close the sheet; progress shows below
+
+    // Confirm the selection landed on the (now clean) page, right before the
+    // slower compress/upload queue starts and the progress UI takes over.
+    showToast(
+      total > 1 ? `${total} vídeos selecionados` : 'Vídeo selecionado',
+      3000,
+    );
 
     try {
       const token = await getAccessToken();
@@ -1031,7 +1058,7 @@ export function SessionDetail() {
                 key={v.id}
                 className="glass-premium flex items-center gap-3 rounded-xl p-3"
               >
-                <Video className="h-5 w-5 flex-shrink-0 text-indigo-500" />
+                <VideoThumb video={v} />
                 {editingVideoId === v.id ? (
                   <div className="flex min-w-0 flex-1 flex-col gap-2">
                     <select
@@ -1072,13 +1099,30 @@ export function SessionDetail() {
                 ) : (
                   <>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-slate-800 dark:text-white">
-                        {v.exerciseName ?? 'Vídeo geral'}
-                      </p>
+                      {/* Exercise name + tiny inline edit pencil (matches the
+                          sheet/trainer name pattern on the cycle page). */}
+                      <div className="flex items-center gap-1.5">
+                        <p className="truncate text-sm font-medium text-slate-800 dark:text-white">
+                          {v.exerciseName ?? 'Vídeo geral'}
+                        </p>
+                        {!readOnly && !feedbackAvailable && (
+                          <button
+                            onClick={() => startEditVideo(v)}
+                            aria-label="Editar exercício"
+                            className="flex-shrink-0 rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-slate-800 dark:hover:text-indigo-400"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
                         {fmtBytes(v.compressedSizeMB)} comprimido
-                        {v.originalSizeMB > 0 && ` (original: ${fmtBytes(v.originalSizeMB)})`}
                       </p>
+                      {v.originalSizeMB > 0 && (
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          original: {fmtBytes(v.originalSizeMB)}
+                        </p>
+                      )}
                     </div>
                     <div className="flex flex-shrink-0 items-center gap-1">
                       <a
@@ -1091,22 +1135,13 @@ export function SessionDetail() {
                         <ExternalLink className="h-4 w-4" />
                       </a>
                       {!readOnly && !feedbackAvailable && (
-                        <>
-                          <button
-                            onClick={() => startEditVideo(v)}
-                            aria-label="Editar exercício"
-                            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteVideo(v)}
-                            aria-label="Excluir vídeo"
-                            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </>
+                        <button
+                          onClick={() => handleDeleteVideo(v)}
+                          aria-label="Excluir vídeo"
+                          className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       )}
                     </div>
                   </>
