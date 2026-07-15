@@ -685,7 +685,9 @@ export function SessionDetail() {
     // Confirm the selection landed on the (now clean) page, right before the
     // slower compress/upload queue starts and the progress UI takes over.
     showToast(
-      total > 1 ? `${total} vídeos selecionados` : 'Vídeo selecionado',
+      total > 1
+        ? `Comprimindo e enviando ${total} vídeos…`
+        : 'Comprimindo e enviando 1 vídeo…',
       3000,
     );
 
