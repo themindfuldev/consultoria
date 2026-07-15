@@ -44,8 +44,12 @@ import { ChoiceButtons } from '../../components/student/ChoiceButtons';
 import { WorkoutPlan } from '../../components/student/WorkoutPlan';
 import type { ExerciseEntry } from '../../components/student/WorkoutPlan';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
-import { VideoThumb } from '../../components/UploadedVideoCard';
+import { LocalVideoThumb, VideoThumb } from '../../components/UploadedVideoCard';
 import { fmtBytes } from '../../utils/format';
+import {
+  generateVideoThumbnail,
+  rememberUploadedThumbnail,
+} from '../../utils/videoThumbnails';
 import {
   deleteDriveFile,
   getCycleWeekLabel,
@@ -688,7 +692,6 @@ export function SessionDetail() {
       total > 1
         ? `Comprimindo e enviando ${total} vídeos…`
         : 'Comprimindo e enviando 1 vídeo…',
-      3000,
     );
 
     try {
@@ -755,6 +758,17 @@ export function SessionDetail() {
           token,
           (p) => setUploadState((s) => s ? { ...s, progress: p } : s),
         );
+
+        // Reuse the frame generated for the sheet preview so the "Vídeos
+        // enviados" list can show it instantly — Drive's own thumbnail usually
+        // isn't ready in the seconds right after upload. In-memory only, so a
+        // refresh falls back to the Drive thumbnail.
+        try {
+          const thumb = await generateVideoThumbnail(file);
+          rememberUploadedThumbnail(uploaded.id, thumb);
+        } catch {
+          // No local frame available — the list falls back to Drive's thumbnail.
+        }
 
         const videoRef = doc(collection(db, 'videos'));
         await setDoc(videoRef, {
@@ -1324,7 +1338,7 @@ export function SessionDetail() {
                 return (
                   <div key={i} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
                     <div className="mb-2 flex items-center gap-3">
-                      <Video className="h-5 w-5 flex-shrink-0 text-indigo-500" />
+                      <LocalVideoThumb file={file} />
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
                           {file.name}
