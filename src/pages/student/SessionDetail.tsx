@@ -1344,20 +1344,17 @@ export function SessionDetail() {
                           {file.name}
                         </p>
                         <p className="text-xs text-slate-500 dark:text-slate-400">
-                          Tamanho original: {fmtBytes(file.size / 1_048_576)}
+                          {fmtBytes(file.size / 1_048_576)}
                         </p>
                       </div>
                     </div>
 
-                    <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      Exercício
-                    </label>
                     <select
                       value={tag.selected}
                       onChange={(e) => updateTag(i, { selected: e.target.value })}
                       className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     >
-                      <option value="">Selecione ou deixe em branco…</option>
+                      <option value="">Selecione exercício…</option>
                       {exerciseOptions.map((o) => (
                         <option key={o} value={o}>{o}</option>
                       ))}
