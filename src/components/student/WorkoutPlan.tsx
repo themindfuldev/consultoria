@@ -238,15 +238,12 @@ export function WorkoutPlan({ tab, entries, onEntryChange, completedSets, onTogg
                 {showObs && (
                   <div className="mt-2 min-w-0">
                     {editable ? (
-                      <input
-                        type="text"
+                      <ObservationsField
                         value={entry.observations}
-                        onChange={(e) => onEntryChange!(setK, { ...entry, observations: e.target.value })}
-                        placeholder="Observações…"
-                        className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
+                        onChange={(observations) => onEntryChange!(setK, { ...entry, observations })}
                       />
                     ) : (
-                      <span className="block w-full rounded-lg bg-slate-100 px-2 py-1 text-xs text-slate-700 dark:bg-slate-700/60 dark:text-slate-200">
+                      <span className="block w-full whitespace-pre-wrap break-words rounded-lg bg-slate-100 px-2 py-1 text-xs text-slate-700 dark:bg-slate-700/60 dark:text-slate-200">
                         {entry.observations || sg.observations}
                       </span>
                     )}
@@ -258,6 +255,73 @@ export function WorkoutPlan({ tab, entries, onEntryChange, completedSets, onTogg
         );
       })}
     </div>
+  );
+}
+
+// ── Observações (click-to-edit, auto-growing textarea) ───────────────────────
+
+/**
+ * The student's per-set note. Renders as a read-only, word-wrapped block by
+ * default (so long text stays readable — no horizontal scrolling); clicking it
+ * swaps in a textarea that auto-grows to fit its content (min 2 lines) as the
+ * student types, wrapping instead of scrolling sideways. Vertical scroll only
+ * kicks in past a generous max height.
+ */
+function ObservationsField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  // Grow the textarea to fit its content: reset to auto (so it can shrink when
+  // text is deleted) then match its scroll height. Beyond `max-h` the CSS caps
+  // it and vertical scrolling takes over.
+  const autosize = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
+
+  // On entering edit mode, focus, place the caret at the end, and size to fit.
+  useEffect(() => {
+    if (!editing) return;
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    autosize(el);
+  }, [editing]);
+
+  if (editing) {
+    return (
+      <textarea
+        ref={ref}
+        rows={2}
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          autosize(e.target);
+        }}
+        onBlur={() => setEditing(false)}
+        placeholder="Observações…"
+        className="block max-h-48 w-full resize-none overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-relaxed text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      aria-label="Editar observações"
+      className="block w-full whitespace-pre-wrap break-words rounded-lg border border-transparent bg-slate-100 px-3 py-2 text-left text-xs leading-relaxed text-slate-700 transition-colors hover:border-slate-300 dark:bg-slate-700/60 dark:text-slate-200 dark:hover:border-slate-600"
+    >
+      {value || <span className="text-slate-400 dark:text-slate-500">Observações…</span>}
+    </button>
   );
 }
 
