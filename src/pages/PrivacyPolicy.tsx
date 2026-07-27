@@ -1,6 +1,6 @@
 import { LegalPage } from '../components/LegalPage';
 
-const CONTACT_EMAIL = 'tiagoromerogarcia@gmail.com';
+const CONTACT_URL = 'https://tiagoromero.me/contact/';
 
 /** Public privacy policy — referenced by the Google OAuth consent screen. */
 export function PrivacyPolicy() {
@@ -15,8 +15,11 @@ export function PrivacyPolicy() {
       <h2>Quem somos</h2>
       <p>
         Consultoria é um aplicativo de acompanhamento de treino personalizado que conecta alunos e
-        treinadores. Para dúvidas sobre privacidade, entre em contato pelo e-mail{' '}
-        <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
+        treinadores. Para dúvidas sobre privacidade, entre em contato pelo nosso{' '}
+        <a href={CONTACT_URL} target="_blank" rel="noopener noreferrer">
+          formulário de contato
+        </a>
+        .
       </p>
 
       <h2>Dados que coletamos</h2>
@@ -92,8 +95,11 @@ export function PrivacyPolicy() {
       <h2>Retenção e exclusão</h2>
       <p>
         Mantemos seus dados enquanto sua conta estiver ativa. Você pode solicitar a exclusão dos seus
-        dados a qualquer momento pelo e-mail <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
-        Arquivos armazenados no seu Google Drive podem ser excluídos diretamente por você a qualquer
+        dados a qualquer momento pelo nosso{' '}
+        <a href={CONTACT_URL} target="_blank" rel="noopener noreferrer">
+          formulário de contato
+        </a>
+        . Arquivos armazenados no seu Google Drive podem ser excluídos diretamente por você a qualquer
         momento, e você pode revogar o acesso do app na sua{' '}
         <a
           href="https://myaccount.google.com/permissions"
@@ -115,7 +121,8 @@ export function PrivacyPolicy() {
       <h2>Seus direitos</h2>
       <p>
         Você pode acessar, corrigir ou excluir seus dados, além de revogar as permissões concedidas
-        ao app a qualquer momento. Para exercer esses direitos, entre em contato pelo e-mail acima.
+        ao app a qualquer momento. Para exercer esses direitos, entre em contato pelo formulário
+        indicado abaixo.
       </p>
 
       <h2>Alterações nesta política</h2>
@@ -126,8 +133,11 @@ export function PrivacyPolicy() {
 
       <h2>Contato</h2>
       <p>
-        Em caso de dúvidas sobre esta política, escreva para{' '}
-        <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
+        Em caso de dúvidas sobre esta política, entre em contato pelo nosso{' '}
+        <a href={CONTACT_URL} target="_blank" rel="noopener noreferrer">
+          formulário de contato
+        </a>
+        .
       </p>
     </LegalPage>
   );

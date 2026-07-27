@@ -1,6 +1,6 @@
 import { LegalPage } from '../components/LegalPage';
 
-const CONTACT_EMAIL = 'tiagoromerogarcia@gmail.com';
+const CONTACT_URL = 'https://tiagoromero.me/contact/';
 
 /** Public terms of service — referenced by the Google OAuth consent screen. */
 export function TermsOfService() {
@@ -92,8 +92,11 @@ export function TermsOfService() {
 
       <h2>10. Contato</h2>
       <p>
-        Em caso de dúvidas sobre estes Termos, escreva para{' '}
-        <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
+        Em caso de dúvidas sobre estes Termos, entre em contato pelo nosso{' '}
+        <a href={CONTACT_URL} target="_blank" rel="noopener noreferrer">
+          formulário de contato
+        </a>
+        .
       </p>
     </LegalPage>
   );
