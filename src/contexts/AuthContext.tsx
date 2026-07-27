@@ -276,13 +276,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = useCallback(async () => {
     const provider = new GoogleAuthProvider();
-    // Request the Sheets/Drive/Docs scopes during the sign-in popup itself, so
+    // Request the Sheets/Drive scopes during the sign-in popup itself, so
     // the consent is granted by the same user gesture. Otherwise the first page
     // load has to open a *second* (gesture-less, browser-blocked) GIS popup to
     // get these scopes — which is what forced the manual "Tentar novamente".
     provider.addScope('https://www.googleapis.com/auth/spreadsheets');
     provider.addScope('https://www.googleapis.com/auth/drive.file');
-    provider.addScope('https://www.googleapis.com/auth/documents');
 
     const result = await signInWithPopup(auth, provider);
 
@@ -331,7 +330,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           scope: [
             'https://www.googleapis.com/auth/spreadsheets',
             'https://www.googleapis.com/auth/drive.file',
-            'https://www.googleapis.com/auth/documents',
           ].join(' '),
           callback: (response) => {
             if (response.access_token) {
