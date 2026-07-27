@@ -161,6 +161,12 @@ VITE_FIREBASE_APP_ID=1:123456789:web:abc123
 
 # ── Google OAuth (from Google Cloud Console → APIs & Services → Credentials) ──
 VITE_GOOGLE_CLIENT_ID=123456789-abc.apps.googleusercontent.com
+
+# ── New-registration alerts (optional; see "Approving new users") ──
+# Address that receives an email when someone new requests access. Compiled
+# into the public bundle, so prefer a dedicated alias over a personal inbox.
+# Leave unset to disable emails (the review queue still records requests).
+VITE_NOTIFY_EMAIL=consultoria-alerts@example.com
 ```
 
 ---
@@ -204,7 +210,13 @@ Add these in **GitHub → repo → Settings → Secrets and variables → Action
 | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Same as `.env.local` |
 | `VITE_FIREBASE_APP_ID` | Same as `.env.local` |
 | `VITE_GOOGLE_CLIENT_ID` | Same as `.env.local` |
+| `VITE_NOTIFY_EMAIL` | Same as `.env.local` (optional — the address that receives new-registration alerts) |
 | `FIREBASE_SERVICE_ACCOUNT_KEY` | Firebase console → Project settings → **Service accounts** tab → **"Generate new private key"** → copy the entire JSON as a single line |
+
+> The `FIREBASE_SERVICE_ACCOUNT_KEY` account also deploys the Firestore
+> security rules from CI (see `.github/workflows/deploy.yml`). Grant it the
+> **Firebase Rules Admin** role under Google Cloud Console → IAM, or the rules
+> deploy step will fail with a `403 permission denied`.
 
 ---
 
@@ -238,6 +250,47 @@ Users**.
 The `allowlist` collection is **read-only from the app** (a user may read only
 their own entry to learn their status); all changes are made here in the
 console.
+
+### The review queue (`access_requests`)
+
+You don't have to hunt through **Authentication → Users** to find who's waiting.
+When a new account lands on the pending screen, the app records it in the
+**`access_requests`** collection (document ID = the account's uid), holding the
+email, display name, photo, and request time. Open that collection in the
+Firestore console to see everyone currently waiting.
+
+Entries clear automatically once the person is approved and completes onboarding
+(the app deletes their own entry). You can also delete an entry by hand after
+approving or rejecting someone — any trainer account may read and clear the
+queue.
+
+### Email alerts (optional — "Trigger Email from Firestore" extension)
+
+To be emailed the moment someone requests access, wire up Firebase's official
+**Trigger Email from Firestore** extension. The app already writes a message
+document to the **`mail`** collection (one per new request) in the format the
+extension expects — you just need to install and configure it once:
+
+1. Set **`VITE_NOTIFY_EMAIL`** (in `.env.local` and as a GitHub secret) to the
+   destination address. Leave it unset to keep the queue but send no emails.
+2. Firebase console → **Extensions** → install **"Trigger Email from Firestore"**
+   (`firebase/firestore-send-email`).
+3. During configuration:
+   - **Email documents collection**: `mail`
+   - **SMTP connection URI** + password: any SMTP provider (e.g. a Gmail app
+     password, SendGrid, Mailgun, Amazon SES).
+   - **Default FROM address**: whatever your SMTP provider allows sending as.
+4. That's it — the next new-registration request triggers a delivery. The
+   extension writes a `delivery` status back onto each `mail` document, so you
+   can confirm sends there.
+
+Security notes: the `mail` collection is **create-only per uid** (a signed-in
+account can queue exactly one message under its own uid — the alert — and can't
+read, overwrite, or delete it), which bounds abuse to a single email per
+account. `VITE_NOTIFY_EMAIL` is compiled into the public bundle, so use a
+dedicated alias rather than a personal inbox. For stricter control you can
+switch the extension to `toUids` + a users collection later, keeping the
+address out of the client entirely.
 
 ---
 

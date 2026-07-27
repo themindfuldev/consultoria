@@ -35,12 +35,42 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/allowlist/$(authEmailLower()));
     }
 
+    // True when the caller is any confirmed trainer (a `trainers/{email}` doc
+    // exists for their verified email). Used to gate who may review the
+    // pending-registration queue.
+    function isTrainerAdmin() {
+      return authEmailLower() != null
+        && exists(/databases/$(database)/documents/trainers/$(authEmailLower()));
+    }
+
     // ── Allowlist (console-managed registration approvals) ─────────────────────
     match /allowlist/{email} {
       // A signed-in user may read only their own entry, so the app can tell
       // whether they've been approved. All writes happen in the console.
       allow read: if isSignedIn() && email == authEmailLower();
       allow write: if false;
+    }
+
+    // ── Access requests (pending-approval queue, keyed by uid) ─────────────────
+    match /access_requests/{uid} {
+      // The requester may read/clear their own entry; any trainer can review the
+      // queue and clear entries as they approve or reject them.
+      allow read, delete: if isOwner(uid) || isTrainerAdmin();
+      // A not-yet-approved user records exactly one request under their own uid.
+      // No updates — the doc is a one-shot marker (its existence also stops the
+      // app from re-sending the notification email on repeat visits).
+      allow create: if isOwner(uid) && request.resource.data.uid == uid;
+      allow update: if false;
+    }
+
+    // ── Outbound mail (Firebase "Trigger Email from Firestore" extension) ──────
+    match /mail/{uid} {
+      // A signed-in user may queue exactly one message under their own uid — the
+      // new-registration alert. Create-only (no update/overwrite) bounds this to
+      // a single email per account; the extension reads and delivers it, and the
+      // client never reads it back.
+      allow create: if isOwner(uid);
+      allow read, update, delete: if false;
     }
 
     // ── Users (students only) ──────────────────────────────────────────────────

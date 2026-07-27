@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { deleteDoc, doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { Moon, Sun } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../hooks/useAuth';
@@ -37,6 +37,9 @@ export function Onboarding() {
         whatsappPhone: cleaned,
         createdAt: serverTimestamp(),
       });
+      // Approved and onboarded — clear this account's pending-queue entry so the
+      // admin's review list only shows people still waiting. Best-effort.
+      await deleteDoc(doc(db, 'access_requests', currentUser.uid)).catch(() => {});
       navigate('/student', { replace: true });
     } catch (err) {
       console.error(err);
