@@ -23,9 +23,33 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == studentUid;
     }
 
+    // The caller's verified email, lowercased — the key used in the allowlist.
+    function authEmailLower() {
+      return isSignedIn() && authEmail() != null ? authEmail().lower() : null;
+    }
+
+    // True when the caller's email has been manually approved (an allowlist doc
+    // exists for it). Entries are added/removed only from the Firebase console.
+    function isApproved() {
+      return authEmailLower() != null
+        && exists(/databases/$(database)/documents/allowlist/$(authEmailLower()));
+    }
+
+    // ── Allowlist (console-managed registration approvals) ─────────────────────
+    match /allowlist/{email} {
+      // A signed-in user may read only their own entry, so the app can tell
+      // whether they've been approved. All writes happen in the console.
+      allow read: if isSignedIn() && email == authEmailLower();
+      allow write: if false;
+    }
+
     // ── Users (students only) ──────────────────────────────────────────────────
     match /users/{uid} {
-      allow read, write: if isOwner(uid);
+      allow read, update, delete: if isOwner(uid);
+      // New registrations require manual approval: a first-time student can only
+      // create their profile once their email is on the allowlist. Existing
+      // students already hold a doc, so they are unaffected.
+      allow create: if isOwner(uid) && isApproved();
     }
 
     // ── Trainers (global, keyed by email) ──────────────────────────────────────

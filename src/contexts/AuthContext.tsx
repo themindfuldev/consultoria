@@ -107,6 +107,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // gate until the mode is settled for the current account.
   const [modeUid, setModeUid] = useState<string | null>(null);
 
+  // Whether this account's email is on the registration allowlist, and the uid
+  // that answer was resolved for. New sign-ins stay on the loading gate until
+  // this settles, so the app never briefly routes an unapproved user into
+  // onboarding before bouncing them to the pending screen.
+  const [approved, setApproved] = useState(false);
+  const [approvalUid, setApprovalUid] = useState<string | null>(null);
+
   // GIS Token Client — all state kept in refs so it never triggers re-renders.
   // The access token / expiry hydrate from sessionStorage so a refresh reuses a
   // still-valid token instead of re-prompting.
@@ -134,6 +141,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setTrainerResolvedUid(null);
         setModeState(null);
         setModeUid(null);
+        setApproved(false);
+        setApprovalUid(null);
         // Clear any cached token when the user signs out.
         accessTokenRef.current = null;
         tokenExpiryRef.current = 0;
@@ -195,6 +204,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       () => {
         setTrainerProfile(null);
         setTrainerResolvedUid(uid);
+      },
+    );
+    return unsubscribe;
+  }, [currentUser]);
+
+  // ── Registration allowlist listener (keyed by verified Google email) ───────
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+    const email = currentUser.email?.toLowerCase();
+    // No email → can never be on the email allowlist. `approved` is already
+    // false (reset on sign-out) and `approvalLoading` ignores email-less users,
+    // so nothing to do — leave them not approved.
+    if (!email) return;
+    const unsubscribe = onSnapshot(
+      doc(db, 'allowlist', email),
+      (snap) => {
+        setApproved(snap.exists());
+        setApprovalUid(uid);
+      },
+      () => {
+        // On permission error, fail closed (treat as not approved).
+        setApproved(false);
+        setApprovalUid(uid);
       },
     );
     return unsubscribe;
@@ -262,6 +296,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     !!currentUser && !!currentUser.email && trainerResolvedUid !== currentUser.uid;
   // True until the active mode is resolved for the current account.
   const modeLoading = !!currentUser && modeUid !== currentUser.uid;
+  // True until the allowlist status is resolved for the current account.
+  // Email-less accounts can't be on the email allowlist, so their status never
+  // resolves a uid — don't let that keep the app on the loading gate.
+  const approvalLoading =
+    !!currentUser && !!currentUser.email && approvalUid !== currentUser.uid;
 
   // Switch the active capability, persisting the choice for this account.
   const setMode = useCallback((next: Mode) => {
@@ -368,7 +407,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return inFlightRef.current;
   }, []);
 
-  const loading = authLoading || profileLoading || trainerLoading || modeLoading;
+  const loading =
+    authLoading || profileLoading || trainerLoading || modeLoading || approvalLoading;
 
   return (
     <AuthContext.Provider
@@ -377,6 +417,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         userProfile,
         trainerProfile,
         trainerEligible: !!trainerProfile,
+        approved,
         mode,
         setMode,
         loading,

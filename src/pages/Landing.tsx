@@ -8,7 +8,8 @@ import { SessionBar } from '../components/SessionBar';
 import { findCurrentOfflineSession } from '../utils/session';
 
 export function Landing() {
-  const { currentUser, userProfile, mode, loading, signInWithGoogle } = useAuth();
+  const { currentUser, userProfile, trainerEligible, approved, mode, loading, signInWithGoogle } =
+    useAuth();
   const { isDark, toggle } = useDarkMode();
   const navigate = useNavigate();
   const [signingIn, setSigningIn] = useState(false);
@@ -19,13 +20,17 @@ export function Landing() {
   // just route to that section's home.
   useEffect(() => {
     if (loading || !currentUser || !mode) return;
-    const dest = mode === 'trainer'
-      ? '/trainer'
-      : userProfile
-        ? '/student'
-        : '/onboarding';
+    // New account awaiting manual approval → hold on the pending screen.
+    const needsApproval = !userProfile && !trainerEligible && !approved;
+    const dest = needsApproval
+      ? '/pending'
+      : mode === 'trainer'
+        ? '/trainer'
+        : userProfile
+          ? '/student'
+          : '/onboarding';
     navigate(dest, { replace: true });
-  }, [loading, currentUser, userProfile, mode, navigate]);
+  }, [loading, currentUser, userProfile, trainerEligible, approved, mode, navigate]);
 
   if (loading) return <LoadingSpinner />;
   if (currentUser) return <LoadingSpinner message="Redirecionando..." />;

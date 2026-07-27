@@ -26,7 +26,8 @@ export function ProtectedRoute({
   role,
   requireProfile = true,
 }: ProtectedRouteProps) {
-  const { currentUser, userProfile, trainerEligible, mode, setMode, loading } = useAuth();
+  const { currentUser, userProfile, trainerEligible, approved, mode, setMode, loading } =
+    useAuth();
 
   // Keep the active mode in sync with the section being viewed, so the header
   // menu and the post-login default landing reflect where the user actually is.
@@ -42,6 +43,15 @@ export function ProtectedRoute({
 
   // Every protected route requires a signed-in account.
   if (!currentUser) return <Navigate to="/" replace />;
+
+  // New account pending manual approval: signed in, but with no student profile
+  // yet, not invited as a trainer, and not on the registration allowlist. Hold
+  // them on the pending screen — this also blocks the /onboarding route until
+  // their email is approved in the Firebase console. Existing students (who hold
+  // a profile) and trainers pass straight through.
+  if (!userProfile && !trainerEligible && !approved) {
+    return <Navigate to="/pending" replace />;
+  }
 
   // ── Trainer routes ──────────────────────────────────────────────────────────
   if (role === 'trainer') {

@@ -18,6 +18,14 @@ export interface AuthContextValue {
   /** True when a trainer record exists for this account (i.e. invited as a trainer). */
   trainerEligible: boolean;
   /**
+   * True when this account's email is on the registration allowlist
+   * (`allowlist/{email}`), approved manually in the Firebase console. Gates
+   * first-time student registration — see the `/pending` route. Existing
+   * students (who already hold a `users` profile) and invited trainers do not
+   * depend on this.
+   */
+  approved: boolean;
+  /**
    * The capability the user is currently acting as. Null only while still being
    * resolved on sign-in (the app stays on the loading gate until it settles).
    */

@@ -208,6 +208,39 @@ Add these in **GitHub → repo → Settings → Secrets and variables → Action
 
 ---
 
+## Approving new users (registration allowlist)
+
+The app is publicly reachable, so **new student registrations require manual
+approval**. Anyone can sign in with Google, but a first-time user cannot create
+a profile — they land on a "Conta aguardando aprovação" screen — until you add
+their email to the `allowlist` collection in Firestore.
+
+> Existing students (who already have a `users/{uid}` document) and invited
+> trainers are unaffected — this gate only applies to brand-new registrations.
+
+**To approve someone:**
+
+1. Firebase console → **Firestore Database** → **Data** tab.
+2. Start (or open) the **`allowlist`** collection.
+3. Add a **document whose ID is the person's email, in lowercase**
+   (e.g. `maria.silva@gmail.com`). The document body can be empty — only the
+   existence of the doc matters. (Optionally add fields like `approvedAt` or
+   `note` for your own records; they're ignored by the app.)
+4. The pending user clicks **Sair** and signs in again (or reloads) — they're
+   now let through to onboarding.
+
+**To revoke a not-yet-onboarded user**, delete their `allowlist` document. Note
+that once someone has completed onboarding they hold a `users` document and keep
+access regardless of the allowlist; to fully remove them, delete their `users`
+document (and related data) or disable the account under **Authentication →
+Users**.
+
+The `allowlist` collection is **read-only from the app** (a user may read only
+their own entry to learn their status); all changes are made here in the
+console.
+
+---
+
 ## Verification
 
 Once `.env.local` is populated, start the dev server:
@@ -218,6 +251,11 @@ pnpm dev
 ```
 
 Open `http://localhost:5173` — you should see the Landing page. Click **"Entrar com Google"** — it should open a Google popup, request Sheets/Drive permissions on first sign-in, then route you to role selection.
+
+> **First run:** because new registrations are gated (see *Approving new users*
+> above), your very first sign-in lands on the "aguardando aprovação" screen.
+> Add your own email to the `allowlist` collection in the Firestore console,
+> then reload to bootstrap the first account.
 
 ---
 

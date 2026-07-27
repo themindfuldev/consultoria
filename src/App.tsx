@@ -7,6 +7,7 @@ import { PrivacyPolicy } from './pages/PrivacyPolicy';
 import { TermsOfService } from './pages/TermsOfService';
 import { SessionRoute } from './pages/student/SessionRoute';
 import { Onboarding } from './pages/Onboarding';
+import { PendingApproval } from './pages/PendingApproval';
 import { TrainerDashboard } from './pages/trainer/TrainerDashboard';
 import { TrainerFeedbackView } from './pages/trainer/TrainerFeedbackView';
 import { TrainerProfile } from './pages/trainer/TrainerProfile';
@@ -35,6 +36,9 @@ export default function App() {
           consent screen configuration. */}
       <Route path="/privacidade" element={<PrivacyPolicy />} />
       <Route path="/termos" element={<TermsOfService />} />
+
+      {/* ── Pending approval: signed in, awaiting manual allowlist entry ── */}
+      <Route path="/pending" element={<PendingApproval />} />
 
       {/* ── Onboarding: auth required, NO profile required ─────────────── */}
       <Route
