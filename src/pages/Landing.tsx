@@ -62,7 +62,7 @@ export function Landing() {
       <button
         onClick={toggle}
         aria-label={isDark ? 'Ativar modo claro' : 'Ativar modo escuro'}
-        className={`absolute right-4 rounded-full p-2 text-white/80 transition-colors hover:bg-white/10 ${offlineHref ? 'top-16' : 'top-4'}`}
+        className={`absolute right-4 z-30 rounded-full p-2 text-white/80 transition-colors hover:bg-white/10 ${offlineHref ? 'top-16' : 'top-7'}`}
       >
         {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
       </button>

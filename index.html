@@ -31,7 +31,29 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Static home-page content, present in the server-sent HTML before any
+           JavaScript runs. React (createRoot) clears this on mount, so real
+           users see the full app; crawlers and no-JS visitors — including the
+           Google OAuth branding reviewer — see the app name and purpose here.
+           Styled inline (dark theme) so it stands alone without the app CSS. -->
+      <main style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;padding:2.5rem 1.25rem;text-align:center;font-family:'Outfit',system-ui,-apple-system,sans-serif;background:#2e3440;color:#eceff4;">
+        <img src="/app-icon.png" alt="Consultoria" width="64" height="64" style="border-radius:1rem;box-shadow:0 10px 30px rgba(0,0,0,0.35);" />
+        <h1 style="margin:0;font-size:2rem;font-weight:800;letter-spacing:-0.02em;">Consultoria</h1>
+        <p style="margin:0;max-width:30rem;font-size:0.95rem;line-height:1.65;color:#d8dee9;">
+          O <strong>Consultoria</strong> é um aplicativo de acompanhamento de treino que conecta
+          alunos e personal trainers. Os alunos visualizam seus treinos da semana, registram séries,
+          cargas e percepção de esforço, enviam vídeos das execuções e recebem feedback do treinador
+          — tudo em uma experiência mobile integrada ao Google Sheets e ao Google Drive.
+        </p>
+        <ul style="margin:0;padding:0;max-width:30rem;list-style:none;text-align:left;font-size:0.9rem;line-height:1.55;color:#d8dee9;">
+          <li style="margin-bottom:0.65rem;">📋 Lê a planilha de treino do seu treinador no Google Sheets e a exibe em uma interface simples no celular.</li>
+          <li style="margin-bottom:0.65rem;">✍️ Registra o que você realizou (cargas, repetições, esforço e observações) de volta na planilha.</li>
+          <li>🎥 Envia vídeos das execuções para o seu próprio Google Drive, onde o treinador deixa o feedback por exercício.</li>
+        </ul>
+        <p style="margin:0.25rem 0 0;font-size:0.8rem;color:#9aa5b8;">Entre com sua Conta Google para começar.</p>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
