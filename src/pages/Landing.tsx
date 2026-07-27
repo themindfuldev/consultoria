@@ -67,8 +67,8 @@ export function Landing() {
         {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
       </button>
 
-      {/* Card */}
-      <div className="flex flex-1 items-center justify-center p-4 py-10">
+      {/* Cards — login box, then a separate "about" box below it. */}
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 p-4 py-10">
       <div className="glass-premium w-full max-w-sm rounded-3xl p-8 text-center shadow-2xl">
         {/* Logo mark */}
         <img
@@ -80,45 +80,9 @@ export function Landing() {
         <h1 className="mb-2 text-3xl font-black tracking-tight text-slate-900 dark:text-white">
           Consultoria
         </h1>
-        <p className="mb-6 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-          Treinamento personalizado com acompanhamento real.
-          <br />
-          Seus treinos. Seu progresso. Seu treinador.
+        <p className="mb-8 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+          Acompanhamento de treino individualizado
         </p>
-
-        {/* Purpose — a plain-language explanation of what the app does, visible
-            to logged-out visitors (and OAuth reviewers) before any sign-in. */}
-        <p className="mb-6 text-left text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-          O <strong>Consultoria</strong> é um aplicativo de acompanhamento de treino que conecta
-          alunos e personal trainers. Os alunos visualizam seus treinos da semana, registram séries,
-          cargas e percepção de esforço, enviam vídeos das execuções e recebem feedback do treinador
-          — tudo em uma experiência mobile integrada ao Google Sheets e ao Google Drive.
-        </p>
-
-        {/* What the app does, and why it needs Google access. */}
-        <ul className="mb-8 space-y-2.5 text-left text-sm text-slate-600 dark:text-slate-300">
-          <li className="flex gap-2.5">
-            <span aria-hidden="true">📋</span>
-            <span>
-              Lê a planilha de treino do seu treinador no <strong>Google Sheets</strong> e a exibe
-              em uma interface simples no celular.
-            </span>
-          </li>
-          <li className="flex gap-2.5">
-            <span aria-hidden="true">✍️</span>
-            <span>
-              Registra o que você realizou (cargas, repetições, esforço e observações) de volta na
-              planilha.
-            </span>
-          </li>
-          <li className="flex gap-2.5">
-            <span aria-hidden="true">🎥</span>
-            <span>
-              Envia vídeos das execuções para o <strong>seu próprio Google Drive</strong>, onde o
-              treinador deixa o feedback por exercício.
-            </span>
-          </li>
-        </ul>
 
         {/* Google Sign-In button — the single entry point for everyone. */}
         <button
@@ -167,6 +131,42 @@ export function Landing() {
           </Link>
           .
         </p>
+      </div>
+
+      {/* About box — a plain-language explanation of what the app does, visible
+          to logged-out visitors (and OAuth reviewers) before any sign-in. */}
+      <div className="glass-premium w-full max-w-sm rounded-3xl p-6 shadow-2xl">
+        <p className="text-left text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+          O <strong>Consultoria</strong> é um aplicativo de acompanhamento de treino que conecta
+          alunos e personal trainers. Os alunos visualizam seus treinos da semana, registram séries,
+          cargas e percepção de esforço, enviam vídeos das execuções e recebem feedback do treinador
+          — tudo em uma experiência mobile integrada ao Google Sheets e ao Google Drive.
+        </p>
+
+        {/* What the app does, and why it needs Google access. */}
+        <ul className="mt-4 space-y-2.5 text-left text-sm text-slate-600 dark:text-slate-300">
+          <li className="flex gap-2.5">
+            <span aria-hidden="true">📋</span>
+            <span>
+              Lê a planilha de treino do seu treinador no <strong>Google Sheets</strong> e a exibe
+              em uma interface simples no celular.
+            </span>
+          </li>
+          <li className="flex gap-2.5">
+            <span aria-hidden="true">✍️</span>
+            <span>
+              Registra o que você realizou (cargas, repetições, esforço e observações) de volta na
+              planilha.
+            </span>
+          </li>
+          <li className="flex gap-2.5">
+            <span aria-hidden="true">🎥</span>
+            <span>
+              Envia vídeos das execuções para o <strong>seu próprio Google Drive</strong>, onde o
+              treinador deixa o feedback por exercício.
+            </span>
+          </li>
+        </ul>
       </div>
       </div>
 
