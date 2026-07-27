@@ -3,6 +3,8 @@ import { useAuth } from './hooks/useAuth';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { Landing } from './pages/Landing';
+import { PrivacyPolicy } from './pages/PrivacyPolicy';
+import { TermsOfService } from './pages/TermsOfService';
 import { SessionRoute } from './pages/student/SessionRoute';
 import { Onboarding } from './pages/Onboarding';
 import { TrainerDashboard } from './pages/trainer/TrainerDashboard';
@@ -29,6 +31,10 @@ export default function App() {
     <Routes>
       {/* ── Public ─────────────────────────────────────────────────────── */}
       <Route path="/" element={<Landing />} />
+      {/* Public legal pages — login-free URLs referenced by the Google OAuth
+          consent screen configuration. */}
+      <Route path="/privacidade" element={<PrivacyPolicy />} />
+      <Route path="/termos" element={<TermsOfService />} />
 
       {/* ── Onboarding: auth required, NO profile required ─────────────── */}
       <Route

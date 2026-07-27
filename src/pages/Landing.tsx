@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Moon, Sun } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useDarkMode } from '../hooks/useDarkMode';
@@ -123,10 +123,30 @@ export function Landing() {
         )}
 
         <p className="mt-6 text-xs text-slate-500 dark:text-slate-400">
-          Ao entrar, você concorda com o uso dos seus dados para fins de acompanhamento de treino.
+          Ao entrar, você concorda com nossos{' '}
+          <Link to="/termos" className="underline hover:text-slate-700 dark:hover:text-slate-200">
+            Termos de Serviço
+          </Link>{' '}
+          e com a{' '}
+          <Link to="/privacidade" className="underline hover:text-slate-700 dark:hover:text-slate-200">
+            Política de Privacidade
+          </Link>
+          .
         </p>
       </div>
       </div>
+
+      {/* Footer — public legal links, also referenced by the Google OAuth
+          consent screen configuration. */}
+      <footer className="pb-6 text-center text-xs text-white/70">
+        <Link to="/privacidade" className="hover:text-white">
+          Política de Privacidade
+        </Link>
+        <span className="mx-2">·</span>
+        <Link to="/termos" className="hover:text-white">
+          Termos de Serviço
+        </Link>
+      </footer>
     </div>
   );
 }
