@@ -5,11 +5,7 @@ import { Clock, LogOut, Moon, Sun } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../hooks/useAuth';
 import { useDarkMode } from '../hooks/useDarkMode';
-
-/** Where new-registration alert emails are sent (via the Trigger Email
- * extension). Optional — when unset, the queue still records requests but no
- * email is sent. */
-const NOTIFY_EMAIL = import.meta.env.VITE_NOTIFY_EMAIL as string | undefined;
+import { sendNewRegistrationEmail } from '../services/emailService';
 
 /**
  * Shown to a signed-in account whose email has not been approved for
@@ -19,10 +15,9 @@ const NOTIFY_EMAIL = import.meta.env.VITE_NOTIFY_EMAIL as string | undefined;
  * they land here — they can see nothing else and hold no data.
  *
  * On first arrival the account is recorded in `access_requests/{uid}` (the
- * review queue) and, if `VITE_NOTIFY_EMAIL` is configured, a one-off
- * notification email is queued for delivery by the "Trigger Email from
- * Firestore" extension. Both writes are guarded by the request doc's existence,
- * so revisiting or reloading this screen never re-notifies.
+ * review queue) and, if EmailJS is configured, a one-off alert email is sent.
+ * Both are guarded by the request doc's existence, so revisiting or reloading
+ * this screen never re-records or re-notifies.
  */
 export function PendingApproval() {
   const { currentUser, userProfile, trainerEligible, approved, logOut } = useAuth();
@@ -51,31 +46,14 @@ export function PendingApproval() {
           requestedAt: serverTimestamp(),
         });
 
-        // Queue a single alert email for the admin. Best-effort: a delivery
-        // failure must never affect the pending user.
-        if (NOTIFY_EMAIL) {
-          const who = currentUser.displayName
-            ? `${currentUser.displayName} (${currentUser.email ?? 'sem email'})`
-            : currentUser.email ?? 'conta sem email';
-          await setDoc(doc(db, 'mail', uid), {
-            to: [NOTIFY_EMAIL],
-            message: {
-              subject: 'Novo cadastro aguardando aprovação — Consultoria',
-              text:
-                `Um novo acesso está aguardando aprovação:\n\n` +
-                `${who}\n\n` +
-                `Para liberar, adicione o email (em minúsculas) como ID de um ` +
-                `documento na coleção "allowlist" no console do Firestore.`,
-              html:
-                `<p>Um novo acesso está aguardando aprovação:</p>` +
-                `<p><strong>${who}</strong></p>` +
-                `<p>Para liberar, adicione o email (em minúsculas) como ID de um ` +
-                `documento na coleção <code>allowlist</code> no console do Firestore.</p>`,
-            },
-          });
-        }
+        // Fire-and-forget alert email. The queue (written above) is the
+        // reliable record, so a send failure is non-fatal and never surfaced.
+        void sendNewRegistrationEmail({
+          name: currentUser.displayName ?? '',
+          email: currentUser.email ?? '',
+        }).catch(() => {});
       } catch {
-        // Best-effort — allow a retry on the next visit if it failed.
+        // The request write itself failed — allow a retry on the next visit.
         recordedRef.current = false;
       }
     })();

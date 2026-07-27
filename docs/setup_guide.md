@@ -163,10 +163,13 @@ VITE_FIREBASE_APP_ID=1:123456789:web:abc123
 VITE_GOOGLE_CLIENT_ID=123456789-abc.apps.googleusercontent.com
 
 # ── New-registration alerts (optional; see "Approving new users") ──
-# Address that receives an email when someone new requests access. Compiled
-# into the public bundle, so prefer a dedicated alias over a personal inbox.
-# Leave unset to disable emails (the review queue still records requests).
-VITE_NOTIFY_EMAIL=consultoria-alerts@example.com
+# EmailJS credentials for sending an alert when someone new requests access.
+# All three are public-safe. Leave unset to disable emails (the review queue
+# still records every request). The destination address is set in the EmailJS
+# template, not here.
+VITE_EMAILJS_SERVICE_ID=service_xxxxxxx
+VITE_EMAILJS_TEMPLATE_ID=template_xxxxxxx
+VITE_EMAILJS_PUBLIC_KEY=xxxxxxxxxxxxxxxx
 ```
 
 ---
@@ -210,7 +213,9 @@ Add these in **GitHub → repo → Settings → Secrets and variables → Action
 | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Same as `.env.local` |
 | `VITE_FIREBASE_APP_ID` | Same as `.env.local` |
 | `VITE_GOOGLE_CLIENT_ID` | Same as `.env.local` |
-| `VITE_NOTIFY_EMAIL` | Same as `.env.local` (optional — the address that receives new-registration alerts) |
+| `VITE_EMAILJS_SERVICE_ID` | Same as `.env.local` (optional — new-registration alerts) |
+| `VITE_EMAILJS_TEMPLATE_ID` | Same as `.env.local` (optional — new-registration alerts) |
+| `VITE_EMAILJS_PUBLIC_KEY` | Same as `.env.local` (optional — new-registration alerts) |
 | `FIREBASE_SERVICE_ACCOUNT_KEY` | Firebase console → Project settings → **Service accounts** tab → **"Generate new private key"** → copy the entire JSON as a single line |
 
 > The `FIREBASE_SERVICE_ACCOUNT_KEY` account also deploys the Firestore
@@ -264,33 +269,38 @@ Entries clear automatically once the person is approved and completes onboarding
 approving or rejecting someone — any trainer account may read and clear the
 queue.
 
-### Email alerts (optional — "Trigger Email from Firestore" extension)
+### Email alerts (optional — EmailJS)
 
-To be emailed the moment someone requests access, wire up Firebase's official
-**Trigger Email from Firestore** extension. The app already writes a message
-document to the **`mail`** collection (one per new request) in the format the
-extension expects — you just need to install and configure it once:
+To be emailed the moment someone requests access, wire up
+[EmailJS](https://www.emailjs.com), which sends mail directly from the browser —
+no backend, no Cloud Functions, no Firebase Extension (Extensions are being
+retired on March 31, 2027). When the three `VITE_EMAILJS_*` vars are set, the
+app sends one alert per new request; leave them unset to keep the queue with no
+email.
 
-1. Set **`VITE_NOTIFY_EMAIL`** (in `.env.local` and as a GitHub secret) to the
-   destination address. Leave it unset to keep the queue but send no emails.
-2. Firebase console → **Extensions** → install **"Trigger Email from Firestore"**
-   (`firebase/firestore-send-email`).
-3. During configuration:
-   - **Email documents collection**: `mail`
-   - **SMTP connection URI** + password: any SMTP provider (e.g. a Gmail app
-     password, SendGrid, Mailgun, Amazon SES).
-   - **Default FROM address**: whatever your SMTP provider allows sending as.
-4. That's it — the next new-registration request triggers a delivery. The
-   extension writes a `delivery` status back onto each `mail` document, so you
-   can confirm sends there.
+One-time setup:
 
-Security notes: the `mail` collection is **create-only per uid** (a signed-in
-account can queue exactly one message under its own uid — the alert — and can't
-read, overwrite, or delete it), which bounds abuse to a single email per
-account. `VITE_NOTIFY_EMAIL` is compiled into the public bundle, so use a
-dedicated alias rather than a personal inbox. For stricter control you can
-switch the extension to `toUids` + a users collection later, keeping the
-address out of the client entirely.
+1. Create a free EmailJS account and connect an email service (Gmail, Outlook,
+   or SMTP) → gives you a **Service ID**.
+2. Create an **email template**. Set its **To** field to the address that should
+   receive alerts (this stays in EmailJS, never in the app bundle). Reference
+   these variables in the subject/body:
+   - `{{requester_name}}` — the new user's name
+   - `{{requester_email}}` — their email (the value you'll add to `allowlist`)
+   - `{{app_url}}` — the app origin
+   This gives you a **Template ID**.
+3. Copy your **Public Key** (Account → General).
+4. Put the three values in `VITE_EMAILJS_SERVICE_ID`, `VITE_EMAILJS_TEMPLATE_ID`,
+   and `VITE_EMAILJS_PUBLIC_KEY` (in `.env.local` and as GitHub secrets).
+5. In EmailJS **Account → Security**, add your site's origin
+   (`https://consultoria.tiagoromero.me`) to **Allowed Origins** so only your app
+   can use the key.
+
+Security notes: all three EmailJS values are public by design; the allowed-origins
+list plus EmailJS's per-account rate limits are what prevent abuse, and the
+recipient address lives only in the EmailJS template. The alert is sent once per
+new account (guarded by the `access_requests` entry), and a send failure is
+silently ignored — the queue remains the reliable record of who's waiting.
 
 ---
 
