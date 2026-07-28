@@ -81,10 +81,7 @@ export function CycleDetail() {
 
   const isArchived = cycle?.status === 'archived';
 
-  // Replace spreadsheet
-  const [showReplaceSheet, setShowReplaceSheet] = useState(false);
-  const [replaceSheet, setReplaceSheet] = useState<PickedSpreadsheet | null>(null);
-  const [replaceError, setReplaceError] = useState('');
+  // Replace spreadsheet — the pencil opens the Picker directly and saves the pick.
   const [replacing, setReplacing] = useState(false);
 
   // Select / switch trainer
@@ -154,36 +151,31 @@ export function CycleDetail() {
 
   // ── Replace spreadsheet ─────────────────────────────────────────────────────
 
-  const handlePickReplace = async () => {
-    try {
-      const picked = await pick();
-      if (picked) { setReplaceSheet(picked); setReplaceError(''); }
-    } catch {
-      setReplaceError('Não foi possível abrir o seletor do Google. Tente novamente.');
-    }
-  };
-
+  // Open the Picker straight from the pencil and persist whatever the student
+  // chooses. No intermediate modal — picking a sheet is the whole interaction.
   const handleReplaceSheet = async () => {
-    if (!cycle) return;
-    if (!replaceSheet) {
-      setReplaceError('Selecione a planilha no Google.');
+    if (!cycle || picking || replacing) return;
+    setActionError('');
+    let picked: PickedSpreadsheet | null;
+    try {
+      picked = await pick();
+    } catch {
+      setActionError('Não foi possível abrir o seletor do Google. Tente novamente.');
       return;
     }
-    setReplaceError('');
+    if (!picked) return; // student cancelled the Picker
     setReplacing(true);
     try {
       await updateDoc(doc(db, 'cycles', cycle.id), {
-        googleSheetId: replaceSheet.id,
-        googleSheetUrl: replaceSheet.url,
-        ...(replaceSheet.name ? { googleSheetTitle: replaceSheet.name } : {}),
+        googleSheetId: picked.id,
+        googleSheetUrl: picked.url,
+        ...(picked.name ? { googleSheetTitle: picked.name } : {}),
       });
-      setCycle((prev) => (prev ? { ...prev, googleSheetId: replaceSheet.id, googleSheetUrl: replaceSheet.url, googleSheetTitle: replaceSheet.name || prev.googleSheetTitle } : prev));
-      if (replaceSheet.name) setSheetTitle(replaceSheet.name);
+      setCycle((prev) => (prev ? { ...prev, googleSheetId: picked.id, googleSheetUrl: picked.url, googleSheetTitle: picked.name || prev.googleSheetTitle } : prev));
+      if (picked.name) setSheetTitle(picked.name);
       setSheetAccessError(false);
-      setShowReplaceSheet(false);
-      setReplaceSheet(null);
     } catch {
-      setReplaceError('Não foi possível atualizar a planilha. Tente novamente.');
+      setActionError('Não foi possível atualizar a planilha. Tente novamente.');
     } finally {
       setReplacing(false);
     }
@@ -426,9 +418,10 @@ export function CycleDetail() {
               </span>
             )}
             <button
-              onClick={() => { setShowReplaceSheet(true); setReplaceSheet(null); setReplaceError(''); }}
+              onClick={handleReplaceSheet}
+              disabled={picking || replacing}
               aria-label="Trocar planilha"
-              className="flex-shrink-0 rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-slate-800 dark:hover:text-indigo-400"
+              className="flex-shrink-0 rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600 disabled:opacity-60 dark:hover:bg-slate-800 dark:hover:text-indigo-400"
             >
               <Pencil className="h-3.5 w-3.5" />
             </button>
@@ -438,8 +431,9 @@ export function CycleDetail() {
               grant, so Sheets access is denied until the student re-picks. */}
           {sheetAccessError && (
             <button
-              onClick={() => { setShowReplaceSheet(true); setReplaceSheet(null); setReplaceError(''); }}
-              className="flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-left text-xs font-medium text-amber-800 ring-1 ring-amber-200 transition-colors hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30"
+              onClick={handleReplaceSheet}
+              disabled={picking || replacing}
+              className="flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-left text-xs font-medium text-amber-800 ring-1 ring-amber-200 transition-colors hover:bg-amber-100 disabled:opacity-60 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30"
             >
               Reconecte sua planilha para liberar o acesso — toque para selecioná-la no Google.
             </button>
@@ -680,53 +674,6 @@ export function CycleDetail() {
                 </div>
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Replace spreadsheet sheet ─────────────────────────────────── */}
-      {showReplaceSheet && (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/40 backdrop-blur-sm">
-          <div className="glass-premium w-full rounded-t-2xl p-6 shadow-2xl">
-            <h2 className="mb-1 text-lg font-bold text-slate-900 dark:text-white">
-              Trocar planilha
-            </h2>
-            <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-              Selecione a planilha do Google Sheets para este ciclo.
-            </p>
-
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                  Planilha
-                </label>
-                <SheetPickerButton
-                  sheetName={replaceSheet?.name}
-                  picking={picking}
-                  onClick={handlePickReplace}
-                />
-              </div>
-
-              {replaceError && (
-                <p className="text-xs text-red-600 dark:text-red-400">{replaceError}</p>
-              )}
-
-              <div className="flex gap-3 pt-1">
-                <button
-                  onClick={handleReplaceSheet}
-                  disabled={replacing}
-                  className="flex-1 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {replacing ? 'Salvando…' : 'Salvar'}
-                </button>
-                <button
-                  onClick={() => { setShowReplaceSheet(false); setReplaceSheet(null); setReplaceError(''); }}
-                  className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}
