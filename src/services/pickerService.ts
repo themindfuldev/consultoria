@@ -70,6 +70,7 @@ export async function pickSpreadsheet(
       // Not calling setOwnedByMe surfaces both "My Drive" and "Shared with me"
       // spreadsheets — a student's sheet is usually shared to them by a trainer.
       const view = new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
+        .setLabel('Meu Drive')
         .setIncludeFolders(false)
         .setSelectFolderEnabled(false)
         .setMode(google.picker.DocsViewMode.LIST);
@@ -77,8 +78,11 @@ export async function pickSpreadsheet(
       // Dedicated "Shared with me" tab. The default view opens on My Drive /
       // Recent, where a sheet a trainer shared but that the student never added
       // to their own Drive can be hard to find — setOwnedByMe(false) lists
-      // exactly those, giving the student an explicit place to look.
+      // exactly those, giving the student an explicit place to look. Both views
+      // default to the "Spreadsheets" label, so set explicit ones to tell the
+      // two tabs apart.
       const sharedView = new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
+        .setLabel('Compartilhados comigo')
         .setOwnedByMe(false)
         .setIncludeFolders(false)
         .setSelectFolderEnabled(false)
