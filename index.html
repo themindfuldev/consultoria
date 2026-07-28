@@ -52,12 +52,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <div id="root">
-      <!-- Static home-page content, present in the server-sent HTML before any
-           JavaScript runs. React (createRoot) clears this on mount, so real
-           users see the full app; crawlers and no-JS visitors — including the
-           Google OAuth branding reviewer — see the app name and purpose here.
-           Styled inline (dark theme) so it stands alone without the app CSS. -->
+    <div id="root"></div>
+    <!-- Static home-page content for crawlers and no-JS visitors (name +
+         purpose, kept for link previews and any future re-verification). Lives
+         in <noscript> so real users — who all have JS — never see it, which
+         avoids a flash of this content before React mounts. Styled inline (dark
+         theme) so it stands alone without the app CSS. -->
+    <noscript>
       <main style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;padding:2.5rem 1.25rem;text-align:center;font-family:'Outfit',system-ui,-apple-system,sans-serif;background:#2e3440;color:#eceff4;">
         <img src="/app-icon.png" alt="Consultoria" width="64" height="64" style="border-radius:1rem;box-shadow:0 10px 30px rgba(0,0,0,0.35);" />
         <h1 style="margin:0;font-size:2rem;font-weight:800;letter-spacing:-0.02em;">Consultoria</h1>
@@ -74,7 +75,7 @@
         </ul>
         <p style="margin:0.25rem 0 0;font-size:0.8rem;color:#9aa5b8;">Entre com sua Conta Google para começar.</p>
       </main>
-    </div>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
