@@ -8,13 +8,13 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // The email verified by the trainer's passwordless sign-in link.
+    // The caller's Google-verified email (from their Firebase auth token).
     function authEmail() {
       return isSignedIn() ? request.auth.token.email : null;
     }
 
     // True when the caller is the trainer identified by `email` (non-empty match
-    // against their verified email-link identity).
+    // against their verified Google email identity).
     function isTrainerFor(email) {
       return isSignedIn() && email != null && email != '' && authEmail() == email;
     }

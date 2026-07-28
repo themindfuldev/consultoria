@@ -90,8 +90,10 @@ The Firebase project *is* a Google Cloud project. You now need to enable the API
 
 1. Sidebar → **APIs & Services → Library**
 2. Search for and **Enable** each of these:
-   - **Google Sheets API**
-   - **Google Drive API**
+   - **Google Sheets API** — read training tabs, write the `Respostas` tab
+   - **Google Drive API** — video folders, the weekly feedback Google Doc
+   - **Google Picker API** — the spreadsheet picker the student uses to select
+     their sheet (this is what grants per-file `drive.file` access)
 
 For each: click the result → **"Enable"**
 
@@ -108,14 +110,20 @@ This is what users see when they authorize the app. Only needs to be done once.
    - **User support email**: your email
    - **Developer contact email**: your email
 4. Click **"Save and Continue"**
-5. **Scopes** step → click **"Add or Remove Scopes"** → add these two:
-   - `https://www.googleapis.com/auth/spreadsheets`
+5. **Scopes** step → click **"Add or Remove Scopes"** → add just this one:
    - `https://www.googleapis.com/auth/drive.file`
    - → **"Update"** → **"Save and Continue"**
 6. **Test users** step → add your own email (and any other testers) → **"Save and Continue"**
 7. **Summary** → **"Back to Dashboard"**
 
-> While the app is in **"Testing"** status, only test users can sign in. Before going live, click **"Publish App"** to move to production. Google may ask you to verify the app if you're requesting sensitive scopes — for a personal project this is usually straightforward.
+> The app deliberately requests **only** the non-sensitive `drive.file` scope. It
+> never asks for the broad `spreadsheets` scope: the student unlocks a specific
+> spreadsheet by selecting it in the Google Picker, which grants `drive.file`
+> access to just that file. Staying off sensitive scopes avoids Google's
+> sensitive-scope verification.
+>
+> While the app is in **"Testing"** status, only test users can sign in. Before
+> going live, click **"Publish App"** to move to production.
 
 ---
 
@@ -144,6 +152,27 @@ Client ID → VITE_GOOGLE_CLIENT_ID
 
 ---
 
+### 2.5 Create the Browser API key (for the Google Picker)
+
+The Google Picker needs a **developer/API key** in addition to the OAuth client
+ID. This is `VITE_GOOGLE_API_KEY`.
+
+1. Sidebar → **APIs & Services → Credentials**
+2. **"+ Create Credentials"** → **"API key"**
+3. Copy the key that appears.
+4. Click **"Edit API key"** and restrict it:
+   - **Application restrictions** → **Websites** → add your origins
+     (`http://localhost:5173`, `https://your-project-id.web.app`, and your custom
+     domain if any).
+   - **API restrictions** → **Restrict key** → select **Google Picker API**.
+   - **Save.**
+
+```
+API key → VITE_GOOGLE_API_KEY
+```
+
+---
+
 ## Part 3 — Populate `.env.local`
 
 Create the file at the project root (it's already in `.gitignore` — never commit it):
@@ -159,8 +188,9 @@ VITE_FIREBASE_STORAGE_BUCKET=consultoria-abc.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
 VITE_FIREBASE_APP_ID=1:123456789:web:abc123
 
-# ── Google OAuth (from Google Cloud Console → APIs & Services → Credentials) ──
+# ── Google OAuth + Picker (Google Cloud Console → APIs & Services → Credentials) ──
 VITE_GOOGLE_CLIENT_ID=123456789-abc.apps.googleusercontent.com
+VITE_GOOGLE_API_KEY=AIzaSy...   # Browser API key, restricted to the Google Picker API
 
 # ── New-registration alerts (optional; see "Approving new users") ──
 # EmailJS credentials for sending an alert when someone new requests access.
@@ -213,6 +243,7 @@ Add these in **GitHub → repo → Settings → Secrets and variables → Action
 | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Same as `.env.local` |
 | `VITE_FIREBASE_APP_ID` | Same as `.env.local` |
 | `VITE_GOOGLE_CLIENT_ID` | Same as `.env.local` |
+| `VITE_GOOGLE_API_KEY` | Same as `.env.local` (Google Picker browser key) |
 | `VITE_EMAILJS_SERVICE_ID` | Same as `.env.local` (optional — new-registration alerts) |
 | `VITE_EMAILJS_TEMPLATE_ID` | Same as `.env.local` (optional — new-registration alerts) |
 | `VITE_EMAILJS_PUBLIC_KEY` | Same as `.env.local` (optional — new-registration alerts) |
@@ -313,7 +344,7 @@ pnpm install   # if not done yet
 pnpm dev
 ```
 
-Open `http://localhost:5173` — you should see the Landing page. Click **"Entrar com Google"** — it should open a Google popup, request Sheets/Drive permissions on first sign-in, then route you to role selection.
+Open `http://localhost:5173` — you should see the Landing page. Click **"Entrar com Google"** — it should open a Google popup and request the `drive.file` permission on first sign-in. A brand-new account then lands on the "aguardando aprovação" screen (see below); once approved it proceeds to onboarding.
 
 > **First run:** because new registrations are gated (see *Approving new users*
 > above), your very first sign-in lands on the "aguardando aprovação" screen.
