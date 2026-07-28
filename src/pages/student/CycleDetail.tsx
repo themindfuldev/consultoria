@@ -4,11 +4,14 @@ import { collection, deleteField, doc, getDoc, getDocs, query, Timestamp, update
 import { Archive, ChevronDown, FileSpreadsheet, Mail, MoreVertical, Pencil, RotateCcw, User } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
+import { useSheetPicker } from '../../hooks/useSheetPicker';
 import { getSpreadsheetTitle } from '../../services/sheetsService';
+import type { PickedSpreadsheet } from '../../services/pickerService';
 import { Layout } from '../../components/Layout';
 import { useCycleWeek } from '../../hooks/useCycleWeek';
 import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
 import { CycleWeekPanel } from '../../components/student/CycleWeekPanel';
+import { SheetPickerButton } from '../../components/student/SheetPickerButton';
 import { MODALITY_STYLE } from '../../components/student/modality';
 import { WhatsAppIcon } from '../../components/icons/WhatsAppIcon';
 import { Tooltip } from '../../components/Tooltip';
@@ -17,12 +20,6 @@ import { MODALITIES } from '../../types';
 import type { Cycle, Modality, Session, StudentTrainer, Trainer } from '../../types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/** Extracts the spreadsheet ID from a Google Sheets URL. Returns null if invalid. */
-function extractSheetId(url: string): string | null {
-  const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-  return match ? match[1] : null;
-}
 
 /**
  * Backfills the cycle's `trainerEmail` onto every session, session-exercise and
@@ -57,8 +54,13 @@ export function CycleDetail() {
 
   const { currentUser, getAccessToken } = useAuth();
   const navigate = useNavigate();
+  const { pick, picking } = useSheetPicker();
   const [cycle, setCycle] = useState<Cycle | null>(null);
   const [sheetTitle, setSheetTitle] = useState('');
+  // True when the Sheets API rejects access to the linked sheet (e.g. an older
+  // cycle whose sheet was pasted before the Picker flow — no `drive.file` grant
+  // exists yet). Surfaces a "reconnect" prompt so the student re-picks it once.
+  const [sheetAccessError, setSheetAccessError] = useState(false);
   const [trainerPhone, setTrainerPhone] = useState('');
   const cycleWeek = useCycleWeek(cycle);
 
@@ -72,17 +74,14 @@ export function CycleDetail() {
   const [editTitle, setEditTitle] = useState('');
   const [editModality, setEditModality] = useState<Modality | ''>('');
   const [editModalityCustom, setEditModalityCustom] = useState('');
-  const [editSheetUrl, setEditSheetUrl] = useState('');
+  const [editSheet, setEditSheet] = useState<PickedSpreadsheet | null>(null);
   const [editTrainerEmail, setEditTrainerEmail] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState('');
 
   const isArchived = cycle?.status === 'archived';
 
-  // Replace spreadsheet
-  const [showReplaceSheet, setShowReplaceSheet] = useState(false);
-  const [replaceUrl, setReplaceUrl] = useState('');
-  const [replaceError, setReplaceError] = useState('');
+  // Replace spreadsheet — the pencil opens the Picker directly and saves the pick.
   const [replacing, setReplacing] = useState(false);
 
   // Select / switch trainer
@@ -109,13 +108,18 @@ export function CycleDetail() {
     getAccessToken()
       .then((token) => getSpreadsheetTitle(cycle.googleSheetId, token))
       .then((t) => {
+        setSheetAccessError(false);
         if (!t) return;
         setSheetTitle(t);
         if (t !== cycle.googleSheetTitle) {
           updateDoc(doc(db, 'cycles', cycle.id), { googleSheetTitle: t }).catch(() => {/* best-effort */});
         }
       })
-      .catch(() => {/* non-fatal — falls back to a generic label */});
+      .catch((e) => {
+        // A 401/403 means the app has no `drive.file` grant for this sheet yet
+        // (legacy cycle) — prompt a re-pick. Other errors fall back silently.
+        if (/\b(401|403)\b/.test(String((e as Error)?.message ?? e))) setSheetAccessError(true);
+      });
   }, [cycle?.googleSheetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // One-time repair for cycles whose trainer was assigned/changed before the
@@ -147,26 +151,31 @@ export function CycleDetail() {
 
   // ── Replace spreadsheet ─────────────────────────────────────────────────────
 
+  // Open the Picker straight from the pencil and persist whatever the student
+  // chooses. No intermediate modal — picking a sheet is the whole interaction.
   const handleReplaceSheet = async () => {
-    if (!cycle) return;
-    const trimmed = replaceUrl.trim();
-    const sheetId = extractSheetId(trimmed);
-    if (!sheetId) {
-      setReplaceError('Cole um link válido do Google Sheets.');
+    if (!cycle || picking || replacing) return;
+    setActionError('');
+    let picked: PickedSpreadsheet | null;
+    try {
+      picked = await pick();
+    } catch {
+      setActionError('Não foi possível abrir o seletor do Google. Tente novamente.');
       return;
     }
-    setReplaceError('');
+    if (!picked) return; // student cancelled the Picker
     setReplacing(true);
     try {
       await updateDoc(doc(db, 'cycles', cycle.id), {
-        googleSheetId: sheetId,
-        googleSheetUrl: trimmed,
+        googleSheetId: picked.id,
+        googleSheetUrl: picked.url,
+        ...(picked.name ? { googleSheetTitle: picked.name } : {}),
       });
-      setCycle((prev) => (prev ? { ...prev, googleSheetId: sheetId, googleSheetUrl: trimmed } : prev));
-      setShowReplaceSheet(false);
-      setReplaceUrl('');
+      setCycle((prev) => (prev ? { ...prev, googleSheetId: picked.id, googleSheetUrl: picked.url, googleSheetTitle: picked.name || prev.googleSheetTitle } : prev));
+      if (picked.name) setSheetTitle(picked.name);
+      setSheetAccessError(false);
     } catch {
-      setReplaceError('Não foi possível atualizar a planilha. Tente novamente.');
+      setActionError('Não foi possível atualizar a planilha. Tente novamente.');
     } finally {
       setReplacing(false);
     }
@@ -219,11 +228,24 @@ export function CycleDetail() {
     setEditTitle(cycle?.title ?? '');
     setEditModality(cycle?.modality ?? '');
     setEditModalityCustom(cycle?.modalityCustom ?? '');
-    setEditSheetUrl(cycle?.googleSheetUrl ?? '');
+    setEditSheet(
+      cycle?.googleSheetId
+        ? { id: cycle.googleSheetId, url: cycle.googleSheetUrl ?? '', name: sheetTitle || cycle.googleSheetTitle || '' }
+        : null,
+    );
     setEditTrainerEmail(cycle?.trainerEmail ?? '');
     setEditError('');
     setMenuOpen(false);
     setShowEditModal(true);
+  };
+
+  const handlePickEdit = async () => {
+    try {
+      const picked = await pick();
+      if (picked) { setEditSheet(picked); setEditError(''); }
+    } catch {
+      setEditError('Não foi possível abrir o seletor do Google. Tente novamente.');
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -232,12 +254,12 @@ export function CycleDetail() {
     if (!title) { setEditError('Dê um nome para este programa.'); return; }
     if (!editModality) { setEditError('Selecione a modalidade.'); return; }
     if (editModality === 'Outro' && !editModalityCustom.trim()) { setEditError('Descreva a modalidade.'); return; }
-    const sheetId = extractSheetId(editSheetUrl.trim());
-    if (!sheetId) { setEditError('Cole um link válido do Google Sheets.'); return; }
+    if (!editSheet) { setEditError('Selecione a planilha do Google Sheets.'); return; }
 
     setEditError('');
     setSavingEdit(true);
-    const url = editSheetUrl.trim();
+    const sheetId = editSheet.id;
+    const url = editSheet.url;
     const custom = editModality === 'Outro' ? editModalityCustom.trim() : '';
     const trainer = trainerOptions.find((t) => t.email === editTrainerEmail);
     try {
@@ -247,6 +269,7 @@ export function CycleDetail() {
         modalityCustom: custom ? custom : deleteField(),
         googleSheetId: sheetId,
         googleSheetUrl: url,
+        ...(editSheet.name ? { googleSheetTitle: editSheet.name } : {}),
         trainerEmail: trainer ? trainer.email : deleteField(),
         trainerName: trainer ? trainer.name : deleteField(),
       });
@@ -259,9 +282,12 @@ export function CycleDetail() {
         modalityCustom: custom || undefined,
         googleSheetId: sheetId,
         googleSheetUrl: url,
+        googleSheetTitle: editSheet.name || prev.googleSheetTitle,
         trainerEmail: trainer?.email,
         trainerName: trainer?.name,
       } : prev);
+      if (editSheet.name) setSheetTitle(editSheet.name);
+      setSheetAccessError(false);
       setShowEditModal(false);
     } catch {
       setEditError('Não foi possível salvar as alterações. Tente novamente.');
@@ -392,13 +418,26 @@ export function CycleDetail() {
               </span>
             )}
             <button
-              onClick={() => { setShowReplaceSheet(true); setReplaceUrl(cycle?.googleSheetUrl ?? ''); setReplaceError(''); }}
+              onClick={handleReplaceSheet}
+              disabled={picking || replacing}
               aria-label="Trocar planilha"
-              className="flex-shrink-0 rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-slate-800 dark:hover:text-indigo-400"
+              className="flex-shrink-0 rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600 disabled:opacity-60 dark:hover:bg-slate-800 dark:hover:text-indigo-400"
             >
               <Pencil className="h-3.5 w-3.5" />
             </button>
           </div>
+
+          {/* Legacy cycles linked before the Picker flow have no `drive.file`
+              grant, so Sheets access is denied until the student re-picks. */}
+          {sheetAccessError && (
+            <button
+              onClick={handleReplaceSheet}
+              disabled={picking || replacing}
+              className="flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-left text-xs font-medium text-amber-800 ring-1 ring-amber-200 transition-colors hover:bg-amber-100 disabled:opacity-60 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30"
+            >
+              Reconecte sua planilha para liberar o acesso — toque para selecioná-la no Google.
+            </button>
+          )}
 
           {/* Trainer: name (link + tooltip) + switch */}
           {cycle?.trainerName ? (
@@ -507,12 +546,10 @@ export function CycleDetail() {
                 <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                   Planilha
                 </label>
-                <input
-                  type="text"
-                  value={editSheetUrl}
-                  onChange={(e) => { setEditSheetUrl(e.target.value); setEditError(''); }}
-                  placeholder="https://docs.google.com/spreadsheets/d/…"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
+                <SheetPickerButton
+                  sheetName={editSheet ? editSheet.name || 'Planilha vinculada' : null}
+                  picking={picking}
+                  onClick={handlePickEdit}
                 />
               </div>
 
@@ -637,56 +674,6 @@ export function CycleDetail() {
                 </div>
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Replace spreadsheet sheet ─────────────────────────────────── */}
-      {showReplaceSheet && (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/40 backdrop-blur-sm">
-          <div className="glass-premium w-full rounded-t-2xl p-6 shadow-2xl">
-            <h2 className="mb-1 text-lg font-bold text-slate-900 dark:text-white">
-              Trocar planilha
-            </h2>
-            <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-              Cole o link da nova planilha do Google Sheets para este ciclo.
-            </p>
-
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                  Link da planilha
-                </label>
-                <input
-                  type="text"
-                  value={replaceUrl}
-                  onChange={(e) => { setReplaceUrl(e.target.value); setReplaceError(''); }}
-                  placeholder="https://docs.google.com/spreadsheets/d/…"
-                  autoFocus
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
-                />
-              </div>
-
-              {replaceError && (
-                <p className="text-xs text-red-600 dark:text-red-400">{replaceError}</p>
-              )}
-
-              <div className="flex gap-3 pt-1">
-                <button
-                  onClick={handleReplaceSheet}
-                  disabled={replacing}
-                  className="flex-1 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {replacing ? 'Salvando…' : 'Salvar'}
-                </button>
-                <button
-                  onClick={() => { setShowReplaceSheet(false); setReplaceUrl(''); setReplaceError(''); }}
-                  className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}

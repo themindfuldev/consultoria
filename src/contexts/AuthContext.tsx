@@ -315,11 +315,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = useCallback(async () => {
     const provider = new GoogleAuthProvider();
-    // Request the Sheets/Drive scopes during the sign-in popup itself, so
-    // the consent is granted by the same user gesture. Otherwise the first page
-    // load has to open a *second* (gesture-less, browser-blocked) GIS popup to
-    // get these scopes — which is what forced the manual "Tentar novamente".
-    provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+    // Request the Drive scope during the sign-in popup itself, so the consent is
+    // granted by the same user gesture. Otherwise the first page load has to open
+    // a *second* (gesture-less, browser-blocked) GIS popup to get it — which is
+    // what forced the manual "Tentar novamente".
+    //
+    // `drive.file` is per-file: the app only reaches spreadsheets the user picks
+    // via the Google Picker (and files it creates, e.g. video folders). We do NOT
+    // request the broad `spreadsheets` scope — that sensitive scope is avoided so
+    // the app stays on non-sensitive scopes only.
     provider.addScope('https://www.googleapis.com/auth/drive.file');
 
     const result = await signInWithPopup(auth, provider);
@@ -366,10 +370,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!tokenClientRef.current) {
         tokenClientRef.current = window.google!.accounts.oauth2.initTokenClient({
           client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID as string,
-          scope: [
-            'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/drive.file',
-          ].join(' '),
+          scope: 'https://www.googleapis.com/auth/drive.file',
           callback: (response) => {
             if (response.access_token) {
               accessTokenRef.current = response.access_token;

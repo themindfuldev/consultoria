@@ -9,20 +9,17 @@ import {
   setDoc,
   where,
 } from 'firebase/firestore';
-import { ChevronDown, Link as LinkIcon } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
+import { useSheetPicker } from '../../hooks/useSheetPicker';
 import { Layout } from '../../components/Layout';
+import { SheetPickerButton } from '../../components/student/SheetPickerButton';
 import { MODALITIES } from '../../types';
 import type { Modality, StudentTrainer } from '../../types';
+import type { PickedSpreadsheet } from '../../services/pickerService';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/** Extracts the spreadsheet ID from a Google Sheets URL. Returns null if invalid. */
-function extractSheetId(url: string): string | null {
-  const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-  return match ? match[1] : null;
-}
 
 interface TrainerOption {
   email: string;
@@ -33,6 +30,7 @@ interface TrainerOption {
 
 export function AddCycle() {
   const { currentUser, userProfile } = useAuth();
+  const { pick, picking } = useSheetPicker();
   const navigate = useNavigate();
 
   const [trainers, setTrainers] = useState<TrainerOption[]>([]);
@@ -40,7 +38,7 @@ export function AddCycle() {
 
   // Form fields — empty trainer email = "no trainer".
   const [selectedTrainerEmail, setSelectedTrainerEmail] = useState('');
-  const [sheetUrl, setSheetUrl] = useState('');
+  const [sheet, setSheet] = useState<PickedSpreadsheet | null>(null);
   const [urlError, setUrlError] = useState('');
   const [title, setTitle] = useState('');
   const [modality, setModality] = useState<Modality | ''>('');
@@ -81,14 +79,18 @@ export function AddCycle() {
 
   // ── URL validation ──────────────────────────────────────────────────────────
 
-  const validateUrl = () => {
-    const trimmed = sheetUrl.trim();
-    if (!trimmed) {
-      setUrlError('Cole o link da planilha do Google Sheets.');
-      return false;
+  const handlePickSheet = async () => {
+    try {
+      const picked = await pick();
+      if (picked) { setSheet(picked); setUrlError(''); }
+    } catch {
+      setUrlError('Não foi possível abrir o seletor do Google. Tente novamente.');
     }
-    if (!extractSheetId(trimmed)) {
-      setUrlError('Link inválido. Deve ser um link do Google Sheets (docs.google.com/spreadsheets/…).');
+  };
+
+  const validateSheet = () => {
+    if (!sheet) {
+      setUrlError('Selecione a planilha do Google Sheets.');
       return false;
     }
     setUrlError('');
@@ -100,7 +102,7 @@ export function AddCycle() {
   const handleSubmit = async () => {
     if (!currentUser || !userProfile) return;
 
-    if (!validateUrl()) return;
+    if (!validateSheet()) return;
     if (!title.trim()) {
       setSubmitError('Dê um nome para este programa.');
       return;
@@ -117,7 +119,7 @@ export function AddCycle() {
     setSubmitError('');
     setSubmitting(true);
 
-    const sheetId = extractSheetId(sheetUrl.trim())!;
+    const sheetId = sheet!.id;
     const trainer = trainers.find((t) => t.email === selectedTrainerEmail);
     const cycleRef = doc(collection(db, 'cycles'));
 
@@ -129,7 +131,8 @@ export function AddCycle() {
         studentName: userProfile.displayName,
         studentWhatsapp: userProfile.whatsappPhone,
         googleSheetId: sheetId,
-        googleSheetUrl: sheetUrl.trim(),
+        googleSheetUrl: sheet!.url,
+        ...(sheet!.name ? { googleSheetTitle: sheet!.name } : {}),
         title: title.trim(),
         modality,
         ...(modality === 'Outro' && modalityCustom.trim()
@@ -206,20 +209,9 @@ export function AddCycle() {
           </Field>
         )}
 
-        {/* ── Google Sheets URL ──────────────────────────────────────────── */}
-        <Field label="Link da planilha do Google Sheets" error={urlError}>
-          <div className="relative">
-            <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="url"
-              value={sheetUrl}
-              onChange={(e) => { setSheetUrl(e.target.value); setUrlError(''); }}
-              onBlur={validateUrl}
-              placeholder="https://docs.google.com/spreadsheets/d/…"
-              autoComplete="off"
-              className={`${inputCls} pl-10`}
-            />
-          </div>
+        {/* ── Google Sheets picker ───────────────────────────────────────── */}
+        <Field label="Planilha do Google Sheets" error={urlError}>
+          <SheetPickerButton sheetName={sheet?.name} picking={picking} onClick={handlePickSheet} />
         </Field>
 
         {/* ── Trainer selector (optional) ────────────────────────────────── */}
