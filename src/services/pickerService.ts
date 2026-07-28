@@ -74,8 +74,19 @@ export async function pickSpreadsheet(
         .setSelectFolderEnabled(false)
         .setMode(google.picker.DocsViewMode.LIST);
 
+      // Dedicated "Shared with me" tab. The default view opens on My Drive /
+      // Recent, where a sheet a trainer shared but that the student never added
+      // to their own Drive can be hard to find — setOwnedByMe(false) lists
+      // exactly those, giving the student an explicit place to look.
+      const sharedView = new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
+        .setOwnedByMe(false)
+        .setIncludeFolders(false)
+        .setSelectFolderEnabled(false)
+        .setMode(google.picker.DocsViewMode.LIST);
+
       const picker = new google.picker.PickerBuilder()
         .addView(view)
+        .addView(sharedView)
         .setOAuthToken(token)
         .setDeveloperKey(apiKey)
         .setCallback((data: any) => {
