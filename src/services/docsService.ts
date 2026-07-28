@@ -114,7 +114,7 @@ export interface CreatedDoc {
 }
 
 /** Creates a Google Doc from HTML inside `folderId` and shares it (anyone → reader). */
-export async function createDocFromHtml(
+async function createDocFromHtml(
   name: string,
   html: string,
   folderId: string,

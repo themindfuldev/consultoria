@@ -68,7 +68,7 @@ export interface DriveFolder {
  * Creates a Drive folder, optionally nested inside a parent folder.
  * Sets public viewer permission so the other party can open the link.
  */
-export async function createDriveFolder(
+async function createDriveFolder(
   name: string,
   token: string,
   parentFolderId?: string,
@@ -123,7 +123,7 @@ async function findFolder(
  * shared/reused across multiple uploads (e.g. cycle/week/session folders) —
  * it avoids creating duplicate folders on every call.
  */
-export async function findOrCreateFolder(
+async function findOrCreateFolder(
   name: string,
   token: string,
   parentFolderId?: string,

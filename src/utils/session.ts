@@ -25,7 +25,7 @@ export function isSessionOpen(session: Session, now: number = Date.now()): boole
 }
 
 /** How long a saved offline snapshot stays valid (matches the session TTL). */
-export const OFFLINE_TTL_MS = SESSION_OPEN_TTL_MS; // 4 hours
+const OFFLINE_TTL_MS = SESSION_OPEN_TTL_MS; // 4 hours
 
 const OFFLINE_PREFIX = 'offline_session_';
 

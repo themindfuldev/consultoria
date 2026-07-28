@@ -334,11 +334,6 @@ export async function writeCells(
   if (!res.ok) throw new Error(`Sheets API ${res.status}: ${await res.text()}`);
 }
 
-/** Builds an `A1`-style range string for a single row span within a tab, e.g. `Terça!F3:G3`. */
-export function rowRange(tabName: string, startCol: string, endCol: string, row: number): string {
-  return `${tabName}!${startCol}${row}:${endCol}${row}`;
-}
-
 /** Builds an `A1`-style range string for a single cell within a tab, e.g. `Terça!B5`. */
 export function cellRange(tabName: string, col: string, row: number): string {
   return `${tabName}!${col}${row}`;

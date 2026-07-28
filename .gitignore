@@ -36,6 +36,9 @@ env/
 dist/
 dist-ssr/
 
+# Scratch / local exports
+temp/
+
 # Environment variables — never commit secrets
 .env.local
 .env.*.local
