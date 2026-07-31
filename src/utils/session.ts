@@ -1,6 +1,22 @@
 import type { Session } from '../types';
 
 /**
+ * Normalises a raw `sessions` document for use in the app.
+ *
+ * Tab names now arrive trimmed from `sheetsService`, but sessions written
+ * before that carry whatever spacing the trainer left on the sheet tab — and
+ * `tabName` is rendered in headings, WhatsApp messages, video file names and
+ * feedback labels. Trimming once here, at the read boundary, keeps every one of
+ * those sites clean. Sheet ranges never use this value (see
+ * `ParsedSheetTab.sheetTitle`), so trimming it is safe.
+ */
+export function toSession(data: unknown): Session {
+  const s = data as Session;
+  const tabName = (s.tabName ?? '').trim();
+  return tabName === s.tabName ? s : { ...s, tabName };
+}
+
+/**
  * How long a started workout stays "open" — resumable and worthy of the
  * "Ver treino atual" banner — after it was opened. Once this elapses the
  * session is considered abandoned/expired: it no longer drives the banner

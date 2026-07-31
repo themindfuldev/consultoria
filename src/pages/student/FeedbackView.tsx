@@ -20,6 +20,7 @@ import { buildWeeklyFeedbackHtml, replaceWeeklyDoc } from '../../services/docsSe
 import type { WeeklySection } from '../../services/docsService';
 import { getOrCreateWeekFolder } from '../../services/driveService';
 import { tokenizeLinks } from '../../utils/linkify';
+import { toSession } from '../../utils/session';
 import type { Cycle, CycleWeek, Feedback, Session, SessionVideo, UserProfile } from '../../types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -86,7 +87,7 @@ export function FeedbackView() {
           return;
         }
 
-        const s = sessionSnap.data() as Session;
+        const s = toSession(sessionSnap.data());
         const fb = feedbackSnap.data() as Feedback;
         setSession(s);
         setFeedback(fb);
@@ -151,7 +152,7 @@ export function FeedbackView() {
         where('studentUid', '==', session.studentUid),
       ));
       const weekSessions = sessSnap.docs
-        .map((d) => d.data() as Session)
+        .map((d) => toSession(d.data()))
         .filter((s) => (s.weekNumber ?? 1) === weekNumber && s.feedbackStatus === 'complete')
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 

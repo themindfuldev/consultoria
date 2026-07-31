@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './useAuth';
-import { SESSION_OPEN_TTL_MS, isSessionOpen } from '../utils/session';
+import { SESSION_OPEN_TTL_MS, isSessionOpen, toSession } from '../utils/session';
 import type { Session } from '../types';
 
 /**
@@ -29,7 +29,7 @@ export function useActiveSession(): Session | null {
     let expiryTimer: ReturnType<typeof setTimeout> | undefined;
     const unsubscribe = onSnapshot(q, (snap) => {
       if (expiryTimer) { clearTimeout(expiryTimer); expiryTimer = undefined; }
-      const s = snap.empty ? null : (snap.docs[0].data() as Session);
+      const s = snap.empty ? null : (toSession(snap.docs[0].data()));
       if (s && isSessionOpen(s)) {
         setActiveSession(s);
         // Drop it from "active" the moment its 4h window elapses, even without a

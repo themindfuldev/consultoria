@@ -15,6 +15,7 @@ import {
 import { db } from '../firebase';
 import { useAuth } from './useAuth';
 import { getTrainingTabs } from '../services/sheetsService';
+import { toSession } from '../utils/session';
 import type { Cycle, CycleWeek, Session } from '../types';
 
 function todayStr(): string {
@@ -115,7 +116,7 @@ export function useCycleWeek(cycle: Cycle | null) {
     return onSnapshot(
       q,
       (snap) => {
-        setSessions(snap.docs.map((d) => d.data() as Session));
+        setSessions(snap.docs.map((d) => toSession(d.data())));
         setSessionsLoading(false);
       },
       () => setSessionsLoading(false),

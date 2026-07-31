@@ -297,7 +297,14 @@ export interface PlannedExercise {
 
 /** Full parsed content of one training tab. */
 export interface ParsedSheetTab {
+  /** Display name of the tab — trimmed of the stray spaces trainers leave behind. */
   tabName: string;
+  /**
+   * The tab's exact title in the spreadsheet, spaces included. Only used to
+   * build A1 ranges for write-back (Sheets matches titles literally). Absent on
+   * snapshots saved before this field existed — fall back to `tabName`.
+   */
+  sheetTitle?: string;
   exercises: PlannedExercise[];
   preWorkout: {
     energyLevel: number | null;  // 1–5, or null if not filled

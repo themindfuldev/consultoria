@@ -22,6 +22,13 @@
  *
  * The student's answers are written directly into these cells (the trainer's
  * layout/columns are never restructured) via `writeCells` — see below.
+ *
+ * Everything read out of the sheet — tab names, exercise names, cell values —
+ * is trimmed before it leaves this module: trainers routinely leave stray
+ * leading/trailing spaces, and those spaces otherwise leak into the UI,
+ * WhatsApp messages and Firestore keys. The one thing that must keep its
+ * original spelling is the *tab title used in A1 ranges* (Sheets matches it
+ * literally), so raw titles are kept separately — see `resolveSheetTitle`.
  */
 
 import type { ParsedSheetTab, PlannedExercise, PlannedSetGroup } from '../types';
@@ -30,6 +37,65 @@ const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 /** Tabs that are configuration/reference — never treated as training sessions. */
 const IGNORED_TABS = new Set(['Template', 'Dados', 'Celular']);
+
+/**
+ * Raw (untrimmed) tab titles per spreadsheet, as returned by the API. Populated
+ * by `getTrainingTabs` and used to turn a trimmed/stored tab name back into the
+ * exact title an A1 range needs.
+ */
+const rawTitlesBySheet = new Map<string, string[]>();
+
+// ── A1 helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Quotes a tab title for A1 notation. Required whenever the title contains
+ * spaces or punctuation (`Treino A!A:H` is not parseable) and harmless
+ * otherwise; embedded single quotes are doubled.
+ */
+function quoteTitle(title: string): string {
+  return `'${title.replace(/'/g, "''")}'`;
+}
+
+/** Fetches every tab title in the spreadsheet, raw, and caches them. */
+async function fetchRawTitles(spreadsheetId: string, token: string): Promise<string[]> {
+  const res = await fetch(
+    `${SHEETS_API}/${spreadsheetId}?fields=sheets.properties.title`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) throw new Error(`Sheets API ${res.status}: ${await res.text()}`);
+
+  const data = (await res.json()) as {
+    sheets: Array<{ properties: { title: string } }>;
+  };
+  const titles = data.sheets.map((s) => s.properties.title);
+  rawTitlesBySheet.set(spreadsheetId, titles);
+  return titles;
+}
+
+/**
+ * Maps a trimmed (or legacy, untrimmed) tab name back to the exact title the
+ * spreadsheet uses, so A1 ranges keep matching a tab named e.g. `"Terça "`.
+ * Falls back to the given name when no tab matches — the API error that follows
+ * is more informative than a silent mismatch.
+ */
+export async function resolveSheetTitle(
+  spreadsheetId: string,
+  tabName: string,
+  token: string,
+): Promise<string> {
+  const wanted = tabName.trim();
+  const cached = rawTitlesBySheet.get(spreadsheetId);
+  const match = (titles: string[]) => titles.find((t) => t.trim() === wanted);
+
+  const hit = cached && match(cached);
+  if (hit != null) return hit;
+
+  try {
+    return match(await fetchRawTitles(spreadsheetId, token)) ?? tabName;
+  } catch {
+    return tabName;
+  }
+}
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -44,30 +110,23 @@ export async function getSpreadsheetTitle(
   );
   if (!res.ok) throw new Error(`Sheets API ${res.status}: ${await res.text()}`);
   const data = (await res.json()) as { properties?: { title?: string } };
-  return data.properties?.title ?? '';
+  return (data.properties?.title ?? '').trim();
 }
 
 /**
  * Returns the list of training-session tab names from the spreadsheet,
- * excluding ignored utility tabs.
+ * excluding ignored utility tabs. Names are trimmed — the raw titles are cached
+ * for `resolveSheetTitle` so ranges still address the tab correctly.
  */
 export async function getTrainingTabs(
   spreadsheetId: string,
   token: string,
 ): Promise<string[]> {
-  const res = await fetch(
-    `${SHEETS_API}/${spreadsheetId}?fields=sheets.properties.title`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  if (!res.ok) throw new Error(`Sheets API ${res.status}: ${await res.text()}`);
+  const titles = await fetchRawTitles(spreadsheetId, token);
 
-  const data = (await res.json()) as {
-    sheets: Array<{ properties: { title: string } }>;
-  };
-
-  return data.sheets
-    .map((s) => s.properties.title)
-    .filter((name) => !IGNORED_TABS.has(name));
+  return titles
+    .map((title) => title.trim())
+    .filter((name) => name && !IGNORED_TABS.has(name));
 }
 
 /**
@@ -79,13 +138,16 @@ export async function parseTrainingTab(
   tabName: string,
   token: string,
 ): Promise<ParsedSheetTab> {
-  const range = encodeURIComponent(`${tabName}!A:H`);
+  // Ranges must use the tab's exact title (spaces and all); everything the
+  // parsed result exposes uses the trimmed name.
+  const sheetTitle = await resolveSheetTitle(spreadsheetId, tabName, token);
+  const range = encodeURIComponent(`${quoteTitle(sheetTitle)}!A:H`);
   const headers = { Authorization: `Bearer ${token}` };
 
   // Values give us the grid text; a second (grid) read gives us the links
   // attached to column-A exercise-name cells (YouTube demos). The link read is
   // best-effort — a failure there must not break parsing.
-  const linkRange = encodeURIComponent(`${tabName}!A:A`);
+  const linkRange = encodeURIComponent(`${quoteTitle(sheetTitle)}!A:A`);
   const linkFields = encodeURIComponent(
     'sheets(data(rowData(values(hyperlink,userEnteredValue,textFormatRuns))))',
   );
@@ -99,7 +161,7 @@ export async function parseTrainingTab(
   const videoByRow = linksRes.ok
     ? _extractColumnAVideoLinks(await linksRes.json())
     : new Map<number, string>();
-  return _parseRows(tabName, data.values ?? [], videoByRow);
+  return _parseRows(tabName.trim(), sheetTitle, data.values ?? [], videoByRow);
 }
 
 // ── Column-A link extraction ──────────────────────────────────────────────────
@@ -145,6 +207,7 @@ function _extractColumnAVideoLinks(json: {
 
 function _parseRows(
   tabName: string,
+  sheetTitle: string,
   rows: string[][],
   videoByRow: Map<number, string> = new Map(),
 ): ParsedSheetTab {
@@ -250,7 +313,7 @@ function _parseRows(
     }
   }
 
-  return { tabName, exercises, preWorkout, postWorkout };
+  return { tabName, sheetTitle, exercises, preWorkout, postWorkout };
 }
 
 // ── Set-group helper ──────────────────────────────────────────────────────────
@@ -334,9 +397,14 @@ export async function writeCells(
   if (!res.ok) throw new Error(`Sheets API ${res.status}: ${await res.text()}`);
 }
 
-/** Builds an `A1`-style range string for a single cell within a tab, e.g. `Terça!B5`. */
-export function cellRange(tabName: string, col: string, row: number): string {
-  return `${tabName}!${col}${row}`;
+/**
+ * Builds an `A1`-style range string for a single cell within a tab, e.g.
+ * `'Terça'!B5`. Pass the tab's *exact* title (`ParsedSheetTab.sheetTitle`) —
+ * Sheets matches it literally, so a trimmed name misses a tab whose title
+ * carries stray spaces.
+ */
+export function cellRange(sheetTitle: string, col: string, row: number): string {
+  return `${quoteTitle(sheetTitle)}!${col}${row}`;
 }
 
 /**

@@ -64,7 +64,7 @@ import {
   writeCells,
 } from '../../services/sheetsService';
 import { notifyTrainer } from '../../services/notifyService';
-import { clearOfflineSnapshots } from '../../utils/session';
+import { clearOfflineSnapshots, toSession } from '../../utils/session';
 import { formatDuration } from '../../utils/duration';
 import type { Cycle, CycleWeek, Feedback, ParsedSheetTab, Session, SessionVideo } from '../../types';
 
@@ -336,7 +336,7 @@ export function SessionDetail() {
     ]).then(([c, s]) => {
       if (c.exists()) setCycle(c.data() as Cycle);
       if (!s.exists()) return;
-      const sess = s.data() as Session;
+      const sess = toSession(s.data());
       setSession(sess);
 
       // Self-heal legacy date drift: `date` used to be derived from a UTC day
@@ -504,10 +504,10 @@ export function SessionDetail() {
       if (parsedTab) {
         const updates: { range: string; values: (string | number | boolean)[][] }[] = [];
         if (parsedTab.preWorkout.energyLevelRow) {
-          updates.push({ range: cellRange(session.tabName, 'B', parsedTab.preWorkout.energyLevelRow), values: [[preEnergy]] });
+          updates.push({ range: cellRange(parsedTab.sheetTitle ?? session.tabName, 'B', parsedTab.preWorkout.energyLevelRow), values: [[preEnergy]] });
         }
         if (parsedTab.preWorkout.feelingRow) {
-          updates.push({ range: cellRange(session.tabName, 'B', parsedTab.preWorkout.feelingRow), values: [[preFeeling]] });
+          updates.push({ range: cellRange(parsedTab.sheetTitle ?? session.tabName, 'B', parsedTab.preWorkout.feelingRow), values: [[preFeeling]] });
         }
         if (updates.length > 0) {
           getAccessToken()
@@ -624,10 +624,10 @@ export function SessionDetail() {
       if (parsedTab) {
         const updates: { range: string; values: (string | number | boolean)[][] }[] = [];
         if (parsedTab.postWorkout.energyLevelRow) {
-          updates.push({ range: cellRange(session.tabName, 'B', parsedTab.postWorkout.energyLevelRow), values: [[postEnergy]] });
+          updates.push({ range: cellRange(parsedTab.sheetTitle ?? session.tabName, 'B', parsedTab.postWorkout.energyLevelRow), values: [[postEnergy]] });
         }
         if (parsedTab.postWorkout.feelingRow) {
-          updates.push({ range: cellRange(session.tabName, 'B', parsedTab.postWorkout.feelingRow), values: [[postFeeling]] });
+          updates.push({ range: cellRange(parsedTab.sheetTitle ?? session.tabName, 'B', parsedTab.postWorkout.feelingRow), values: [[postFeeling]] });
         }
         // Per-set write-back: Observações → col F; RPE → col G only when the
         // student actually set a number (a blank RPE leaves the sheet value).
@@ -637,13 +637,13 @@ export function SessionDetail() {
             if (!row) return;
             const entry = exerciseEntries[setKey(ex.exerciseName, i, row)];
             if (!entry) return;
-            updates.push({ range: cellRange(session.tabName, 'F', row), values: [[entry.observations]] });
+            updates.push({ range: cellRange(parsedTab.sheetTitle ?? session.tabName, 'F', row), values: [[entry.observations]] });
             if (typeof entry.rpe === 'number') {
-              updates.push({ range: cellRange(session.tabName, 'G', row), values: [[entry.rpe]] });
+              updates.push({ range: cellRange(parsedTab.sheetTitle ?? session.tabName, 'G', row), values: [[entry.rpe]] });
             }
           });
         }
-        updates.push({ range: cellRange(session.tabName, 'H', 2), values: [[true]] });
+        updates.push({ range: cellRange(parsedTab.sheetTitle ?? session.tabName, 'H', 2), values: [[true]] });
 
         getAccessToken()
           .then((token) => writeCells(cycle.googleSheetId, updates, token))
@@ -696,7 +696,7 @@ export function SessionDetail() {
         getAccessToken()
           .then((token) => writeCells(
             cycle.googleSheetId,
-            [{ range: cellRange(session.tabName, 'H', 2), values: [[false]] }],
+            [{ range: cellRange(parsedTab.sheetTitle ?? session.tabName, 'H', 2), values: [[false]] }],
             token,
           ))
           .catch(() => {/* best-effort sync — Firestore remains canonical */});

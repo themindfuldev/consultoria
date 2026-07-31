@@ -19,6 +19,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
 import { Avatar } from '../../components/Avatar';
+import { toSession } from '../../utils/session';
 import type { Session } from '../../types';
 
 // ── Date helpers (local time, Sunday-start week) ──────────────────────────────
@@ -100,7 +101,7 @@ export function TrainerDashboard() {
           collection(db, 'sessions'),
           where('trainerEmail', '==', trainerEmail),
         ));
-        setSessions(snap.docs.map((d) => d.data() as Session));
+        setSessions(snap.docs.map((d) => toSession(d.data())));
       } finally {
         setLoading(false);
       }

@@ -7,6 +7,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
 import { MODALITY_STYLE } from '../../components/student/modality';
+import { toSession } from '../../utils/session';
 import type { Cycle, Session } from '../../types';
 
 // ── Status pill (read-only, mirrors the student's CycleWeekPanel) ─────────────
@@ -67,7 +68,7 @@ export function TrainerStudentDetail() {
           .filter((c) => c.studentUid === studentUid)
           .sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
         const sessionsForStudent = sessionSnap.docs
-          .map((d) => d.data() as Session)
+          .map((d) => toSession(d.data()))
           .filter((s) => s.studentUid === studentUid);
         setCycles(cyclesForStudent);
         setSessions(sessionsForStudent);

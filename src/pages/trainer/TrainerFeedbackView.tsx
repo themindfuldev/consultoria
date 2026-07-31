@@ -33,6 +33,7 @@ import type {
   Session,
   SessionVideo,
 } from '../../types';
+import { toSession } from '../../utils/session';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ export function TrainerFeedbackView() {
       try {
         const sessionSnap = await getDoc(doc(db, 'sessions', sessionId)).catch(() => null);
         if (!sessionSnap || !sessionSnap.exists()) return;
-        const s = sessionSnap.data() as Session;
+        const s = toSession(sessionSnap.data());
         setSession(s);
 
         // Each read is independent + tolerant: a single failure (e.g. Firestore
