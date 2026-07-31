@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Clock, SquareChevronRight, Weight } from 'lucide-react';
 import { setKey } from '../../services/sheetsService';
+import { trimText } from '../../utils/text';
 import { YouTubeIcon } from '../icons/YouTubeIcon';
 import type { ParsedSheetTab, PlannedExercise, PlannedSetGroup } from '../../types';
 
@@ -132,11 +133,11 @@ export function WorkoutPlan({ tab, entries, onEntryChange, completedSets, onTogg
                 {row.kind === 'section' ? (
                   <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                     <SquareChevronRight className="h-4 w-4 flex-shrink-0" />
-                    {row.name}
+                    {trimText(row.name)}
                   </p>
                 ) : (
                   <p className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-white">
-                    {row.name}
+                    {trimText(row.name)}
                     {row.videoUrl && (
                       <a
                         href={row.videoUrl}

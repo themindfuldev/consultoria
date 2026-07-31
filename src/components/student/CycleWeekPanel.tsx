@@ -12,6 +12,7 @@ import {
   SkipBack,
   SkipForward,
 } from 'lucide-react';
+import { trimText } from '../../utils/text';
 import type { useCycleWeek } from '../../hooks/useCycleWeek';
 import type { TabSessionRow } from '../../hooks/useCycleWeek';
 import type { Session } from '../../types';
@@ -93,7 +94,7 @@ function SessionRows({
                 disabled={busy}
                 className="block w-full truncate text-left text-sm font-medium text-slate-800 hover:underline disabled:opacity-60 dark:text-slate-100"
               >
-                {row.tab}
+                {trimText(row.tab)}
               </button>
               <div className="overflow-hidden sm:hidden">
                 <StatusBadge session={row.session} />

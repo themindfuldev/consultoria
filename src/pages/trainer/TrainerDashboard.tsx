@@ -19,8 +19,8 @@ import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
 import { Avatar } from '../../components/Avatar';
-import { toSession } from '../../utils/session';
 import type { Session } from '../../types';
+import { trimText } from '../../utils/text';
 
 // ── Date helpers (local time, Sunday-start week) ──────────────────────────────
 
@@ -101,7 +101,7 @@ export function TrainerDashboard() {
           collection(db, 'sessions'),
           where('trainerEmail', '==', trainerEmail),
         ));
-        setSessions(snap.docs.map((d) => toSession(d.data())));
+        setSessions(snap.docs.map((d) => d.data() as Session));
       } finally {
         setLoading(false);
       }
@@ -330,8 +330,8 @@ function Section({
                 {group.items.map((s) => {
                   const d = sessionDate(s);
                   const dayLabel = d ? fmtShort(d) : '';
-                  const primary = groupBy === 'day' ? (s.studentName || 'Aluno') : s.tabName;
-                  const secondary = groupBy === 'day' ? s.tabName : dayLabel;
+                  const primary = groupBy === 'day' ? (s.studentName || 'Aluno') : trimText(s.tabName);
+                  const secondary = groupBy === 'day' ? trimText(s.tabName) : dayLabel;
                   return (
                     <li key={s.id}>
                       <button

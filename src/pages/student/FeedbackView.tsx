@@ -20,8 +20,8 @@ import { buildWeeklyFeedbackHtml, replaceWeeklyDoc } from '../../services/docsSe
 import type { WeeklySection } from '../../services/docsService';
 import { getOrCreateWeekFolder } from '../../services/driveService';
 import { tokenizeLinks } from '../../utils/linkify';
-import { toSession } from '../../utils/session';
 import type { Cycle, CycleWeek, Feedback, Session, SessionVideo, UserProfile } from '../../types';
+import { trimText } from '../../utils/text';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -87,7 +87,7 @@ export function FeedbackView() {
           return;
         }
 
-        const s = toSession(sessionSnap.data());
+        const s = sessionSnap.data() as Session;
         const fb = feedbackSnap.data() as Feedback;
         setSession(s);
         setFeedback(fb);
@@ -152,7 +152,7 @@ export function FeedbackView() {
         where('studentUid', '==', session.studentUid),
       ));
       const weekSessions = sessSnap.docs
-        .map((d) => toSession(d.data()))
+        .map((d) => d.data() as Session)
         .filter((s) => (s.weekNumber ?? 1) === weekNumber && s.feedbackStatus === 'complete')
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
@@ -175,7 +175,7 @@ export function FeedbackView() {
           ? s.date.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
           : '';
         sections.push({
-          sessionLabel: `${s.tabName}${dateLbl ? ` · ${dateLbl}` : ''}`,
+          sessionLabel: `${trimText(s.tabName)}${dateLbl ? ` · ${dateLbl}` : ''}`,
           exerciseFeedback: fb.exerciseFeedback,
           videos: vids,
           generalNotes: fb.generalNotes,
@@ -267,7 +267,7 @@ export function FeedbackView() {
         items={[
           { label: 'Meus Treinos', to: '/student' },
           { label: cycle?.title ?? 'Programa', to: session ? `/student/cycles/${session.cycleId}` : undefined },
-          { label: session?.tabName ?? 'Treino', to: session ? `/student/cycles/${session.cycleId}/sessions/${sessionId}` : undefined },
+          { label: trimText(session?.tabName) || 'Treino', to: session ? `/student/cycles/${session.cycleId}/sessions/${sessionId}` : undefined },
           { label: 'Feedback' },
         ]}
       />
@@ -276,7 +276,7 @@ export function FeedbackView() {
       <div className="mb-5">
         <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 dark:text-white">
           <MessageSquare className="h-5 w-5 flex-shrink-0 text-emerald-500" />
-          <span>{session?.weekNumber ? `Semana ${session.weekNumber} · ` : ''}{session?.tabName} · Feedback</span>
+          <span>{session?.weekNumber ? `Semana ${session.weekNumber} · ` : ''}{trimText(session?.tabName)} · Feedback</span>
         </h1>
         <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
           {cycle?.title} · {dateLabel}
@@ -291,7 +291,7 @@ export function FeedbackView() {
             <div key={ef.exerciseName} className="glass-premium rounded-2xl p-4">
               <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 <Dumbbell className="h-4 w-4 text-indigo-500" />
-                {ef.exerciseName}
+                {trimText(ef.exerciseName)}
               </h3>
 
               {/* Student's videos */}

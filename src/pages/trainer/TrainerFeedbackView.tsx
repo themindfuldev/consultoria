@@ -33,7 +33,7 @@ import type {
   Session,
   SessionVideo,
 } from '../../types';
-import { toSession } from '../../utils/session';
+import { trimText } from '../../utils/text';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -88,7 +88,7 @@ export function TrainerFeedbackView() {
       try {
         const sessionSnap = await getDoc(doc(db, 'sessions', sessionId)).catch(() => null);
         if (!sessionSnap || !sessionSnap.exists()) return;
-        const s = toSession(sessionSnap.data());
+        const s = sessionSnap.data() as Session;
         setSession(s);
 
         // Each read is independent + tolerant: a single failure (e.g. Firestore
@@ -196,7 +196,7 @@ export function TrainerFeedbackView() {
       // Ensure the session's feedback subfolder exists once, then reuse it.
       if (!feedbackFolderRef.current) {
         const dLabel = session.date instanceof Timestamp ? fmtDate(session.date) : '';
-        const sessionLabel = `${session.tabName}${dLabel ? ` — ${dLabel}` : ''}`;
+        const sessionLabel = `${trimText(session.tabName)}${dLabel ? ` — ${dLabel}` : ''}`;
         const { subfolder, rootFolderId } = await getOrCreateTrainerFeedbackFolder(
           session.studentName ?? 'Aluno',
           sessionLabel,
@@ -322,7 +322,7 @@ export function TrainerFeedbackView() {
         openWhatsApp(
           session.studentWhatsapp,
           'Feedback de treino disponível',
-          `Segue o feedback do seu treino *${session.tabName}*${weekSuffix}\n` +
+          `Segue o feedback do seu treino *${trimText(session.tabName)}*${weekSuffix}\n` +
           `Acessar feedback: ${appUrl}/student/sessions/${sessionId}/feedback`,
         );
       }
@@ -386,7 +386,7 @@ export function TrainerFeedbackView() {
         <p className="mt-0.5 text-sm font-semibold text-slate-700 dark:text-slate-200">
           {[
             session?.weekNumber ? `Semana ${session.weekNumber}` : null,
-            session?.tabName,
+            trimText(session?.tabName),
           ].filter(Boolean).join(' · ')}
         </p>
         <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
@@ -531,7 +531,7 @@ function ExerciseBlock({
     <div className="glass-premium rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
       <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         <Dumbbell className="h-4 w-4 text-indigo-500" />
-        {exerciseName}
+        {trimText(exerciseName)}
       </h3>
 
       {/* Videos */}
@@ -546,7 +546,7 @@ function ExerciseBlock({
         value={feedbackText}
         onChange={(e) => onFeedbackChange(e.target.value)}
         rows={3}
-        placeholder={`Feedback para ${exerciseName}…`}
+        placeholder={`Feedback para ${trimText(exerciseName)}…`}
         className="mb-3 w-full resize-none rounded-xl border border-slate-200 bg-white/70 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500"
       />
 

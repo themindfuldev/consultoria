@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ExternalLink, Video } from 'lucide-react';
 import type { SessionVideo } from '../types';
 import { fmtBytes } from '../utils/format';
+import { trimText } from '../utils/text';
 import {
   generateVideoThumbnail,
   getUploadedThumbnail,
@@ -153,7 +154,7 @@ export function ReadOnlyVideoCard({
       <VideoThumb video={video} />
       <div className="flex min-w-0 flex-1 flex-col">
         <p className="truncate text-sm font-medium text-slate-800 dark:text-white">
-          {title ?? video.exerciseName ?? 'Vídeo geral'}
+          {title ?? (trimText(video.exerciseName) || 'Vídeo geral')}
         </p>
         <div className="flex flex-1 items-end justify-between gap-2">
           <p className="self-start text-xs text-slate-500 dark:text-slate-400">

@@ -6,6 +6,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { useSheetPicker } from '../../hooks/useSheetPicker';
 import { getSpreadsheetTitle } from '../../services/sheetsService';
+import { trimText } from '../../utils/text';
 import type { PickedSpreadsheet } from '../../services/pickerService';
 import { Layout } from '../../components/Layout';
 import { useCycleWeek } from '../../hooks/useCycleWeek';
@@ -410,7 +411,7 @@ export function CycleDetail() {
                 className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400"
               >
                 <FileSpreadsheet className="h-4 w-4 flex-shrink-0" />
-                <span className="truncate">{sheetTitle || cycle?.googleSheetTitle || 'Planilha do treino'}</span>
+                <span className="truncate">{trimText(sheetTitle || cycle?.googleSheetTitle) || 'Planilha do treino'}</span>
               </a>
             ) : (
               <span className="flex items-center gap-1.5 text-sm text-slate-400 dark:text-slate-500">

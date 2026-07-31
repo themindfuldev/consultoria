@@ -14,6 +14,7 @@
 import type { ExerciseFeedback, SessionVideo } from '../types';
 import { deleteDriveFile, makePublicViewer } from './driveService';
 import { linkifyToHtml } from '../utils/linkify';
+import { trimText } from '../utils/text';
 
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3';
 
@@ -66,7 +67,7 @@ export function buildWeeklyFeedbackHtml(
             : '<em>Sem comentários.</em>';
           // Label + empty line before it, then a line break before the text.
           return `
-            <h3>${esc(ef.exerciseName)}</h3>
+            <h3>${esc(trimText(ef.exerciseName))}</h3>
             ${vids.length ? `<p><strong>Vídeos:</strong></p><ul>${videoLinks}</ul>` : ''}
             <p></p>
             <p><strong>Feedback:</strong><br>${text}</p>`;

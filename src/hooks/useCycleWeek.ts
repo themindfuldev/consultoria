@@ -15,7 +15,7 @@ import {
 import { db } from '../firebase';
 import { useAuth } from './useAuth';
 import { getTrainingTabs } from '../services/sheetsService';
-import { toSession } from '../utils/session';
+import { trimText } from '../utils/text';
 import type { Cycle, CycleWeek, Session } from '../types';
 
 function todayStr(): string {
@@ -116,7 +116,7 @@ export function useCycleWeek(cycle: Cycle | null) {
     return onSnapshot(
       q,
       (snap) => {
-        setSessions(snap.docs.map((d) => toSession(d.data())));
+        setSessions(snap.docs.map((d) => d.data() as Session));
         setSessionsLoading(false);
       },
       () => setSessionsLoading(false),
@@ -352,7 +352,7 @@ export function useCycleWeek(cycle: Cycle | null) {
     const existing = sessionByTab.get(tabName);
     if (existing?.status === 'in_progress') {
       const confirmed = window.confirm(
-        `Pular o treino "${tabName}"? O progresso já preenchido nesta sessão será descartado.`,
+        `Pular o treino "${trimText(tabName)}"? O progresso já preenchido nesta sessão será descartado.`,
       );
       if (!confirmed) return;
     }

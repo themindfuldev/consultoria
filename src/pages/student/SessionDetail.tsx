@@ -64,8 +64,9 @@ import {
   writeCells,
 } from '../../services/sheetsService';
 import { notifyTrainer } from '../../services/notifyService';
-import { clearOfflineSnapshots, toSession } from '../../utils/session';
+import { clearOfflineSnapshots } from '../../utils/session';
 import { formatDuration } from '../../utils/duration';
+import { trimText } from '../../utils/text';
 import type { Cycle, CycleWeek, Feedback, ParsedSheetTab, Session, SessionVideo } from '../../types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -336,7 +337,7 @@ export function SessionDetail() {
     ]).then(([c, s]) => {
       if (c.exists()) setCycle(c.data() as Cycle);
       if (!s.exists()) return;
-      const sess = toSession(s.data());
+      const sess = s.data() as Session;
       setSession(sess);
 
       // Self-heal legacy date drift: `date` used to be derived from a UTC day
@@ -495,7 +496,7 @@ export function SessionDetail() {
         notifyTrainer(
           cycle.trainerEmail,
           'Treino iniciado',
-          `Comecei o treino *${session.tabName}*` +
+          `Comecei o treino *${trimText(session.tabName)}*` +
             (session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.'),
         ).catch(() => {/* notification is a convenience, never a blocker */});
       }
@@ -504,10 +505,10 @@ export function SessionDetail() {
       if (parsedTab) {
         const updates: { range: string; values: (string | number | boolean)[][] }[] = [];
         if (parsedTab.preWorkout.energyLevelRow) {
-          updates.push({ range: cellRange(parsedTab.sheetTitle ?? session.tabName, 'B', parsedTab.preWorkout.energyLevelRow), values: [[preEnergy]] });
+          updates.push({ range: cellRange(session.tabName, 'B', parsedTab.preWorkout.energyLevelRow), values: [[preEnergy]] });
         }
         if (parsedTab.preWorkout.feelingRow) {
-          updates.push({ range: cellRange(parsedTab.sheetTitle ?? session.tabName, 'B', parsedTab.preWorkout.feelingRow), values: [[preFeeling]] });
+          updates.push({ range: cellRange(session.tabName, 'B', parsedTab.preWorkout.feelingRow), values: [[preFeeling]] });
         }
         if (updates.length > 0) {
           getAccessToken()
@@ -526,7 +527,7 @@ export function SessionDetail() {
 
   const handleSkipSession = async () => {
     if (!session) return;
-    const confirmed = window.confirm(`Pular o treino "${session.tabName}"?`);
+    const confirmed = window.confirm(`Pular o treino "${trimText(session.tabName)}"?`);
     if (!confirmed) return;
     setPreError('');
     setSkipping(true);
@@ -624,10 +625,10 @@ export function SessionDetail() {
       if (parsedTab) {
         const updates: { range: string; values: (string | number | boolean)[][] }[] = [];
         if (parsedTab.postWorkout.energyLevelRow) {
-          updates.push({ range: cellRange(parsedTab.sheetTitle ?? session.tabName, 'B', parsedTab.postWorkout.energyLevelRow), values: [[postEnergy]] });
+          updates.push({ range: cellRange(session.tabName, 'B', parsedTab.postWorkout.energyLevelRow), values: [[postEnergy]] });
         }
         if (parsedTab.postWorkout.feelingRow) {
-          updates.push({ range: cellRange(parsedTab.sheetTitle ?? session.tabName, 'B', parsedTab.postWorkout.feelingRow), values: [[postFeeling]] });
+          updates.push({ range: cellRange(session.tabName, 'B', parsedTab.postWorkout.feelingRow), values: [[postFeeling]] });
         }
         // Per-set write-back: Observações → col F; RPE → col G only when the
         // student actually set a number (a blank RPE leaves the sheet value).
@@ -637,13 +638,13 @@ export function SessionDetail() {
             if (!row) return;
             const entry = exerciseEntries[setKey(ex.exerciseName, i, row)];
             if (!entry) return;
-            updates.push({ range: cellRange(parsedTab.sheetTitle ?? session.tabName, 'F', row), values: [[entry.observations]] });
+            updates.push({ range: cellRange(session.tabName, 'F', row), values: [[entry.observations]] });
             if (typeof entry.rpe === 'number') {
-              updates.push({ range: cellRange(parsedTab.sheetTitle ?? session.tabName, 'G', row), values: [[entry.rpe]] });
+              updates.push({ range: cellRange(session.tabName, 'G', row), values: [[entry.rpe]] });
             }
           });
         }
-        updates.push({ range: cellRange(parsedTab.sheetTitle ?? session.tabName, 'H', 2), values: [[true]] });
+        updates.push({ range: cellRange(session.tabName, 'H', 2), values: [[true]] });
 
         getAccessToken()
           .then((token) => writeCells(cycle.googleSheetId, updates, token))
@@ -655,7 +656,7 @@ export function SessionDetail() {
         notifyTrainer(
           cycle.trainerEmail,
           'Treino concluído',
-          `Terminei o treino *${session.tabName}*` +
+          `Terminei o treino *${trimText(session.tabName)}*` +
             (session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.'),
         ).catch(() => {/* notification is a convenience, never a blocker */});
       }
@@ -679,7 +680,7 @@ export function SessionDetail() {
 
   const handleReopenSession = async () => {
     if (!session) return;
-    if (!window.confirm(`Reabrir o treino "${session.tabName}"?`)) return;
+    if (!window.confirm(`Reabrir o treino "${trimText(session.tabName)}"?`)) return;
     setReopenError('');
     setReopening(true);
     try {
@@ -696,7 +697,7 @@ export function SessionDetail() {
         getAccessToken()
           .then((token) => writeCells(
             cycle.googleSheetId,
-            [{ range: cellRange(parsedTab.sheetTitle ?? session.tabName, 'H', 2), values: [[false]] }],
+            [{ range: cellRange(session.tabName, 'H', 2), values: [[false]] }],
             token,
           ))
           .catch(() => {/* best-effort sync — Firestore remains canonical */});
@@ -791,7 +792,7 @@ export function SessionDetail() {
         const weekLabel = session.weekNumber
           ? `Semana ${session.weekNumber}`
           : getCycleWeekLabel(cycleStartDate, sessionDate);
-        const sessionLabel = `${session.tabName} — ${dateStr}`;
+        const sessionLabel = `${trimText(session.tabName)} — ${dateStr}`;
         const folder = await getOrCreateSessionFolder(
           cycle.trainerName ?? 'Treinador',
           currentUser.displayName ?? 'Aluno',
@@ -828,7 +829,7 @@ export function SessionDetail() {
 
         setUploadState((s) => s ? { ...s, phase: 'uploading', progress: 0 } : s);
         const uploaded = await uploadFileToDrive(
-          `${session.tabName} - ${exerciseName ?? 'video'}_${Date.now()}.mp4`,
+          `${trimText(session.tabName)} - ${exerciseName ?? 'video'}_${Date.now()}.mp4`,
           'video/mp4',
           buffer,
           folderId,
@@ -1024,7 +1025,7 @@ export function SessionDetail() {
       {/* Session header */}
       <div className="mb-5 min-w-0">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-          {session?.weekNumber ? `Semana ${session.weekNumber} · ` : ''}{session?.tabName}
+          {session?.weekNumber ? `Semana ${session.weekNumber} · ` : ''}{trimText(session?.tabName)}
         </h1>
         <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
           {cycle?.title} · {dateLabel}
@@ -1183,7 +1184,7 @@ export function SessionDetail() {
                         the name can use the full card width. */}
                     <div className="flex items-center gap-1.5">
                       <p className="truncate text-sm font-medium text-slate-800 dark:text-white">
-                        {v.exerciseName ?? 'Vídeo geral'}
+                        {trimText(v.exerciseName) || 'Vídeo geral'}
                       </p>
                       {!readOnly && (
                         <button

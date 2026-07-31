@@ -1,47 +1,16 @@
 import type { Session } from '../types';
 
 /**
- * Normalises a raw `sessions` document for use in the app.
+ * True if `session` is the student's current workout — i.e. it's in progress.
  *
- * Tab names now arrive trimmed from `sheetsService`, but sessions written
- * before that carry whatever spacing the trainer left on the sheet tab — and
- * `tabName` is rendered in headings, WhatsApp messages, video file names and
- * feedback labels. Trimming once here, at the read boundary, keeps every one of
- * those sites clean. Sheet ranges never use this value (see
- * `ParsedSheetTab.sheetTitle`), so trimming it is safe.
+ * There is deliberately no time limit: a workout stays open, resumable and
+ * banner-worthy until the student concludes or skips it, however many days that
+ * takes. The header's duration reports the real elapsed span (days included),
+ * so a session left running is visible rather than silently dropped.
  */
-export function toSession(data: unknown): Session {
-  const s = data as Session;
-  const tabName = (s.tabName ?? '').trim();
-  return tabName === s.tabName ? s : { ...s, tabName };
+export function isSessionOpen(session: Session): boolean {
+  return session.status === 'in_progress';
 }
-
-/**
- * How long a started workout stays "open" — resumable and worthy of the
- * "Ver treino atual" banner — after it was opened. Once this elapses the
- * session is considered abandoned/expired: it no longer drives the banner
- * nor the single-active-session guard, even though its Firestore status is
- * still 'in_progress'.
- */
-export const SESSION_OPEN_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
-
-/**
- * True if `session` is an in-progress workout opened within the last 4 hours —
- * i.e. genuinely the student's *current* session. An in-progress session older
- * than that has effectively expired.
- *
- * A freshly-created session whose `startedAt` server timestamp hasn't resolved
- * yet is treated as open (it was opened this instant).
- */
-export function isSessionOpen(session: Session, now: number = Date.now()): boolean {
-  if (session.status !== 'in_progress') return false;
-  const startedMs = session.startedAt?.toMillis?.();
-  if (!startedMs) return true; // just opened — server time not resolved yet
-  return now - startedMs < SESSION_OPEN_TTL_MS;
-}
-
-/** How long a saved offline snapshot stays valid (matches the session TTL). */
-const OFFLINE_TTL_MS = SESSION_OPEN_TTL_MS; // 4 hours
 
 const OFFLINE_PREFIX = 'offline_session_';
 
@@ -70,11 +39,13 @@ export interface OfflineRef {
 }
 
 /**
- * Returns the most recent non-expired offline snapshot in localStorage (pruning
- * expired ones), or null. Powers the login-page "offline session available"
- * entry that lets a signed-out student reopen their in-progress workout.
+ * Returns the most recent offline snapshot in localStorage, or null. Powers the
+ * login-page "offline session available" entry that lets a signed-out student
+ * reopen their in-progress workout. Snapshots don't age out — like the sessions
+ * they mirror, they live until the workout is finished (which removes the
+ * snapshot) or a new one is started (which clears them all).
  */
-export function findCurrentOfflineSession(now: number = Date.now()): OfflineRef | null {
+export function findCurrentOfflineSession(): OfflineRef | null {
   let best: OfflineRef | null = null;
   for (let i = localStorage.length - 1; i >= 0; i--) {
     const key = localStorage.key(i);
@@ -83,7 +54,6 @@ export function findCurrentOfflineSession(now: number = Date.now()): OfflineRef 
     if (!raw) continue;
     try {
       const parsed = JSON.parse(raw) as { savedAt: number; tabName?: string; cycleId?: string };
-      if (now - parsed.savedAt > OFFLINE_TTL_MS) { localStorage.removeItem(key); continue; }
       if (!best || parsed.savedAt > best.savedAt) {
         best = {
           sessionId: key.slice(OFFLINE_PREFIX.length),

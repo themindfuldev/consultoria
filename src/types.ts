@@ -146,7 +146,7 @@ export interface Session {
   weekNumber: number;
   /**
    * 'pending'     — pre-created when the week starts, not opened yet.
-   * 'in_progress' — opened by the student (resumable for 4h, see SESSION_OPEN_TTL_MS).
+   * 'in_progress' — opened by the student; stays resumable until concluded or skipped.
    * 'completed'   — finished.
    * 'skipped'     — explicitly skipped for the week.
    */
@@ -297,14 +297,8 @@ export interface PlannedExercise {
 
 /** Full parsed content of one training tab. */
 export interface ParsedSheetTab {
-  /** Display name of the tab — trimmed of the stray spaces trainers leave behind. */
+  /** The tab's title, exactly as the spreadsheet spells it — trim before rendering. */
   tabName: string;
-  /**
-   * The tab's exact title in the spreadsheet, spaces included. Only used to
-   * build A1 ranges for write-back (Sheets matches titles literally). Absent on
-   * snapshots saved before this field existed — fall back to `tabName`.
-   */
-  sheetTitle?: string;
   exercises: PlannedExercise[];
   preWorkout: {
     energyLevel: number | null;  // 1–5, or null if not filled

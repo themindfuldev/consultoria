@@ -5,9 +5,8 @@ import { useDarkMode } from '../hooks/useDarkMode';
 import { WorkoutPlan } from '../components/student/WorkoutPlan';
 import type { ExerciseEntry } from '../components/student/WorkoutPlan';
 import { formatDuration } from '../utils/duration';
+import { trimText } from '../utils/text';
 import type { ParsedSheetTab } from '../types';
-
-const EXPIRY_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 interface OfflineSnapshot {
   savedAt: number;
@@ -29,7 +28,7 @@ function offlineKey(sessionId: string): string {
 }
 
 interface LoadedSnapshot {
-  state: 'ok' | 'missing' | 'expired';
+  state: 'ok' | 'missing';
   snapshot: OfflineSnapshot | null;
 }
 
@@ -39,12 +38,9 @@ function loadSnapshot(sessionId: string | undefined): LoadedSnapshot {
   const raw = localStorage.getItem(key);
   if (!raw) return { state: 'missing', snapshot: null };
   try {
-    const parsed = JSON.parse(raw) as OfflineSnapshot;
-    if (Date.now() - parsed.savedAt > EXPIRY_MS) {
-      localStorage.removeItem(key);
-      return { state: 'expired', snapshot: null };
-    }
-    return { state: 'ok', snapshot: parsed };
+    // No expiry: the snapshot mirrors a workout that stays open until it's
+    // concluded (which deletes it) or a new one is started (which clears them).
+    return { state: 'ok', snapshot: JSON.parse(raw) as OfflineSnapshot };
   } catch {
     localStorage.removeItem(key);
     return { state: 'missing', snapshot: null };
@@ -90,12 +86,9 @@ export function OfflineSession() {
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center dark:bg-slate-950">
         <Save className="h-12 w-12 text-slate-400" aria-hidden />
         <p className="text-base font-bold text-slate-900 dark:text-white">
-          {state === 'expired'
-            ? 'Esse instantâneo expirou'
-            : 'Esse instantâneo não existe mais'}
+          Esse instantâneo não existe mais
         </p>
         <p className="max-w-xs text-sm text-slate-500 dark:text-slate-400">
-          Instantâneos offline ficam disponíveis por até 4 horas após serem salvos.
           Abra a sessão novamente e toque em "Salvar para acesso offline".
         </p>
       </div>
@@ -117,7 +110,7 @@ export function OfflineSession() {
             </button>
             <div className="flex min-w-0 items-center gap-1.5 text-base font-black text-slate-900 dark:text-white">
               <img src="/app-icon.png" alt="" className="h-6 w-6 flex-shrink-0" />
-              <span className="truncate">{snapshot.tabName}</span>
+              <span className="truncate">{trimText(snapshot.tabName)}</span>
             </div>
           </div>
           <button
@@ -137,7 +130,7 @@ export function OfflineSession() {
         </div>
 
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-          {snapshot.tabName}
+          {trimText(snapshot.tabName)}
         </h1>
         <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
           {snapshot.cycleTitle} · {snapshot.dateLabel}

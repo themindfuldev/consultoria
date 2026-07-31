@@ -307,8 +307,10 @@ A cycle progresses week by week via the `weeks` sub-collection. A week is
 - **Deferred start.** Opening a session ("Abrir") does **not** start it. It becomes
   `in_progress` — and the trainer's WhatsApp "started" message fires — only when
   the student fills the two pre-workout questions and taps "Começar treino". A
-  started session counts as the *current* workout for **4 hours**
-  (`SESSION_OPEN_TTL_MS`), after which it's considered abandoned.
+  started session stays the *current* workout — banner included — until it's
+  concluded or skipped, with no time limit; the header's duration reports the
+  real elapsed span, days included (`3d 02:05`), so a forgotten session stays
+  visible instead of being silently dropped.
 - **Statuses** `pending | in_progress | completed | skipped`. Skipped sessions are
   revertible ("Despular"); opening one is read-only until un-skipped.
 - The session list is a table (`name · status · Abrir`); completed rows show

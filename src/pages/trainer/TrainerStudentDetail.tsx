@@ -7,8 +7,8 @@ import { useAuth } from '../../hooks/useAuth';
 import { Layout } from '../../components/Layout';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
 import { MODALITY_STYLE } from '../../components/student/modality';
-import { toSession } from '../../utils/session';
 import type { Cycle, Session } from '../../types';
+import { trimText } from '../../utils/text';
 
 // ── Status pill (read-only, mirrors the student's CycleWeekPanel) ─────────────
 
@@ -68,7 +68,7 @@ export function TrainerStudentDetail() {
           .filter((c) => c.studentUid === studentUid)
           .sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
         const sessionsForStudent = sessionSnap.docs
-          .map((d) => toSession(d.data()))
+          .map((d) => d.data() as Session)
           .filter((s) => s.studentUid === studentUid);
         setCycles(cyclesForStudent);
         setSessions(sessionsForStudent);
@@ -190,7 +190,7 @@ export function TrainerStudentDetail() {
                                     className="flex w-full items-center gap-1.5 text-left text-sm font-medium text-slate-800 hover:underline dark:text-slate-100"
                                   >
                                     <Dumbbell className="h-3.5 w-3.5 flex-shrink-0 text-slate-400" />
-                                    <span className="truncate">{s.tabName}</span>
+                                    <span className="truncate">{trimText(s.tabName)}</span>
                                   </button>
                                   <div className="mt-1 overflow-hidden">
                                     <StatusBadge session={s} />

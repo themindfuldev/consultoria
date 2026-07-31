@@ -100,9 +100,7 @@ export async function pickSpreadsheet(
               doc
                 ? {
                     id: doc.id,
-                    // Drive file names routinely carry stray spaces — trim so
-                    // the name renders cleanly wherever it's shown.
-                    name: (doc.name ?? '').trim(),
+                    name: doc.name ?? '',
                     url: doc.url ?? `https://docs.google.com/spreadsheets/d/${doc.id}/edit`,
                   }
                 : null,
