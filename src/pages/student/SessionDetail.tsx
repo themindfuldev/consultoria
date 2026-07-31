@@ -66,7 +66,7 @@ import {
 import { notifyTrainer } from '../../services/notifyService';
 import { clearOfflineSnapshots } from '../../utils/session';
 import { formatDuration } from '../../utils/duration';
-import type { Cycle, CycleWeek, ParsedSheetTab, Session, SessionVideo } from '../../types';
+import type { Cycle, CycleWeek, Feedback, ParsedSheetTab, Session, SessionVideo } from '../../types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -233,6 +233,19 @@ export function SessionDetail() {
   const [postFeeling, setPostFeeling] = useState<typeof POST_FEELING_OPTIONS[number] | null>(null);
   const [finishing, setFinishing] = useState(false);
   const [finishError, setFinishError] = useState('');
+  const [reopening, setReopening] = useState(false);
+  const [reopenError, setReopenError] = useState('');
+
+  // Seed the post-workout answers from what was saved on finish, so a reopened
+  // session doesn't ask the student to fill them in from scratch again. Only
+  // fills blanks — any answer already picked in this view wins, since `session`
+  // is re-set on unrelated writes (hasVideos, folder ids, …).
+  useEffect(() => {
+    const pw = session?.postWorkout;
+    if (!pw) return;
+    setPostEnergy((prev) => prev ?? pw.energyLevel);
+    setPostFeeling((prev) => prev ?? pw.feeling);
+  }, [session?.postWorkout]);
 
   const dateLabel = session?.date instanceof Timestamp
     ? session.date.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -282,9 +295,36 @@ export function SessionDetail() {
   const actionsFirst =
     (phase === 'pre' && !readOnly) || (isSkipped && !weekConcluded);
 
-  // Once the trainer's feedback is in, the session is locked: no more video
-  // add/delete or re-sending for feedback.
+  // The trainer's feedback has arrived. It doesn't lock anything on its own —
+  // feedback often lands mid-week and a follow-up video is a normal part of the
+  // exchange, so videos stay editable (and feedback re-requestable) until the
+  // week is concluded (`readOnly`).
   const feedbackAvailable = session?.feedbackStatus === 'complete';
+
+  // ── When the feedback landed (to spot videos added after it) ────────────────
+  // Read straight off the feedback doc rather than denormalised onto the
+  // session, so sessions whose feedback predates this also work.
+
+  const [feedbackCompletedAt, setFeedbackCompletedAt] = useState<Timestamp | null>(null);
+  useEffect(() => {
+    if (!sessionId || !feedbackAvailable) {
+      setFeedbackCompletedAt(null);
+      return;
+    }
+    getDoc(doc(db, 'feedback', sessionId))
+      .then((snap) => {
+        const fb = snap.data() as Feedback | undefined;
+        setFeedbackCompletedAt(fb?.completedAt ?? fb?.createdAt ?? null);
+      })
+      .catch(() => setFeedbackCompletedAt(null));
+  }, [sessionId, feedbackAvailable]);
+
+  // Any video uploaded after that feedback — the only case where asking for
+  // feedback again makes sense. A still-pending `uploadedAt` (server timestamp
+  // not yet resolved) can only be a video just added here, so it counts.
+  const hasVideosSinceFeedback =
+    feedbackCompletedAt != null &&
+    videos.some((v) => !v.uploadedAt || v.uploadedAt.toMillis() > feedbackCompletedAt.toMillis());
 
   // ── Load cycle + session ────────────────────────────────────────────────────
 
@@ -631,6 +671,43 @@ export function SessionDetail() {
     }
   };
 
+  // ── Reopen a finished session (finalized by mistake) ────────────────────────
+  // Sends it back to `in_progress` so the plan, sets and notes become editable
+  // again. `postWorkout` is kept (it pre-fills the finish form) and overwritten
+  // when the student concludes again; `finishedAt` is dropped so the duration
+  // resumes counting from `startedAt`.
+
+  const handleReopenSession = async () => {
+    if (!session) return;
+    if (!window.confirm(`Reabrir o treino "${session.tabName}"?`)) return;
+    setReopenError('');
+    setReopening(true);
+    try {
+      await updateDoc(doc(db, 'sessions', session.id), {
+        status: 'in_progress',
+        finishedAt: deleteField(),
+      });
+      setSession((prev) => (prev ? { ...prev, status: 'in_progress', finishedAt: undefined } : prev));
+      setShowFinishForm(false);
+
+      // Best-effort: untick "FINAL DO TREINO" (H2) in the trainer's sheet, the
+      // mirror of what the finish flow writes.
+      if (parsedTab && cycle) {
+        getAccessToken()
+          .then((token) => writeCells(
+            cycle.googleSheetId,
+            [{ range: cellRange(session.tabName, 'H', 2), values: [[false]] }],
+            token,
+          ))
+          .catch(() => {/* best-effort sync — Firestore remains canonical */});
+      }
+    } catch {
+      setReopenError('Não foi possível reabrir o treino. Tente novamente.');
+    } finally {
+      setReopening(false);
+    }
+  };
+
   // ── Automatic offline snapshot ───────────────────────────────────────────────
   // While the workout is in progress, keep a fresh read-only snapshot in
   // localStorage. If the student gets logged out mid-session (token expiry), the
@@ -917,6 +994,23 @@ export function SessionDetail() {
     </div>
   );
 
+  // "Solicitar feedback" — declared once, placed in whichever of its two slots
+  // applies (under "Adicionar vídeos", or under "Ver feedback" as a re-request).
+  // Not gated on the session being concluded: the trainer's queue keys off
+  // `hasVideos`, so feedback can (and does) arrive while it's still in progress.
+  const canRequestFeedback =
+    !readOnly && !!cycle?.trainerEmail && videos.length > 0;
+  const requestFeedbackButton = (
+    <button
+      onClick={handleNotify}
+      disabled={notifying}
+      className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-green-700 active:scale-95 disabled:opacity-60"
+    >
+      <Send className="h-4 w-4" />
+      {session?.videosNotifiedAt ? 'Re-solicitar feedback' : 'Solicitar feedback'}
+    </button>
+  );
+
   return (
     <Layout title={session?.tabName ?? 'Sessão'} backTo={cycleId ? `/student/cycles/${cycleId}` : '/student'}>
       <Breadcrumbs
@@ -1091,7 +1185,7 @@ export function SessionDetail() {
                       <p className="truncate text-sm font-medium text-slate-800 dark:text-white">
                         {v.exerciseName ?? 'Vídeo geral'}
                       </p>
-                      {!readOnly && !feedbackAvailable && (
+                      {!readOnly && (
                         <button
                           onClick={() => startEditVideo(v)}
                           aria-label="Editar exercício"
@@ -1118,7 +1212,7 @@ export function SessionDetail() {
                         >
                           <ExternalLink className="h-4 w-4" />
                         </a>
-                        {!readOnly && !feedbackAvailable && (
+                        {!readOnly && (
                           <button
                             onClick={() => handleDeleteVideo(v)}
                             aria-label="Excluir vídeo"
@@ -1195,8 +1289,9 @@ export function SessionDetail() {
             </div>
           )}
 
-          {/* Actions (hidden when read-only, or once feedback has arrived) */}
-          {!readOnly && !feedbackAvailable && (
+          {/* Actions (hidden only when read-only — feedback having arrived does
+              not close the session to more videos) */}
+          {!readOnly && (
             <div className="flex flex-col gap-3">
               {/* Hidden file input — no `capture` so it opens the library/camera
                   roll picker (lets the student choose an already-recorded video). */}
@@ -1218,16 +1313,28 @@ export function SessionDetail() {
                 Adicionar vídeos
               </button>
 
-              {phase === 'done' && cycle?.trainerEmail && videos.length > 0 && (
-                <button
-                  onClick={handleNotify}
-                  disabled={notifying}
-                  className="flex items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-green-700 active:scale-95 disabled:opacity-60"
-                >
-                  <Send className="h-4 w-4" />
-                  {session?.videosNotifiedAt ? 'Re-solicitar feedback' : 'Solicitar feedback'}
-                </button>
+              {/* Reopen a session finalized by mistake — right below the video
+                  action it sits next to on the concluded screen. */}
+              {phase === 'done' && (
+                <>
+                  {reopenError && (
+                    <p className="text-xs text-red-600 dark:text-red-400">{reopenError}</p>
+                  )}
+                  <button
+                    onClick={handleReopenSession}
+                    disabled={reopening}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-600 transition-all hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  >
+                    <SkipBack className="h-4 w-4" />
+                    {reopening ? 'Reabrindo…' : 'Reabrir treino'}
+                  </button>
+                </>
               )}
+
+              {/* The first request lives here, once the workout is concluded.
+                  Afterwards it moves under "Ver feedback" below, shown only when
+                  a video was added since that feedback. */}
+              {canRequestFeedback && !feedbackAvailable && phase === 'done' && requestFeedbackButton}
             </div>
           )}
         </>
@@ -1321,6 +1428,9 @@ export function SessionDetail() {
             <MessageSquare className="h-4 w-4" />
             Ver feedback
           </button>
+          {canRequestFeedback && hasVideosSinceFeedback && (
+            <div className="mt-3">{requestFeedbackButton}</div>
+          )}
         </div>
       )}
 
