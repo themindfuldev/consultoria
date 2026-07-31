@@ -310,7 +310,9 @@ A cycle progresses week by week via the `weeks` sub-collection. A week is
   started session stays the *current* workout — banner included — until it's
   concluded or skipped, with no time limit; the header's duration reports the
   real elapsed span, days included (`3d 02:05`), so a forgotten session stays
-  visible instead of being silently dropped.
+  visible instead of being silently dropped. Several sessions *can* be in
+  progress at once (parallel programs, or one left unconcluded); the "Treino em
+  andamento" bar always shows exactly one — the most recently started.
 - **Statuses** `pending | in_progress | completed | skipped`. Skipped sessions are
   revertible ("Despular"); opening one is read-only until un-skipped.
 - The session list is a table (`name · status · Abrir`); completed rows show
