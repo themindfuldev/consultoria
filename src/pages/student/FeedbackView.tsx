@@ -13,6 +13,7 @@ import {
 import { ArrowLeft, Dumbbell, ExternalLink, FileText, MessageSquare, StickyNote } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
+import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
 import { Layout } from '../../components/Layout';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
 import { ReadOnlyVideoCard } from '../../components/UploadedVideoCard';
@@ -54,6 +55,10 @@ export function FeedbackView() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { getAccessToken } = useAuth();
   const navigate = useNavigate();
+
+  // Video playback here needs a Drive token; warm it on open like the other
+  // student pages so a stale token doesn't surface as a failed load.
+  useGoogleTokenWarmup();
 
   const [session, setSession] = useState<Session | null>(null);
   const [cycle, setCycle] = useState<Cycle | null>(null);

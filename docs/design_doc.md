@@ -161,9 +161,24 @@ The app requests a **single non-sensitive scope: `https://www.googleapis.com/aut
   and **coalesces concurrent callers** onto one in-flight request/popup. When a
   refresh is needed it uses the GIS Token Client with `prompt: ''` (silent unless
   Google actually needs a fresh consent).
-- `useGoogleTokenWarmup()` proactively re-authorizes on page open when the token
-  is stale; if a silent refresh needs a gesture, it fires on the student's first
-  interaction. Allowing pop-ups makes the daily refresh hands-off.
+- The GIS client is given the signed-in address as its **`hint`**. Without it,
+  `prompt: ''` cannot auto-select an account when the browser holds more than one
+  Google session, and Google falls back to the account chooser — turning every
+  hourly renewal into a visible "pick your account" prompt.
+- **Renewal is proactive, not on-demand.** The browser GIS flow has no refresh
+  token, so a token *must* be re-obtained from Google roughly hourly. A timer in
+  `AuthProvider` (plus a `visibilitychange` check, since backgrounded tabs freeze
+  timers) renews ~10 min before expiry while the page is open and the Google
+  session is warm — where the request is normally satisfied silently. Otherwise
+  expiry is only ever discovered on a *cold* page load, with no user gesture
+  available, which is exactly when a popup gets blocked.
+- The in-memory token is **re-read from `localStorage`** before any renewal
+  decision, so a second tab (or the home-screen app running alongside Safari)
+  adopts a token the other one just refreshed instead of prompting again.
+- `useGoogleTokenWarmup()` is the last-resort fallback for a token that went
+  stale anyway: it re-authorizes on page open and, if that needs a gesture, on
+  the student's first interaction. Mounted on every student page that touches
+  Sheets/Drive — dashboard, cycle, **session and feedback** views.
 
 ---
 

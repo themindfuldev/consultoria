@@ -44,6 +44,22 @@ function readStoredMode(uid: string): Mode | null {
  */
 const GOOGLE_TOKEN_KEY = 'googleAccessToken';
 
+/**
+ * How long before a token's expiry we start trying to renew it. The GIS browser
+ * flow has no refresh token, so a renewal is a round-trip to Google that is only
+ * invisible when Google can satisfy it silently. Doing it while the page is
+ * already open (and the Google session warm) is far more likely to succeed
+ * silently than doing it from a cold page load, which is where an expired token
+ * would otherwise always be discovered.
+ */
+const REFRESH_LEAD_MS = 10 * 60 * 1_000;
+
+/** How often the background renewal check runs while the app is open. */
+const REFRESH_CHECK_MS = 60 * 1_000;
+
+/** Minimum gap between renewal attempts, so a failing refresh can't spin. */
+const REFRESH_RETRY_MS = 5 * 60 * 1_000;
+
 interface StoredToken { token: string | null; expiry: number; }
 
 function readStoredToken(): StoredToken {
@@ -115,14 +131,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [approvalUid, setApprovalUid] = useState<string | null>(null);
 
   // GIS Token Client — all state kept in refs so it never triggers re-renders.
-  // The access token / expiry hydrate from sessionStorage so a refresh reuses a
+  // The access token / expiry hydrate from localStorage so a reload reuses a
   // still-valid token instead of re-prompting.
   const tokenClientRef = useRef<GISTokenClient | null>(null);
-  const initialToken = readStoredToken();
+  // Hydrated through a lazy `useState` initialiser so the storage read +
+  // JSON.parse happen once on mount, rather than on every render.
+  const [initialToken] = useState(readStoredToken);
   const accessTokenRef = useRef<string | null>(initialToken.token);
   const tokenExpiryRef = useRef<number>(initialToken.expiry);
+  // The signed-in Google address, mirrored into a ref so `getAccessToken` can
+  // read it without becoming a new function identity on every sign-in (it is
+  // depended on by effects across the app). Used as the GIS `hint` — see below.
+  const userEmailRef = useRef<string | null>(null);
   const pendingResolveRef = useRef<((token: string) => void) | null>(null);
   const pendingRejectRef = useRef<((err: Error) => void) | null>(null);
+  // Timestamp of the last renewal attempt, so a refresh that keeps failing
+  // (popup blocked, offline) backs off instead of retrying every check.
+  const lastRefreshAttemptRef = useRef(0);
   // The single in-flight token request, so concurrent callers (e.g. the
   // proactive warm-up plus a data load firing at the same time) share one
   // GIS request / popup instead of clobbering each other's resolvers.
@@ -134,6 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       setAuthLoading(false);
+      userEmailRef.current = user?.email ?? null;
       if (!user) {
         setUserProfile(null);
         setProfileUid(null);
@@ -148,6 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         tokenExpiryRef.current = 0;
         tokenClientRef.current = null;
         inFlightRef.current = null;
+        lastRefreshAttemptRef.current = 0;
         clearStoredToken();
       }
     });
@@ -347,14 +374,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── GIS Token Client (lazy init) ────────────────────────────────────────────
 
+  /**
+   * Adopts a newer token written to localStorage by another tab (or by the
+   * home-screen app running alongside the browser). Without this, a second tab
+   * keeps its own stale in-memory copy and re-prompts Google even though a
+   * perfectly good token was just obtained next door.
+   */
+  const syncTokenFromStorage = useCallback(() => {
+    if (accessTokenRef.current && Date.now() < tokenExpiryRef.current) return;
+    const stored = readStoredToken();
+    if (stored.token) {
+      accessTokenRef.current = stored.token;
+      tokenExpiryRef.current = stored.expiry;
+    }
+  }, []);
+
   /** True when we hold a cached Google access token that hasn't expired yet. */
-  const isGoogleTokenValid = useCallback(
-    () => !!accessTokenRef.current && Date.now() < tokenExpiryRef.current,
-    [],
-  );
+  const isGoogleTokenValid = useCallback(() => {
+    syncTokenFromStorage();
+    return !!accessTokenRef.current && Date.now() < tokenExpiryRef.current;
+  }, [syncTokenFromStorage]);
 
   const getAccessToken = useCallback((): Promise<string> => {
-    // Return cached token if still valid (expiry includes a 60-second buffer).
+    // Return cached token if still valid (expiry includes a 60-second buffer),
+    // picking up one another tab may have refreshed since our last check.
+    syncTokenFromStorage();
     if (accessTokenRef.current && Date.now() < tokenExpiryRef.current) {
       return Promise.resolve(accessTokenRef.current);
     }
@@ -371,6 +415,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         tokenClientRef.current = window.google!.accounts.oauth2.initTokenClient({
           client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID as string,
           scope: 'https://www.googleapis.com/auth/drive.file',
+          // Tell Google which account this is for. Without a hint, `prompt: ''`
+          // cannot auto-select when the browser has more than one Google session
+          // signed in — Google falls back to the account chooser, so what should
+          // be a silent renewal becomes a visible "pick your account" prompt on
+          // every single refresh. We always know the address (it is the verified
+          // email Firebase signed in with), so there is no reason to make Google
+          // guess.
+          hint: userEmailRef.current ?? undefined,
           callback: (response) => {
             if (response.access_token) {
               accessTokenRef.current = response.access_token;
@@ -399,14 +451,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         pendingRejectRef.current = reject;
         // prompt: '' → reuse the existing grant, showing Google's UI only when
         // a fresh authorization is actually needed (e.g. the token expired and
-        // a silent refresh isn't possible).
-        tokenClientRef.current!.requestAccessToken({ prompt: '' });
+        // a silent refresh isn't possible). The hint is repeated here because
+        // the client is initialised once but the account can change across a
+        // sign-out/sign-in without the app reloading.
+        tokenClientRef.current!.requestAccessToken({
+          prompt: '',
+          hint: userEmailRef.current ?? undefined,
+        });
       });
     })();
 
     inFlightRef.current = request.finally(() => { inFlightRef.current = null; });
     return inFlightRef.current;
-  }, []);
+  }, [syncTokenFromStorage]);
+
+  // ── Proactive renewal ───────────────────────────────────────────────────────
+  // The token only lives ~1h and the GIS browser flow has no refresh token, so
+  // it must be re-obtained from Google roughly hourly no matter what. The old
+  // behaviour only noticed this once something already needed the token — which
+  // in practice meant a cold page load with no user gesture, where the popup is
+  // blocked and the student is left tapping "Tentar novamente" (or getting a
+  // Google prompt on their first tap).
+  //
+  // Instead, renew *while the app is open and the Google session is warm*, a
+  // few minutes before expiry. That request is normally satisfied silently, so
+  // reopening the app later finds a valid token and shows nothing at all. If it
+  // can't be satisfied silently the attempt just fails quietly and the existing
+  // on-demand path still applies — this only ever removes prompts.
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const maybeRefresh = () => {
+      // Only while the page is actually visible: a backgrounded tab can't get a
+      // popup through anyway, and mobile throttles its timers regardless.
+      if (document.visibilityState !== 'visible') return;
+      syncTokenFromStorage();
+      const expiry = tokenExpiryRef.current;
+      // Still comfortably valid → nothing to do.
+      if (accessTokenRef.current && Date.now() < expiry - REFRESH_LEAD_MS) return;
+      if (Date.now() - lastRefreshAttemptRef.current < REFRESH_RETRY_MS) return;
+      lastRefreshAttemptRef.current = Date.now();
+      getAccessToken().catch(() => {/* silent renewal not possible right now */});
+    };
+
+    const id = setInterval(maybeRefresh, REFRESH_CHECK_MS);
+    // Also check when the app comes back to the foreground — the interval is
+    // unreliable in a backgrounded/frozen tab, which is exactly the case that
+    // produced a stale token on return.
+    document.addEventListener('visibilitychange', maybeRefresh);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', maybeRefresh);
+    };
+  }, [currentUser, getAccessToken, syncTokenFromStorage]);
 
   const loading =
     authLoading || profileLoading || trainerLoading || modeLoading || approvalLoading;

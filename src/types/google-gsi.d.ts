@@ -5,12 +5,20 @@
 interface GISTokenClientConfig {
   client_id: string;
   scope: string;
+  /**
+   * Email address of the account the token is for. Lets Google resolve the
+   * session without showing the account chooser when several Google accounts
+   * are signed in, which is what makes `prompt: ''` actually silent.
+   */
+  hint?: string | undefined;
   callback: (response: GISTokenResponse) => void;
   error_callback?: (error: { type: string }) => void;
 }
 
 interface GISTokenClient {
-  requestAccessToken: (overrideConfig?: { prompt?: string; hint?: string }) => void;
+  requestAccessToken: (
+    overrideConfig?: { prompt?: string; hint?: string | undefined },
+  ) => void;
 }
 
 interface GISTokenResponse {

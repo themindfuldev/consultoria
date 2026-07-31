@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
+import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
 import { useToast } from '../../hooks/useToast';
 import { useVideoCompress } from '../../hooks/useVideoCompress';
 import { Layout } from '../../components/Layout';
@@ -162,6 +163,12 @@ interface UploadState {
 export function SessionDetail() {
   const { cycleId, sessionId } = useParams<{ cycleId: string; sessionId: string }>();
   const { currentUser, userProfile, getAccessToken } = useAuth();
+
+  // This page reads the sheet on open and writes back throughout the workout —
+  // i.e. it is where an expired token hurts most, and where a student can sit
+  // for well over the token's ~1h lifetime. Warm the authorization here too,
+  // not just on the dashboard/cycle pages.
+  useGoogleTokenWarmup();
   const navigate = useNavigate();
   const { showToast } = useToast();
   const { compress } = useVideoCompress();
