@@ -5,7 +5,7 @@ import { Archive, ChevronDown, FileSpreadsheet, Mail, MoreVertical, Pencil, Rota
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { useSheetPicker } from '../../hooks/useSheetPicker';
-import { getSpreadsheetTitle } from '../../services/sheetsService';
+import { getSpreadsheetTitle, isSheetAccessError } from '../../services/sheetsService';
 import { trimText } from '../../utils/text';
 import type { PickedSpreadsheet } from '../../services/pickerService';
 import { Layout } from '../../components/Layout';
@@ -117,9 +117,10 @@ export function CycleDetail() {
         }
       })
       .catch((e) => {
-        // A 401/403 means the app has no `drive.file` grant for this sheet yet
-        // (legacy cycle) — prompt a re-pick. Other errors fall back silently.
-        if (/\b(401|403)\b/.test(String((e as Error)?.message ?? e))) setSheetAccessError(true);
+        // The app has no `drive.file` grant for this sheet (a legacy cycle, or a
+        // grant that was revoked) — prompt a re-pick. Other errors fall back
+        // silently. See `isSheetAccessError` for why 404 counts here.
+        if (isSheetAccessError(e)) setSheetAccessError(true);
       });
   }, [cycle?.googleSheetId]); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './useAuth';
-import { getTrainingTabs } from '../services/sheetsService';
+import { getTrainingTabs, isSheetAccessError } from '../services/sheetsService';
 import { trimText } from '../utils/text';
 import type { Cycle, CycleWeek, Session } from '../types';
 
@@ -78,8 +78,12 @@ export function useCycleWeek(cycle: Cycle | null) {
     try {
       const token = await getAccessToken();
       setSheetTabs(await getTrainingTabs(spreadsheetId, token));
-    } catch {
-      setSheetTabsError('Não foi possível carregar as abas da planilha.');
+    } catch (e) {
+      setSheetTabsError(
+        isSheetAccessError(e)
+          ? 'Sem acesso à planilha — reconecte-a no Google.'
+          : 'Não foi possível carregar as abas da planilha.',
+      );
     } finally {
       setSheetTabsLoading(false);
     }
@@ -262,8 +266,15 @@ export function useCycleWeek(cycle: Cycle | null) {
           });
         }),
       );
-    } catch {
-      setWeekError('Não foi possível começar a semana. Tente novamente.');
+    } catch (e) {
+      // A missing `drive.file` grant is not something "tentar novamente" can
+      // fix — the student has to hand the sheet back to the app via the Picker,
+      // so say that instead of looping them on a generic retry.
+      setWeekError(
+        isSheetAccessError(e)
+          ? 'Sem acesso à planilha. Toque no lápis ao lado do nome da planilha para reconectá-la no Google.'
+          : 'Não foi possível começar a semana. Tente novamente.',
+      );
     } finally {
       setStartingWeek(false);
     }

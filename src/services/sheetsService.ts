@@ -46,6 +46,23 @@ function quoteTitle(title: string): string {
   return `'${title.replace(/'/g, "''")}'`;
 }
 
+/**
+ * True when a Sheets/Drive failure means the app holds no `drive.file` grant for
+ * that spreadsheet.
+ *
+ * Under `drive.file` the app can only see files the user handed it through the
+ * Picker. A file it was never granted (or whose grant was revoked, which drops
+ * *every* file at once) isn't forbidden — it's **invisible**, so Google answers
+ * `404 NOT_FOUND` rather than `403`. Checking only 401/403 therefore misses the
+ * common case entirely and leaves the student on a dead-end error.
+ *
+ * All three mean the same thing to them: re-pick the spreadsheet so the grant is
+ * issued again.
+ */
+export function isSheetAccessError(e: unknown): boolean {
+  return /\bSheets API (401|403|404)\b/.test(String((e as Error)?.message ?? e));
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /** The spreadsheet file's title (its name in Google Drive). */
