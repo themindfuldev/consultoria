@@ -183,6 +183,13 @@ export interface Session {
   videosNotifiedAt?: Timestamp;
   /** Denormalised from the feedback doc — avoids N+1 reads on trainer dashboard. */
   feedbackStatus?: 'none' | 'draft' | 'complete';
+  /**
+   * True when a `complete` feedback still leaves some of the session's videos
+   * unanswered (an empty exercise block, or a video uploaded after the reply).
+   * Denormalised so session lists can flag partial feedback without loading
+   * every session's videos and feedback doc.
+   */
+  feedbackPartial?: boolean;
   /** True once the student successfully generated/updated the weekly feedback Google Doc from this session. */
   weeklyFeedbackDocGenerated?: boolean;
   /**

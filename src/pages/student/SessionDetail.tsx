@@ -68,6 +68,7 @@ import { notifyTrainer } from '../../services/notifyService';
 import { clearOfflineSnapshots } from '../../utils/session';
 import { formatDuration } from '../../utils/duration';
 import { trimText } from '../../utils/text';
+import { videosAwaitingFeedback } from '../../utils/feedback';
 import type { Cycle, CycleWeek, Feedback, ParsedSheetTab, Session, SessionVideo } from '../../types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -309,30 +310,47 @@ export function SessionDetail() {
   // week is concluded (`readOnly`).
   const feedbackAvailable = session?.feedbackStatus === 'complete';
 
-  // ── When the feedback landed (to spot videos added after it) ────────────────
-  // Read straight off the feedback doc rather than denormalised onto the
-  // session, so sessions whose feedback predates this also work.
+  // ── The feedback doc (which exercises were answered, and when) ──────────────
+  // Read straight off the doc rather than denormalised onto the session, so
+  // sessions whose feedback predates this also work.
 
-  const [feedbackCompletedAt, setFeedbackCompletedAt] = useState<Timestamp | null>(null);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [feedbackLoaded, setFeedbackLoaded] = useState(false);
   useEffect(() => {
     if (!sessionId || !feedbackAvailable) {
-      setFeedbackCompletedAt(null);
+      setFeedback(null);
+      setFeedbackLoaded(false);
       return;
     }
     getDoc(doc(db, 'feedback', sessionId))
-      .then((snap) => {
-        const fb = snap.data() as Feedback | undefined;
-        setFeedbackCompletedAt(fb?.completedAt ?? fb?.createdAt ?? null);
-      })
-      .catch(() => setFeedbackCompletedAt(null));
+      .then((snap) => setFeedback((snap.data() as Feedback | undefined) ?? null))
+      .catch(() => setFeedback(null))
+      .finally(() => setFeedbackLoaded(true));
   }, [sessionId, feedbackAvailable]);
 
-  // Any video uploaded after that feedback — the only case where asking for
-  // feedback again makes sense. A still-pending `uploadedAt` (server timestamp
-  // not yet resolved) can only be a video just added here, so it counts.
+  const feedbackCompletedAt = feedback?.completedAt ?? feedback?.createdAt ?? null;
+
+  // Any video uploaded after that feedback. A still-pending `uploadedAt` (server
+  // timestamp not yet resolved) can only be a video just added here, so it counts.
   const hasVideosSinceFeedback =
     feedbackCompletedAt != null &&
     videos.some((v) => !v.uploadedAt || v.uploadedAt.toMillis() > feedbackCompletedAt.toMillis());
+
+  // Videos the trainer hasn't answered yet — no feedback at all, or an exercise
+  // block the trainer left empty (partial feedback).
+  const pendingFeedbackVideos = videosAwaitingFeedback(videos, feedback?.exerciseFeedback);
+  const feedbackPartial = feedbackAvailable && pendingFeedbackVideos.length > 0;
+
+  // Keep the denormalised flag on the session in sync, so the cycle's session
+  // list can flag partial feedback without loading every session's videos and
+  // feedback doc. Waits for both to have loaded so it never writes a guess.
+  useEffect(() => {
+    if (!session || loading || !feedbackAvailable || !feedbackLoaded) return;
+    if ((session.feedbackPartial ?? false) === feedbackPartial) return;
+    updateDoc(doc(db, 'sessions', session.id), { feedbackPartial })
+      .then(() => setSession((prev) => (prev ? { ...prev, feedbackPartial } : prev)))
+      .catch(() => {/* best-effort — the page itself computes it live */});
+  }, [session, loading, feedbackAvailable, feedbackLoaded, feedbackPartial]);
 
   // ── Load cycle + session ────────────────────────────────────────────────────
 
@@ -1004,10 +1022,13 @@ export function SessionDetail() {
 
   // "Solicitar feedback" — declared once, placed in whichever of its two slots
   // applies (under "Adicionar vídeos", or under "Ver feedback" as a re-request).
-  // Not gated on the session being concluded: the trainer's queue keys off
-  // `hasVideos`, so feedback can (and does) arrive while it's still in progress.
+  // Deliberately *not* gated on `readOnly`: concluding the week stops the
+  // student from training, but the trainer can still answer videos they never
+  // got to, so the ask stays available for as long as anything is unanswered.
   const canRequestFeedback =
-    !readOnly && !!cycle?.trainerEmail && videos.length > 0;
+    !!cycle?.trainerEmail &&
+    videos.length > 0 &&
+    (pendingFeedbackVideos.length > 0 || hasVideosSinceFeedback);
   const requestFeedbackButton = (
     <button
       onClick={handleNotify}
@@ -1338,12 +1359,15 @@ export function SessionDetail() {
                   </button>
                 </>
               )}
-
-              {/* The first request lives here, once the workout is concluded.
-                  Afterwards it moves under "Ver feedback" below, shown only when
-                  a video was added since that feedback. */}
-              {canRequestFeedback && !feedbackAvailable && phase === 'done' && requestFeedbackButton}
             </div>
+          )}
+
+          {/* The first request lives here, once the workout is concluded — and
+              outside the `readOnly` block above, so a session left unanswered
+              when the week closed can still be sent to the trainer. Afterwards
+              it moves under "Ver feedback" below, as a re-request. */}
+          {canRequestFeedback && !feedbackAvailable && phase === 'done' && (
+            <div className="mt-3">{requestFeedbackButton}</div>
           )}
         </>
       )}
@@ -1421,22 +1445,26 @@ export function SessionDetail() {
       {/* ── Feedback available: non-clickable banner + "Ver feedback" ────── */}
       {feedbackAvailable && (
         <div className="mt-6">
-          <div className="rounded-2xl bg-emerald-50 p-4 dark:bg-emerald-900/20">
-            <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
-              Feedback disponível!
+          <div className={`rounded-2xl p-4 ${feedbackPartial ? 'bg-orange-50 dark:bg-orange-900/20' : 'bg-emerald-50 dark:bg-emerald-900/20'}`}>
+            <p className={`text-sm font-semibold ${feedbackPartial ? 'text-orange-800 dark:text-orange-300' : 'text-emerald-800 dark:text-emerald-300'}`}>
+              {feedbackPartial ? 'Feedback parcial disponível' : 'Feedback disponível!'}
             </p>
-            <p className="text-xs text-emerald-600 dark:text-emerald-400">
-              Seu treinador enviou o feedback desta sessão.
+            <p className={`text-xs ${feedbackPartial ? 'text-orange-600 dark:text-orange-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+              {feedbackPartial
+                ? `Seu treinador respondeu parte desta sessão — ${pendingFeedbackVideos.length === 1 ? '1 vídeo ainda está' : `${pendingFeedbackVideos.length} vídeos ainda estão`} sem feedback.`
+                : 'Seu treinador enviou o feedback desta sessão.'}
             </p>
           </div>
           <button
             onClick={() => navigate(`/student/sessions/${sessionId}/feedback`)}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-95"
+            className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white shadow-md transition-all active:scale-95 ${
+              feedbackPartial ? 'bg-orange-500 hover:bg-orange-600' : 'bg-emerald-600 hover:bg-emerald-700'
+            }`}
           >
             <MessageSquare className="h-4 w-4" />
-            Ver feedback
+            {feedbackPartial ? 'Ver feedback parcial' : 'Ver feedback'}
           </button>
-          {canRequestFeedback && hasVideosSinceFeedback && (
+          {canRequestFeedback && (
             <div className="mt-3">{requestFeedbackButton}</div>
           )}
         </div>

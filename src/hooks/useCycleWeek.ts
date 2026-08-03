@@ -49,6 +49,7 @@ export function useCycleWeek(cycle: Cycle | null) {
   const [weeks, setWeeks] = useState<CycleWeek[]>([]);
   const [startingWeek, setStartingWeek] = useState(false);
   const [concludingWeek, setConcludingWeek] = useState(false);
+  const [reopeningWeek, setReopeningWeek] = useState(false);
   const [weekError, setWeekError] = useState('');
 
   const [sheetTabs, setSheetTabs] = useState<string[]>([]);
@@ -203,6 +204,11 @@ export function useCycleWeek(cycle: Cycle | null) {
   // when there's no week at all yet (the very first week).
   const canStartNextWeek = !currentWeek || currentWeekConcluded;
 
+  // A week concluded by mistake can be reopened, but only while it's still the
+  // latest one. `currentWeek` is the highest `weekNumber`, so a concluded
+  // current week is by definition one whose successor hasn't been started yet.
+  const canReopenWeek = currentWeekConcluded;
+
   // ── Start week ───────────────────────────────────────────────────────────────
 
   const startWeek = async () => {
@@ -278,6 +284,27 @@ export function useCycleWeek(cycle: Cycle | null) {
       setWeekError('Não foi possível concluir a semana. Tente novamente.');
     } finally {
       setConcludingWeek(false);
+    }
+  };
+
+  // ── Reopen the current week (concluded by mistake) ──────────────────────────
+  // Sends it back to `in_progress` so its sessions become editable again. Only
+  // offered while it's still the latest week — starting the next one is what
+  // makes the conclusion final.
+
+  const reopenWeek = async () => {
+    if (!cycleId || !currentWeek || reopeningWeek) return;
+    setReopeningWeek(true);
+    setWeekError('');
+    try {
+      await updateDoc(doc(db, 'cycles', cycleId, 'weeks', currentWeek.id), {
+        status: 'in_progress',
+        completedAt: deleteField(),
+      });
+    } catch {
+      setWeekError('Não foi possível reabrir a semana. Tente novamente.');
+    } finally {
+      setReopeningWeek(false);
     }
   };
 
@@ -402,9 +429,11 @@ export function useCycleWeek(cycle: Cycle | null) {
     pastWeeks,
     startingWeek,
     concludingWeek,
+    reopeningWeek,
     weekError,
     startWeek,
     concludeWeek,
+    reopenWeek,
 
     sheetTabs,
     sheetTabsLoading,
@@ -417,6 +446,7 @@ export function useCycleWeek(cycle: Cycle | null) {
     rows,
     canConcludeWeek,
     canStartNextWeek,
+    canReopenWeek,
 
     pendingAction,
     actionError,

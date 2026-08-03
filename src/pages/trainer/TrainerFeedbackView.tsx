@@ -20,6 +20,7 @@ import { useVideoCompress } from '../../hooks/useVideoCompress';
 import { openWhatsApp } from '../../services/notifyService';
 import { setKey } from '../../services/sheetsService';
 import { getOrCreateTrainerFeedbackFolder, uploadFileToDrive } from '../../services/driveService';
+import { videosAwaitingFeedback } from '../../utils/feedback';
 import { Layout } from '../../components/Layout';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
 import { ReadOnlyVideoCard } from '../../components/UploadedVideoCard';
@@ -262,8 +263,12 @@ export function TrainerFeedbackView() {
         },
         { merge: true },
       );
-      // Denormalise feedbackStatus on session
-      await updateDoc(doc(db, 'sessions', sessionId!), { feedbackStatus: status });
+      // Denormalise feedbackStatus (+ whether any video is still unanswered) on
+      // the session, so the student's lists don't need an N+1 read.
+      await updateDoc(doc(db, 'sessions', sessionId!), {
+        feedbackStatus: status,
+        feedbackPartial: videosAwaitingFeedback(videos, exerciseFeedback).length > 0,
+      });
     } catch {
       setSaveError('Não foi possível salvar o rascunho.');
     } finally {
@@ -313,7 +318,10 @@ export function TrainerFeedbackView() {
         },
         { merge: true },
       );
-      await updateDoc(doc(db, 'sessions', sessionId!), { feedbackStatus: 'complete' });
+      await updateDoc(doc(db, 'sessions', sessionId!), {
+        feedbackStatus: 'complete',
+        feedbackPartial: videosAwaitingFeedback(videos, exerciseFeedback).length > 0,
+      });
 
       // WhatsApp notification to student (number denormalised on the session).
       if (session.studentWhatsapp) {

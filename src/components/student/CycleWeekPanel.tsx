@@ -78,6 +78,9 @@ function SessionRows({
         const canSkip = !readOnly && (status === 'pending' || status === 'in_progress');
         const canUnskip = !readOnly && status === 'skipped';
         const hasFeedback = row.session?.feedbackStatus === 'complete';
+        // Partial = the trainer replied but some videos are still unanswered —
+        // flagged in orange so it reads apart from a fully answered session.
+        const partialFeedback = hasFeedback && row.session?.feedbackPartial === true;
         return (
           <li
             key={row.tab}
@@ -139,8 +142,19 @@ function SessionRows({
               <button
                 onClick={() => row.session && navigate(`/student/sessions/${row.session.id}/feedback`)}
                 disabled={!hasFeedback}
-                aria-label="Feedback" title={hasFeedback ? 'Ver feedback' : 'Feedback ainda não disponível'}
-                className="rounded-lg bg-emerald-600 p-1.5 text-white transition-all hover:bg-emerald-700 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-700 dark:disabled:text-slate-500"
+                aria-label="Feedback"
+                title={
+                  partialFeedback
+                    ? 'Ver feedback parcial'
+                    : hasFeedback
+                      ? 'Ver feedback'
+                      : 'Feedback ainda não disponível'
+                }
+                className={`rounded-lg p-1.5 text-white transition-all active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-700 dark:disabled:text-slate-500 ${
+                  partialFeedback
+                    ? 'bg-orange-500 hover:bg-orange-600'
+                    : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
               >
                 <MessageSquare className="h-4 w-4" />
               </button>
@@ -169,11 +183,14 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
     pastWeeks,
     startingWeek,
     concludingWeek,
+    reopeningWeek,
     weekError,
     startWeek,
     concludeWeek,
+    reopenWeek,
     canConcludeWeek,
     canStartNextWeek,
+    canReopenWeek,
     sheetTabsLoading,
     sheetTabsError,
     retryLoadSheetTabs,
@@ -319,6 +336,19 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
             >
               <Play className="h-3.5 w-3.5" />
               {startingWeek ? 'Iniciando…' : 'Começar próxima semana'}
+            </button>
+          )}
+
+          {/* Undo a conclusion made by mistake — only while the next week
+              hasn't been started yet. */}
+          {canReopenWeek && (
+            <button
+              onClick={reopenWeek}
+              disabled={reopeningWeek || startingWeek}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-xs font-semibold text-slate-600 transition-all hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+            >
+              <SkipBack className="h-3.5 w-3.5" />
+              {reopeningWeek ? 'Reabrindo…' : `Reabrir Semana ${currentWeek!.weekNumber}`}
             </button>
           )}
         </div>
