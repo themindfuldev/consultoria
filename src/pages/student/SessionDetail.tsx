@@ -6,8 +6,6 @@ import {
   deleteField,
   doc,
   getDoc,
-  getDocs,
-  limit,
   onSnapshot,
   query,
   serverTimestamp,
@@ -20,7 +18,6 @@ import {
   CheckCircle2,
   Clock,
   ExternalLink,
-  Lock,
   MessageSquare,
   NotebookText,
   Pencil,
@@ -69,7 +66,7 @@ import { clearOfflineSnapshots } from '../../utils/session';
 import { formatDuration } from '../../utils/duration';
 import { trimText } from '../../utils/text';
 import { videosAwaitingFeedback } from '../../utils/feedback';
-import type { Cycle, CycleWeek, Feedback, ParsedSheetTab, Session, SessionVideo } from '../../types';
+import type { Cycle, Feedback, ParsedSheetTab, Session, SessionVideo } from '../../types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -178,9 +175,6 @@ export function SessionDetail() {
   const [session, setSession] = useState<Session | null>(null);
   const [videos, setVideos] = useState<SessionVideo[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Whether this session's week has been concluded → everything read-only.
-  const [weekConcluded, setWeekConcluded] = useState(false);
 
   // Parsed sheet data for this session's tab
   const [parsedTab, setParsedTab] = useState<ParsedSheetTab | null>(null);
@@ -293,21 +287,22 @@ export function SessionDetail() {
     : '';
 
   // A skipped session opens read-only (Despular to revert) regardless of how far
-  // it had progressed before being skipped.
+  // it had progressed before being skipped. Nothing else locks a session: a week
+  // moving on doesn't stop videos being added or feedback being exchanged, which
+  // routinely continues after the training itself is done.
   const isSkipped = session?.status === 'skipped';
-  const readOnly = weekConcluded || isSkipped;
+  const readOnly = isSkipped;
 
   // Before the session is under way (not started, or skipped and awaiting
   // "Despular"), the call-to-action box goes above the workout plan so the
   // student acts first and reads the plan below. Once training/done, the plan
   // returns to the top since that's what they're actively working through.
   const actionsFirst =
-    (phase === 'pre' && !readOnly) || (isSkipped && !weekConcluded);
+    (phase === 'pre' && !readOnly) || isSkipped;
 
   // The trainer's feedback has arrived. It doesn't lock anything on its own —
   // feedback often lands mid-week and a follow-up video is a normal part of the
-  // exchange, so videos stay editable (and feedback re-requestable) until the
-  // week is concluded (`readOnly`).
+  // exchange, so videos stay editable and feedback re-requestable regardless.
   const feedbackAvailable = session?.feedbackStatus === 'complete';
 
   // ── The feedback doc (which exercises were answered, and when) ──────────────
@@ -384,24 +379,6 @@ export function SessionDetail() {
       }
     });
   }, [cycleId, sessionId]);
-
-  // ── Is this session's week concluded? (locks the session read-only) ─────────
-
-  useEffect(() => {
-    if (!cycleId || !session?.weekNumber) return;
-    getDocs(
-      query(
-        collection(db, 'cycles', cycleId, 'weeks'),
-        where('weekNumber', '==', session.weekNumber),
-        limit(1),
-      ),
-    )
-      .then((snap) => {
-        const week = snap.docs[0]?.data() as CycleWeek | undefined;
-        setWeekConcluded((week?.status ?? 'in_progress') === 'completed');
-      })
-      .catch(() => {/* default: not concluded */});
-  }, [cycleId, session?.weekNumber]);
 
   // ── Load parsed sheet tab for this session ──────────────────────────────────
 
@@ -1022,9 +999,8 @@ export function SessionDetail() {
 
   // "Solicitar feedback" — declared once, placed in whichever of its two slots
   // applies (under "Adicionar vídeos", or under "Ver feedback" as a re-request).
-  // Deliberately *not* gated on `readOnly`: concluding the week stops the
-  // student from training, but the trainer can still answer videos they never
-  // got to, so the ask stays available for as long as anything is unanswered.
+  // Available for as long as anything is unanswered — the trainer can still
+  // answer videos they never got to, however long after the session it is.
   const canRequestFeedback =
     !!cycle?.trainerEmail &&
     videos.length > 0 &&
@@ -1066,20 +1042,12 @@ export function SessionDetail() {
         )}
       </div>
 
-      {/* Read-only notice for sessions in a concluded week */}
-      {weekConcluded && (
-        <div className="mb-5 flex items-center gap-2 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-          <Lock className="h-4 w-4 flex-shrink-0" />
-          Semana concluída.
-        </div>
-      )}
-
       {/* Reading mode: workout plan. Above the action box while training/done,
           below it before the session is under way (see `actionsFirst`). */}
       {!actionsFirst && planSection}
 
       {/* ── Phase A0: skipped — read-only until un-skipped ───────────────── */}
-      {isSkipped && !weekConcluded && (
+      {isSkipped && (
         <div className="glass-premium mb-5 rounded-2xl p-4">
           <div className="mb-2 flex items-center gap-2 text-sm font-bold text-amber-600 dark:text-amber-400">
             <SkipForward className="h-4 w-4" />
@@ -1362,10 +1330,8 @@ export function SessionDetail() {
             </div>
           )}
 
-          {/* The first request lives here, once the workout is concluded — and
-              outside the `readOnly` block above, so a session left unanswered
-              when the week closed can still be sent to the trainer. Afterwards
-              it moves under "Ver feedback" below, as a re-request. */}
+          {/* The first request lives here, once the workout is concluded.
+              Afterwards it moves under "Ver feedback" below, as a re-request. */}
           {canRequestFeedback && !feedbackAvailable && phase === 'done' && (
             <div className="mt-3">{requestFeedbackButton}</div>
           )}

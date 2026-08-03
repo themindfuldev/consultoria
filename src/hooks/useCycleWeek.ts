@@ -35,6 +35,14 @@ interface PendingAction {
   kind: 'open' | 'skip' | 'unskip';
 }
 
+/** Every training day of the week has reached a terminal state. */
+function isWeekConcluded(rows: TabSessionRow[]): boolean {
+  return (
+    rows.length > 0 &&
+    rows.every((r) => r.session?.status === 'completed' || r.session?.status === 'skipped')
+  );
+}
+
 /**
  * Shared week/session-tab logic for a cycle — powers both the dashboard
  * card's compact panel and the full CycleDetail page so the "start week",
@@ -48,8 +56,6 @@ export function useCycleWeek(cycle: Cycle | null) {
 
   const [weeks, setWeeks] = useState<CycleWeek[]>([]);
   const [startingWeek, setStartingWeek] = useState(false);
-  const [concludingWeek, setConcludingWeek] = useState(false);
-  const [reopeningWeek, setReopeningWeek] = useState(false);
   const [weekError, setWeekError] = useState('');
 
   const [sheetTabs, setSheetTabs] = useState<string[]>([]);
@@ -148,11 +154,6 @@ export function useCycleWeek(cycle: Cycle | null) {
   const currentWeek = weeks[0] ?? null;
   const nextWeekNumber = (currentWeek?.weekNumber ?? 0) + 1;
 
-  const currentWeekStatus: 'in_progress' | 'completed' | null = currentWeek
-    ? (currentWeek.status ?? 'in_progress')
-    : null;
-  const currentWeekConcluded = currentWeekStatus === 'completed';
-
   const sessionsThisWeek = currentWeek
     ? sessions.filter((s) => s.weekNumber === currentWeek.weekNumber)
     : [];
@@ -182,36 +183,40 @@ export function useCycleWeek(cycle: Cycle | null) {
     ...sheetTabs.filter((t) => !tabsWithSession.has(t)).map((t) => ({ tab: t, session: null })),
   ];
 
-  // Past weeks (everything below the latest) shown as read-only accordions, each
-  // built from that week's own session docs (the live sheet may have changed).
-  const pastWeeks: { week: CycleWeek; rows: TabSessionRow[] }[] = weeks.slice(1).map((w) => ({
-    week: w,
-    rows: sessions
-      .filter((s) => s.weekNumber === w.weekNumber)
-      .sort((a, b) => {
-        const d = (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER);
-        return d !== 0 ? d : a.tabName.localeCompare(b.tabName);
-      })
-      .map((s) => ({ tab: s.tabName, session: s })),
-  }));
+  // Past weeks (everything below the latest), each built from that week's own
+  // session docs (the live sheet may have changed since).
+  const pastWeeks: { week: CycleWeek; rows: TabSessionRow[]; concluded: boolean }[] = weeks
+    .slice(1)
+    .map((w) => {
+      const weekRows = sessions
+        .filter((s) => s.weekNumber === w.weekNumber)
+        .sort((a, b) => {
+          const d = (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER);
+          return d !== 0 ? d : a.tabName.localeCompare(b.tabName);
+        })
+        .map((s) => ({ tab: s.tabName, session: s }));
+      return {
+        week: w,
+        rows: weekRows,
+        // A past week with no session docs at all is a legacy one — it was left
+        // behind by a later "Começar semana", so treat it as concluded rather
+        // than showing it as still running.
+        concluded: weekRows.length === 0 || isWeekConcluded(weekRows),
+      };
+    });
 
-  // A week can only be *concluded* once every training day has reached a terminal
-  // state (completed or skipped). We gate on the rows (all tabs), not just the
-  // existing session docs, so an un-opened tab still blocks conclusion.
-  const canConcludeWeek =
-    !!currentWeek &&
-    !currentWeekConcluded &&
-    rows.length > 0 &&
-    rows.every((r) => r.session?.status === 'completed' || r.session?.status === 'skipped');
+  // A week is concluded once every training day has reached a terminal state
+  // (completed or skipped) — derived live from the sessions rather than stored,
+  // so reopening or un-skipping a session takes the week back to "em andamento"
+  // on its own, with nothing to undo.
+  //
+  // Gated on the rows (all tabs), not just the existing session docs, so a tab
+  // that was never opened still counts as outstanding.
+  const currentWeekConcluded = !!currentWeek && isWeekConcluded(rows);
 
-  // The next week can only be started once the current one is concluded — or
-  // when there's no week at all yet (the very first week).
+  // The next week can only be started once the current one has been seen through
+  // — or when there's no week at all yet (the very first week).
   const canStartNextWeek = !currentWeek || currentWeekConcluded;
-
-  // A week concluded by mistake can be reopened, but only while it's still the
-  // latest one. `currentWeek` is the highest `weekNumber`, so a concluded
-  // current week is by definition one whose successor hasn't been started yet.
-  const canReopenWeek = currentWeekConcluded;
 
   // ── Start week ───────────────────────────────────────────────────────────────
 
@@ -239,7 +244,6 @@ export function useCycleWeek(cycle: Cycle | null) {
         id: weekRef.id,
         cycleId,
         weekNumber,
-        status: 'in_progress',
         startedAt: serverTimestamp(),
       });
 
@@ -277,45 +281,6 @@ export function useCycleWeek(cycle: Cycle | null) {
       );
     } finally {
       setStartingWeek(false);
-    }
-  };
-
-  // ── Conclude the current week (locks its sessions read-only) ────────────────
-
-  const concludeWeek = async () => {
-    if (!cycleId || !currentWeek || concludingWeek) return;
-    setConcludingWeek(true);
-    setWeekError('');
-    try {
-      await updateDoc(doc(db, 'cycles', cycleId, 'weeks', currentWeek.id), {
-        status: 'completed',
-        completedAt: serverTimestamp(),
-      });
-    } catch {
-      setWeekError('Não foi possível concluir a semana. Tente novamente.');
-    } finally {
-      setConcludingWeek(false);
-    }
-  };
-
-  // ── Reopen the current week (concluded by mistake) ──────────────────────────
-  // Sends it back to `in_progress` so its sessions become editable again. Only
-  // offered while it's still the latest week — starting the next one is what
-  // makes the conclusion final.
-
-  const reopenWeek = async () => {
-    if (!cycleId || !currentWeek || reopeningWeek) return;
-    setReopeningWeek(true);
-    setWeekError('');
-    try {
-      await updateDoc(doc(db, 'cycles', cycleId, 'weeks', currentWeek.id), {
-        status: 'in_progress',
-        completedAt: deleteField(),
-      });
-    } catch {
-      setWeekError('Não foi possível reabrir a semana. Tente novamente.');
-    } finally {
-      setReopeningWeek(false);
     }
   };
 
@@ -366,7 +331,7 @@ export function useCycleWeek(cycle: Cycle | null) {
   // ── Un-skip a session (revert a skipped tab back to pending) ─────────────────
 
   const unskipSession = async (session: Session): Promise<void> => {
-    if (pendingAction || currentWeekConcluded) return;
+    if (pendingAction) return;
     setActionError('');
     setPendingAction({ tab: session.tabName, kind: 'unskip' });
     try {
@@ -385,7 +350,7 @@ export function useCycleWeek(cycle: Cycle | null) {
   // ── Skip a tab for the current week ─────────────────────────────────────────
 
   const skipSession = async (tabName: string): Promise<void> => {
-    if (!currentUser || !cycle || !currentWeek || pendingAction || currentWeekConcluded) return;
+    if (!currentUser || !cycle || !currentWeek || pendingAction) return;
 
     const existing = sessionByTab.get(tabName);
     if (existing?.status === 'in_progress') {
@@ -434,17 +399,12 @@ export function useCycleWeek(cycle: Cycle | null) {
     cycleId,
     weeks,
     currentWeek,
-    currentWeekStatus,
     currentWeekConcluded,
     nextWeekNumber,
     pastWeeks,
     startingWeek,
-    concludingWeek,
-    reopeningWeek,
     weekError,
     startWeek,
-    concludeWeek,
-    reopenWeek,
 
     sheetTabs,
     sheetTabsLoading,
@@ -455,9 +415,7 @@ export function useCycleWeek(cycle: Cycle | null) {
     sessionsLoading,
     sessionsThisWeek,
     rows,
-    canConcludeWeek,
     canStartNextWeek,
-    canReopenWeek,
 
     pendingAction,
     actionError,

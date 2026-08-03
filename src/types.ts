@@ -115,10 +115,11 @@ export interface CycleWeek {
   weekNumber: number;
   startedAt: Timestamp;
   /**
-   * 'in_progress' once started; 'completed' once the student concludes it
-   * (after which its sessions are read-only). Absent on legacy docs → treated
-   * as 'in_progress'. A week that hasn't been started yet simply has no doc
-   * ("Não iniciada").
+   * Legacy, no longer read or written. A week used to be concluded explicitly,
+   * which also locked its sessions; conclusion is now derived from whether every
+   * one of the week's sessions has reached a terminal state, so a session that
+   * is reopened or un-skipped takes its week back to "em andamento" by itself.
+   * Old docs still carry these — they are simply ignored.
    */
   status?: 'in_progress' | 'completed';
   completedAt?: Timestamp;

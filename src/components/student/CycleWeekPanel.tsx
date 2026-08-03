@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   ChevronDown,
   FileText,
-  Lock,
   MessageSquare,
   Play,
   RefreshCw,
@@ -56,14 +55,12 @@ function StatusBadge({ session }: { session: Session | null }) {
 
 function SessionRows({
   rows,
-  readOnly,
   pendingActionTab,
   onOpen,
   onSkip,
   onUnskip,
 }: {
   rows: TabSessionRow[];
-  readOnly: boolean;
   pendingActionTab: string | null;
   onOpen: (row: TabSessionRow) => void;
   onSkip: (tab: string) => void;
@@ -75,8 +72,8 @@ function SessionRows({
       {rows.map((row, idx) => {
         const status: SessionStatus = row.session?.status ?? 'pending';
         const busy = pendingActionTab === row.tab;
-        const canSkip = !readOnly && (status === 'pending' || status === 'in_progress');
-        const canUnskip = !readOnly && status === 'skipped';
+        const canSkip = status === 'pending' || status === 'in_progress';
+        const canUnskip = status === 'skipped';
         const hasFeedback = row.session?.feedbackStatus === 'complete';
         // Partial = the trainer replied but some videos are still unanswered —
         // flagged in orange so it reads apart from a fully answered session.
@@ -177,20 +174,13 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
   const {
     cycleId,
     currentWeek,
-    currentWeekStatus,
     currentWeekConcluded,
     nextWeekNumber,
     pastWeeks,
     startingWeek,
-    concludingWeek,
-    reopeningWeek,
     weekError,
     startWeek,
-    concludeWeek,
-    reopenWeek,
-    canConcludeWeek,
     canStartNextWeek,
-    canReopenWeek,
     sheetTabsLoading,
     sheetTabsError,
     retryLoadSheetTabs,
@@ -232,15 +222,16 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
           <div className="flex items-center justify-between gap-3">
             <p className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-white">
               {currentWeek ? `Semana ${currentWeek.weekNumber}` : 'Ciclo ainda não iniciado'}
-              {currentWeekStatus === 'in_progress' && (
-                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
-                  Em andamento
-                </span>
-              )}
-              {currentWeekStatus === 'completed' && (
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                  Concluída
-                </span>
+              {currentWeek && (
+                currentWeekConcluded ? (
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                    Concluída
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+                    Em andamento
+                  </span>
+                )
               )}
             </p>
             {currentWeek?.startedAt instanceof Timestamp && (
@@ -252,15 +243,9 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
         </div>
       </div>
 
-      {currentWeek && !currentWeekConcluded && !canConcludeWeek && (
+      {currentWeek && !currentWeekConcluded && (
         <p className="mt-1.5 text-xs text-slate-400 dark:text-slate-500">
           Finalize ou pule os treinos para concluir a semana.
-        </p>
-      )}
-      {currentWeekConcluded && (
-        <p className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
-          <Lock className="h-3.5 w-3.5" />
-          Semana concluída.
         </p>
       )}
       {weekError && (
@@ -273,7 +258,6 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
           {rows.length > 0 ? (
             <SessionRows
               rows={rows}
-              readOnly={currentWeekConcluded}
               pendingActionTab={pendingAction?.tab ?? null}
               onOpen={handleOpen}
               onSkip={skipSession}
@@ -315,19 +299,9 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
             </a>
           )}
 
-          {/* Conclude the current week (all sessions terminal, not yet concluded) */}
-          {canConcludeWeek && (
-            <button
-              onClick={concludeWeek}
-              disabled={concludingWeek}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-emerald-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              {concludingWeek ? 'Concluindo…' : `Concluir Semana ${currentWeek!.weekNumber}`}
-            </button>
-          )}
-
-          {/* Start the next week after the current one is concluded */}
+          {/* Offered once every training day of the week is finished or
+              skipped. Reopening or un-skipping any of them takes the week back
+              to "em andamento" and this disappears again on its own. */}
           {canStartNextWeek && (
             <button
               onClick={startWeek}
@@ -336,19 +310,6 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
             >
               <Play className="h-3.5 w-3.5" />
               {startingWeek ? 'Iniciando…' : 'Começar próxima semana'}
-            </button>
-          )}
-
-          {/* Undo a conclusion made by mistake — only while the next week
-              hasn't been started yet. */}
-          {canReopenWeek && (
-            <button
-              onClick={reopenWeek}
-              disabled={reopeningWeek || startingWeek}
-              className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-xs font-semibold text-slate-600 transition-all hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-            >
-              <SkipBack className="h-3.5 w-3.5" />
-              {reopeningWeek ? 'Reabrindo…' : `Reabrir Semana ${currentWeek!.weekNumber}`}
             </button>
           )}
         </div>
@@ -370,14 +331,14 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
         </>
       )}
 
-      {/* ── Past weeks (read-only accordions) ────────────────────────────── */}
+      {/* ── Past weeks (accordions) ──────────────────────────────────────── */}
       {pastWeeks.length > 0 && (
         <div className="mt-4 border-t border-slate-200/70 pt-3 dark:border-slate-700/50">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
             Semanas anteriores
           </p>
           <div className="flex flex-col gap-2">
-            {pastWeeks.map(({ week, rows: weekRows }) => {
+            {pastWeeks.map(({ week, rows: weekRows, concluded }) => {
               const isOpen = openWeeks.has(week.id);
               return (
                 <div
@@ -388,12 +349,20 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
                     onClick={() => toggleWeek(week.id)}
                     className="flex w-full items-center gap-2 bg-white/40 px-3 py-2 text-left dark:bg-slate-800/40"
                   >
-                    <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-emerald-500" />
+                    <CheckCircle2
+                      className={`h-4 w-4 flex-shrink-0 ${concluded ? 'text-emerald-500' : 'text-indigo-500'}`}
+                    />
                     <span className="flex-1 text-sm font-semibold text-slate-700 dark:text-slate-200">
                       Semana {week.weekNumber}
                     </span>
-                    <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
-                      Concluída
+                    <span
+                      className={`text-[10px] font-bold uppercase tracking-wide ${
+                        concluded
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-indigo-600 dark:text-indigo-400'
+                      }`}
+                    >
+                      {concluded ? 'Concluída' : 'Em andamento'}
                     </span>
                     <ChevronDown
                       className={`h-4 w-4 flex-shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
@@ -404,8 +373,7 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
                       {weekRows.length > 0 ? (
                         <SessionRows
                           rows={weekRows}
-                          readOnly
-                          pendingActionTab={null}
+                          pendingActionTab={pendingAction?.tab ?? null}
                           onOpen={handleOpen}
                           onSkip={skipSession}
                           onUnskip={unskipSession}
