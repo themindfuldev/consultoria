@@ -331,7 +331,9 @@ export function useCycleWeek(cycle: Cycle | null) {
   // ── Un-skip a session (revert a skipped tab back to pending) ─────────────────
 
   const unskipSession = async (session: Session): Promise<void> => {
-    if (pendingAction) return;
+    // Only the current week can still be rearranged — a week the cycle has moved
+    // past is settled. The UI hides the action there; this is the backstop.
+    if (pendingAction || !currentWeek || session.weekNumber !== currentWeek.weekNumber) return;
     setActionError('');
     setPendingAction({ tab: session.tabName, kind: 'unskip' });
     try {

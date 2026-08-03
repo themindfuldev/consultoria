@@ -6,7 +6,10 @@ import {
   deleteField,
   doc,
   getDoc,
+  getDocs,
+  limit,
   onSnapshot,
+  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -18,6 +21,7 @@ import {
   CheckCircle2,
   Clock,
   ExternalLink,
+  Lock,
   MessageSquare,
   NotebookText,
   Pencil,
@@ -66,7 +70,7 @@ import { clearOfflineSnapshots } from '../../utils/session';
 import { formatDuration } from '../../utils/duration';
 import { trimText } from '../../utils/text';
 import { videosAwaitingFeedback } from '../../utils/feedback';
-import type { Cycle, Feedback, ParsedSheetTab, Session, SessionVideo } from '../../types';
+import type { Cycle, CycleWeek, Feedback, ParsedSheetTab, Session, SessionVideo } from '../../types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -175,6 +179,10 @@ export function SessionDetail() {
   const [session, setSession] = useState<Session | null>(null);
   const [videos, setVideos] = useState<SessionVideo[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Highest week number the cycle has reached — a session below it belongs to a
+  // week that has been left behind, which settles its training.
+  const [latestWeekNumber, setLatestWeekNumber] = useState<number | null>(null);
 
   // Parsed sheet data for this session's tab
   const [parsedTab, setParsedTab] = useState<ParsedSheetTab | null>(null);
@@ -287,18 +295,33 @@ export function SessionDetail() {
     : '';
 
   // A skipped session opens read-only (Despular to revert) regardless of how far
-  // it had progressed before being skipped. Nothing else locks a session: a week
-  // moving on doesn't stop videos being added or feedback being exchanged, which
-  // routinely continues after the training itself is done.
+  // it had progressed before being skipped.
   const isSkipped = session?.status === 'skipped';
-  const readOnly = isSkipped;
+
+  // Once a later week has been started, this week's training is settled: no
+  // starting, finishing, reopening, skipping or un-skipping it, and the plan
+  // stops taking edits. Starting a week requires the previous one to be fully
+  // finished or skipped, so nothing half-done is ever frozen this way.
+  const isPastWeek =
+    latestWeekNumber != null &&
+    !!session?.weekNumber &&
+    session.weekNumber < latestWeekNumber;
+
+  // What the *workout* can still do. The video exchange is deliberately not
+  // covered by this — see `videosLocked`.
+  const workoutLocked = isSkipped || isPastWeek;
+
+  // Videos and the feedback request outlive the training itself: they carry on
+  // for as long as the trainer hasn't answered, whatever week it is now. Only a
+  // skipped session (nothing was trained) closes them.
+  const videosLocked = isSkipped;
 
   // Before the session is under way (not started, or skipped and awaiting
   // "Despular"), the call-to-action box goes above the workout plan so the
   // student acts first and reads the plan below. Once training/done, the plan
   // returns to the top since that's what they're actively working through.
   const actionsFirst =
-    (phase === 'pre' && !readOnly) || isSkipped;
+    (phase === 'pre' && !workoutLocked) || isSkipped;
 
   // The trainer's feedback has arrived. It doesn't lock anything on its own —
   // feedback often lands mid-week and a follow-up video is a normal part of the
@@ -379,6 +402,24 @@ export function SessionDetail() {
       }
     });
   }, [cycleId, sessionId]);
+
+  // ── Which week is the cycle on now? ─────────────────────────────────────────
+
+  useEffect(() => {
+    if (!cycleId) return;
+    getDocs(
+      query(
+        collection(db, 'cycles', cycleId, 'weeks'),
+        orderBy('weekNumber', 'desc'),
+        limit(1),
+      ),
+    )
+      .then((snap) => {
+        const week = snap.docs[0]?.data() as CycleWeek | undefined;
+        setLatestWeekNumber(week?.weekNumber ?? null);
+      })
+      .catch(() => {/* default: treat as the current week, i.e. unlocked */});
+  }, [cycleId]);
 
   // ── Load parsed sheet tab for this session ──────────────────────────────────
 
@@ -475,7 +516,7 @@ export function SessionDetail() {
   // ── Pre-workout submit ──────────────────────────────────────────────────────
 
   const handleSubmitPreWorkout = async () => {
-    if (!session || !cycle || !preEnergy || !preFeeling) return;
+    if (!session || !cycle || !preEnergy || !preFeeling || isPastWeek) return;
     setPreError('');
     setPreSubmitting(true);
     const preWorkout = { energyLevel: preEnergy, feeling: preFeeling };
@@ -528,7 +569,7 @@ export function SessionDetail() {
   // ── Skip session (from the pre-workout screen, before starting) ─────────────
 
   const handleSkipSession = async () => {
-    if (!session) return;
+    if (!session || isPastWeek) return;
     const confirmed = window.confirm(`Pular o treino "${trimText(session.tabName)}"?`);
     if (!confirmed) return;
     setPreError('');
@@ -548,7 +589,7 @@ export function SessionDetail() {
   // ── Un-skip session (revert a skipped session back to "Não iniciado") ───────
 
   const handleUnskipSession = async () => {
-    if (!session) return;
+    if (!session || isPastWeek) return;
     setPreError('');
     setUnskipping(true);
     // Revert to where it was before being skipped: a session that had already
@@ -606,7 +647,7 @@ export function SessionDetail() {
   // ── Finish session ──────────────────────────────────────────────────────────
 
   const handleFinishSession = async () => {
-    if (!session || !cycle || !postEnergy || !postFeeling) return;
+    if (!session || !cycle || !postEnergy || !postFeeling || isPastWeek) return;
     setFinishError('');
     setFinishing(true);
 
@@ -681,7 +722,7 @@ export function SessionDetail() {
   // resumes counting from `startedAt`.
 
   const handleReopenSession = async () => {
-    if (!session) return;
+    if (!session || isPastWeek) return;
     if (!window.confirm(`Reabrir o treino "${trimText(session.tabName)}"?`)) return;
     setReopenError('');
     setReopening(true);
@@ -718,7 +759,7 @@ export function SessionDetail() {
   // snapshot. Debounced so rapid edits (notes/RPE/set toggles) coalesce.
 
   useEffect(() => {
-    if (phase !== 'training' || readOnly) return;
+    if (phase !== 'training' || workoutLocked) return;
     if (!session || !cycle || !parsedTab) return;
     const id = setTimeout(() => {
       const snapshot = {
@@ -739,7 +780,7 @@ export function SessionDetail() {
       } catch {/* storage full / unavailable — offline fallback is best-effort */}
     }, 800);
     return () => clearTimeout(id);
-  }, [phase, readOnly, session, cycle, parsedTab, dateLabel, exerciseEntries, completedSets]);
+  }, [phase, workoutLocked, session, cycle, parsedTab, dateLabel, exerciseEntries, completedSets]);
 
   // ── File selected ───────────────────────────────────────────────────────────
 
@@ -985,9 +1026,9 @@ export function SessionDetail() {
           // when the week is concluded, so the student can review what they
           // filled in.
           entries={phase === 'pre' ? undefined : exerciseEntries}
-          onEntryChange={phase === 'training' && !readOnly ? handleEntryChange : undefined}
+          onEntryChange={phase === 'training' && !workoutLocked ? handleEntryChange : undefined}
           completedSets={completedSets}
-          onToggleSet={phase === 'training' && !readOnly ? handleToggleSet : undefined}
+          onToggleSet={phase === 'training' && !workoutLocked ? handleToggleSet : undefined}
         />
       ) : !parsedTabLoading ? (
         <p className="text-xs text-slate-400 dark:text-slate-500 px-1">
@@ -1042,6 +1083,17 @@ export function SessionDetail() {
         )}
       </div>
 
+      {/* Past-week notice — says what is settled and what still isn't. */}
+      {isPastWeek && (
+        <div className="mb-5 flex items-start gap-2 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+          <Lock className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <span>
+            Treino de uma semana anterior. Você ainda pode enviar vídeos e pedir
+            feedback ao treinador.
+          </span>
+        </div>
+      )}
+
       {/* Reading mode: workout plan. Above the action box while training/done,
           below it before the session is under way (see `actionsFirst`). */}
       {!actionsFirst && planSection}
@@ -1053,23 +1105,32 @@ export function SessionDetail() {
             <SkipForward className="h-4 w-4" />
             Treino pulado
           </div>
-          <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
-            Este treino foi pulado. Despule para preencher as respostas e começar.
-          </p>
-          {preError && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{preError}</p>}
-          <button
-            onClick={handleUnskipSession}
-            disabled={unskipping}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <SkipBack className="h-4 w-4" />
-            {unskipping ? 'Despulando…' : 'Despular'}
-          </button>
+          {isPastWeek ? (
+            // Settled: the week has moved on, so it stays skipped.
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Este treino foi pulado nesta semana.
+            </p>
+          ) : (
+            <>
+              <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+                Este treino foi pulado. Despule para preencher as respostas e começar.
+              </p>
+              {preError && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{preError}</p>}
+              <button
+                onClick={handleUnskipSession}
+                disabled={unskipping}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <SkipBack className="h-4 w-4" />
+                {unskipping ? 'Despulando…' : 'Despular'}
+              </button>
+            </>
+          )}
         </div>
       )}
 
       {/* ── Phase A: pre-workout form ────────────────────────────────────── */}
-      {phase === 'pre' && !readOnly && (
+      {phase === 'pre' && !workoutLocked && (
         <div className="glass-premium mb-5 rounded-2xl p-4">
           <p className="mb-3 text-sm font-bold text-slate-900 dark:text-white">
             Preencha abaixo (INÍCIO DO TREINO)
@@ -1182,7 +1243,7 @@ export function SessionDetail() {
                       <p className="truncate text-sm font-medium text-slate-800 dark:text-white">
                         {trimText(v.exerciseName) || 'Vídeo geral'}
                       </p>
-                      {!readOnly && (
+                      {!videosLocked && (
                         <button
                           onClick={() => startEditVideo(v)}
                           aria-label="Editar exercício"
@@ -1209,7 +1270,7 @@ export function SessionDetail() {
                         >
                           <ExternalLink className="h-4 w-4" />
                         </a>
-                        {!readOnly && (
+                        {!videosLocked && (
                           <button
                             onClick={() => handleDeleteVideo(v)}
                             aria-label="Excluir vídeo"
@@ -1286,9 +1347,10 @@ export function SessionDetail() {
             </div>
           )}
 
-          {/* Actions (hidden only when read-only — feedback having arrived does
-              not close the session to more videos) */}
-          {!readOnly && (
+          {/* Adding videos stays open for as long as the session isn't skipped
+              — including in a week that has already moved on, and after the
+              trainer has replied. */}
+          {!videosLocked && (
             <div className="flex flex-col gap-3">
               {/* Hidden file input — no `capture` so it opens the library/camera
                   roll picker (lets the student choose an already-recorded video). */}
@@ -1311,8 +1373,9 @@ export function SessionDetail() {
               </button>
 
               {/* Reopen a session finalized by mistake — right below the video
-                  action it sits next to on the concluded screen. */}
-              {phase === 'done' && (
+                  action it sits next to on the concluded screen. Gone once a
+                  later week has started: the training itself is settled then. */}
+              {phase === 'done' && !workoutLocked && (
                 <>
                   {reopenError && (
                     <p className="text-xs text-red-600 dark:text-red-400">{reopenError}</p>
@@ -1342,7 +1405,7 @@ export function SessionDetail() {
           The offline snapshot is maintained automatically in the background;
           this block is just the "Finalizar treino" flow, below the video
           actions. */}
-      {phase === 'training' && !readOnly && (
+      {phase === 'training' && !workoutLocked && (
         <div className="mb-5 flex flex-col gap-3">
           {!showFinishForm ? (
             <button

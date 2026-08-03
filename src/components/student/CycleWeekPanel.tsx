@@ -55,12 +55,17 @@ function StatusBadge({ session }: { session: Session | null }) {
 
 function SessionRows({
   rows,
+  /** A week the cycle has moved past: its training is settled, so no skipping or
+   *  un-skipping. Opening a session still works — videos and feedback carry on
+   *  there. */
+  settled,
   pendingActionTab,
   onOpen,
   onSkip,
   onUnskip,
 }: {
   rows: TabSessionRow[];
+  settled: boolean;
   pendingActionTab: string | null;
   onOpen: (row: TabSessionRow) => void;
   onSkip: (tab: string) => void;
@@ -72,8 +77,8 @@ function SessionRows({
       {rows.map((row, idx) => {
         const status: SessionStatus = row.session?.status ?? 'pending';
         const busy = pendingActionTab === row.tab;
-        const canSkip = status === 'pending' || status === 'in_progress';
-        const canUnskip = status === 'skipped';
+        const canSkip = !settled && (status === 'pending' || status === 'in_progress');
+        const canUnskip = !settled && status === 'skipped';
         const hasFeedback = row.session?.feedbackStatus === 'complete';
         // Partial = the trainer replied but some videos are still unanswered —
         // flagged in orange so it reads apart from a fully answered session.
@@ -258,6 +263,7 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
           {rows.length > 0 ? (
             <SessionRows
               rows={rows}
+              settled={false}
               pendingActionTab={pendingAction?.tab ?? null}
               onOpen={handleOpen}
               onSkip={skipSession}
@@ -373,6 +379,7 @@ export function CycleWeekPanel({ cycleWeek }: CycleWeekPanelProps) {
                       {weekRows.length > 0 ? (
                         <SessionRows
                           rows={weekRows}
+                          settled
                           pendingActionTab={pendingAction?.tab ?? null}
                           onOpen={handleOpen}
                           onSkip={skipSession}

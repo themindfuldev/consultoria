@@ -76,9 +76,13 @@ export function TrainerFeedbackView() {
   const [videoError, setVideoError] = useState('');
   // The trainer's own Drive feedback subfolder for this session, created once.
   const feedbackFolderRef = useRef<{ rootId: string; subId: string } | null>(null);
-  // True once this feedback has been responded (status 'complete'): the button
-  // is hidden, but edits keep auto-saving without downgrading it back to draft.
+  // True once this feedback has been responded (status 'complete'). Edits keep
+  // auto-saving without downgrading it back to draft.
   const [responded, setResponded] = useState(false);
+  // Edits made *since* that reply went out. A partial reply is normal — the
+  // trainer answers what they can and comes back to the rest — so once they add
+  // anything new the reply becomes re-sendable and the student gets told.
+  const [hasUnsentChanges, setHasUnsentChanges] = useState(false);
 
   // ── Load session + related data ─────────────────────────────────────────────
 
@@ -288,6 +292,7 @@ export function TrainerFeedbackView() {
   }, [loading]);
   useEffect(() => {
     if (!hydratedRef.current) return;
+    setHasUnsentChanges(true);
     const t = setTimeout(() => { handleSaveDraft(); }, 1000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -335,7 +340,14 @@ export function TrainerFeedbackView() {
         );
       }
 
-      navigate('/trainer');
+      // A first reply is the end of the job, so go back to the panel. A re-send
+      // is a mid-course update — keep the trainer on the session they are still
+      // working through.
+      setHasUnsentChanges(false);
+      if (!responded) {
+        setResponded(true);
+        navigate('/trainer');
+      }
     } catch {
       setSaveError('Não foi possível concluir o feedback.');
     } finally {
@@ -356,6 +368,10 @@ export function TrainerFeedbackView() {
   }
 
   const dateLabel = session?.date instanceof Timestamp ? fmtDate(session.date) : '';
+
+  // Videos whose exercise block is still empty — what makes a reply *partial*.
+  // Computed from the live form, so it updates as the trainer types.
+  const pendingVideoCount = videosAwaitingFeedback(videos, buildExerciseFeedbackArray()).length;
 
   // Seed every set from the plan (sheet Observações/RPE) overlaid with the
   // student's saved entries — identical to the student's finished view, so the
@@ -484,6 +500,16 @@ export function TrainerFeedbackView() {
           </p>
         )}
 
+        {/* What is still outstanding, so a partial reply is visible as such */}
+        {pendingVideoCount > 0 && (
+          <p className="rounded-xl bg-orange-50 px-4 py-3 text-center text-xs font-medium text-orange-700 dark:bg-orange-900/20 dark:text-orange-300">
+            {pendingVideoCount === 1
+              ? '1 vídeo ainda sem feedback.'
+              : `${pendingVideoCount} vídeos ainda sem feedback.`}
+            {responded && ' Complete o que faltou e reenvie.'}
+          </p>
+        )}
+
         {/* Auto-save status */}
         <p className="text-center text-xs text-slate-400 dark:text-slate-500">
           {saving
@@ -493,8 +519,10 @@ export function TrainerFeedbackView() {
               : 'As alterações são salvas automaticamente'}
         </p>
 
-        {/* Action button — hidden once the feedback has been responded */}
-        {!responded && (
+        {/* Send the reply. After the first one the button comes back as soon as
+            anything changes, so answering the rest of a partial feedback can be
+            pushed to the student instead of landing silently. */}
+        {(!responded || hasUnsentChanges) && (
           <div className="pb-6">
             <button
               onClick={handleComplete}
@@ -502,7 +530,7 @@ export function TrainerFeedbackView() {
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-60"
             >
               <Send className="h-4 w-4" />
-              {completing ? 'Enviando…' : 'Responder feedback'}
+              {completing ? 'Enviando…' : responded ? 'Reenviar feedback' : 'Responder feedback'}
             </button>
           </div>
         )}
