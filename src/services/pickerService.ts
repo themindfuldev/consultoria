@@ -56,11 +56,14 @@ function loadPickerApi(): Promise<void> {
 /**
  * Opens the Google Picker filtered to Google Sheets (including sheets shared
  * with the user). Resolves with the picked spreadsheet, or null if the user
- * cancels. `token` must be a Google OAuth access token carrying `drive.file`.
+ * cancels. `token` must be a Google OAuth access token carrying `drive.file`,
+ * and `appId` the Cloud project number that token's client belongs to — see the
+ * `setAppId` note below for why it is not optional.
  */
 export async function pickSpreadsheet(
   token: string,
   apiKey: string,
+  appId: string,
 ): Promise<PickedSpreadsheet | null> {
   await loadPickerApi();
   const google = w.google;
@@ -93,6 +96,15 @@ export async function pickSpreadsheet(
         .addView(sharedView)
         .setOAuthToken(token)
         .setDeveloperKey(apiKey)
+        // REQUIRED for the grant to actually happen. Under `drive.file` the
+        // Picker only hands the app access to the picked file when it knows
+        // which app to grant it to, and the OAuth token alone doesn't say —
+        // `appId` (the Cloud project number) is what identifies us. Without it
+        // the Picker still returns the file id, so the pick *looks* successful
+        // and the sheet id is saved, but no grant is ever issued and every
+        // later Sheets call answers 404 NOT_FOUND. Re-picking doesn't help,
+        // because the re-pick is just as silently grant-less.
+        .setAppId(appId)
         .setCallback((data: any) => {
           if (data.action === google.picker.Action.PICKED) {
             const doc = data.docs?.[0];

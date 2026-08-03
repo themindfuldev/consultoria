@@ -16,10 +16,18 @@ export function useSheetPicker() {
     const apiKey = import.meta.env.VITE_GOOGLE_API_KEY as string | undefined;
     if (!apiKey) throw new Error('Seletor do Google indisponível (configuração ausente).');
 
+    // The Picker needs the Cloud project number to know which app to grant
+    // `drive.file` access to. It's the leading numeric segment of the OAuth
+    // client id ("123456789012-abc….apps.googleusercontent.com"), so derive it
+    // rather than carrying a second env var that could drift out of sync.
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+    const appId = clientId?.match(/^(\d+)-/)?.[1];
+    if (!appId) throw new Error('Seletor do Google indisponível (configuração ausente).');
+
     setPicking(true);
     try {
       const token = await getAccessToken();
-      return await pickSpreadsheet(token, apiKey);
+      return await pickSpreadsheet(token, apiKey, appId);
     } finally {
       setPicking(false);
     }
