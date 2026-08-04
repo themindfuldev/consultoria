@@ -40,6 +40,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
 import { useToast } from '../../hooks/useToast';
 import { useVideoCompress } from '../../hooks/useVideoCompress';
+import { useWakeLock } from '../../hooks/useWakeLock';
 import { Layout } from '../../components/Layout';
 import { StarRating } from '../../components/student/StarRating';
 import { ChoiceButtons } from '../../components/student/ChoiceButtons';
@@ -174,6 +175,7 @@ export function SessionDetail() {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const { compress } = useVideoCompress();
+  const wakeLock = useWakeLock();
 
   const [cycle, setCycle] = useState<Cycle | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -815,6 +817,11 @@ export function SessionDetail() {
         : 'Comprimindo e enviando 1 vídeo…',
     );
 
+    // Compressing a batch takes minutes of CPU; without this the screen locks
+    // and the browser freezes the page (ffmpeg worker included) mid-job.
+    // Requested here, still inside the click's activation window.
+    await wakeLock.acquire();
+
     try {
       const token = await getAccessToken();
 
@@ -927,6 +934,8 @@ export function SessionDetail() {
       setUploadState((s) =>
         s ? { ...s, phase: 'error', error: String(err) } : s,
       );
+    } finally {
+      wakeLock.release();
     }
   };
 

@@ -17,6 +17,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/useToast';
 import { useVideoCompress } from '../../hooks/useVideoCompress';
+import { useWakeLock } from '../../hooks/useWakeLock';
 import { openWhatsApp } from '../../services/notifyService';
 import { setKey } from '../../services/sheetsService';
 import { getOrCreateTrainerFeedbackFolder, uploadFileToDrive } from '../../services/driveService';
@@ -53,6 +54,7 @@ export function TrainerFeedbackView() {
   const { currentUser, getAccessToken } = useAuth();
   const { showToast } = useToast();
   const { compress } = useVideoCompress();
+  const wakeLock = useWakeLock();
   const navigate = useNavigate();
 
   const [session, setSession] = useState<Session | null>(null);
@@ -190,6 +192,11 @@ export function TrainerFeedbackView() {
     if (!session || videoUpload) return;
     setVideoError('');
     setVideoUpload({ exerciseName, phase: 'compressing', progress: 0 });
+
+    // Keeps the screen awake through the compress + upload; a locked screen
+    // freezes the page and stalls the ffmpeg worker. See useWakeLock.
+    await wakeLock.acquire();
+
     try {
       const token = await getAccessToken();
 
@@ -238,6 +245,8 @@ export function TrainerFeedbackView() {
       console.error('Falha no upload do vídeo de feedback:', err);
       setVideoError('Não foi possível enviar o vídeo. Tente novamente.');
       setVideoUpload(null);
+    } finally {
+      wakeLock.release();
     }
   };
 
