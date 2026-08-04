@@ -1,0 +1,156 @@
+/**
+ * webcodecs.worker.ts
+ *
+ * Compresses a video using the browser's hardware H.264 encoder via WebCodecs,
+ * with mediabunny handling demuxing, muxing and the encode pipeline.
+ *
+ * This is the fast path. ffmpeg.wasm (compress.worker.ts) encodes in software
+ * and takes minutes on a phone; the hardware encoder takes seconds. The hook
+ * tries this worker first and falls back to ffmpeg whenever this one reports
+ * `unsupported` — see useVideoCompress.
+ *
+ * Audio is passed through, never re-encoded: mediabunny copies the encoded
+ * samples straight from input to output when the codec already fits the MP4
+ * container. That's faster and lossless, and it's also what makes this work on
+ * iOS 16.4–18.7, which ships WebCodecs' video interfaces but no AudioEncoder.
+ * If the source audio ever does need re-encoding we bail to ffmpeg rather than
+ * ship a silent video.
+ */
+
+import {
+  BlobSource,
+  BufferTarget,
+  canEncodeVideo,
+  Conversion,
+  Input,
+  MATROSKA,
+  MP4,
+  Mp4OutputFormat,
+  Output,
+  QTFF,
+  Quality,
+  WEBM,
+} from 'mediabunny';
+
+/**
+ * Only the containers a phone or desktop actually hands us from a file picker:
+ * MP4 and QuickTime/MOV (iOS), Matroska and WebM (Android, desktop capture).
+ * Listing them instead of `ALL_FORMATS` keeps the MP3/Ogg/FLAC/HLS demuxers out
+ * of the bundle — worth ~300 kB in this worker's chunk. Anything else falls
+ * through to the ffmpeg path, which reads far more formats anyway.
+ */
+const INPUT_FORMATS = [MP4, QTFF, MATROSKA, WEBM];
+
+/** Cap on the output's height, matching the ffmpeg path's `scale=-2:720`. */
+const TARGET_HEIGHT = 720;
+
+/**
+ * WebCodecs has no CRF equivalent, so quality is expressed as a target bitrate.
+ * 2.5 Mbps at 720p holds up on the fast movement in lifting footage, where a
+ * lower rate would smear exactly the detail the trainer is looking at.
+ */
+const TARGET_BITRATE = 2_500_000;
+
+type Outbound =
+  | { type: 'progress'; progress: number }
+  | { type: 'done'; buffer: ArrayBuffer }
+  | { type: 'unsupported'; reason: string }
+  | { type: 'error'; message: string };
+
+function post(message: Outbound, transfer?: Transferable[]) {
+  if (transfer) self.postMessage(message, { transfer });
+  else self.postMessage(message);
+}
+
+self.onmessage = async ({ data }: MessageEvent<{ file: File }>) => {
+  try {
+    if (typeof VideoEncoder === 'undefined') {
+      post({ type: 'unsupported', reason: 'WebCodecs VideoEncoder unavailable' });
+      return;
+    }
+
+    // Must be the object form: `new Quality(n)` treats a bare number as a
+    // qualitative 0–1 level, so a bitrate passed that way overflows to an
+    // infinite bitrate and VideoEncoder rejects the config outright.
+    const quality = new Quality({ bitrate: TARGET_BITRATE });
+
+    // Ask before building anything: a browser can expose VideoEncoder and still
+    // refuse this configuration.
+    if (!(await canEncodeVideo('avc', { height: TARGET_HEIGHT, quality }))) {
+      post({ type: 'unsupported', reason: 'H.264 encoding not supported' });
+      return;
+    }
+
+    const input = new Input({
+      source: new BlobSource(data.file),
+      formats: INPUT_FORMATS,
+    });
+
+    const videoTrack = await input.getPrimaryVideoTrack();
+    if (!videoTrack) {
+      post({ type: 'unsupported', reason: 'no video track' });
+      return;
+    }
+
+    // Display dimensions, not coded ones — phone footage carries rotation
+    // metadata, and we want the height as the viewer will see it.
+    const displayHeight = await videoTrack.getDisplayHeight();
+
+    const output = new Output({
+      format: new Mp4OutputFormat({
+        // Equivalent of ffmpeg's `-movflags +faststart`: puts the moov box up
+        // front so Drive can start playback without the whole file.
+        fastStart: 'in-memory',
+      }),
+      target: new BufferTarget(),
+    });
+
+    const conversion = await Conversion.init({
+      input,
+      output,
+      video: {
+        codec: 'avc',
+        quality,
+        // Only ever scale down. Setting height unconditionally would upscale
+        // already-small clips, costing bytes and gaining nothing.
+        ...(displayHeight > TARGET_HEIGHT ? { height: TARGET_HEIGHT } : {}),
+      },
+      // No `audio` options on purpose — that leaves forceTranscode off, so the
+      // encoded audio is copied rather than run through an AudioEncoder.
+    });
+
+    if (!conversion.isValid) {
+      post({ type: 'unsupported', reason: 'conversion not valid for this input' });
+      return;
+    }
+
+    // A dropped audio track would mean mediabunny couldn't carry the source
+    // audio across — usually no encodable target codec. Hand off to ffmpeg
+    // instead of silently uploading a video with no sound.
+    const droppedAudio = conversion.discardedTracks.find(
+      (t) => t.track.type === 'audio',
+    );
+    if (droppedAudio) {
+      post({ type: 'unsupported', reason: `audio track discarded: ${droppedAudio.reason}` });
+      return;
+    }
+
+    conversion.onProgress = (progress: number) => {
+      post({ type: 'progress', progress });
+    };
+
+    await conversion.execute();
+
+    const buffer = output.target.buffer;
+    if (!buffer) {
+      post({ type: 'error', message: 'conversion produced no output' });
+      return;
+    }
+
+    post({ type: 'done', buffer }, [buffer]);
+  } catch (err) {
+    // Report as unsupported rather than error: ffmpeg.wasm tolerates a wider
+    // range of inputs, so it's worth letting it try before failing the upload.
+    post({ type: 'unsupported', reason: String(err) });
+  }
+};
