@@ -120,6 +120,13 @@ export function useVideoCompress() {
     async (
       file: File,
       onProgress?: (progress: number) => void,
+      /**
+       * Called with the reason when the WebCodecs path bails and ffmpeg takes
+       * over. Surfaced in the UI because iOS browsers give no reachable
+       * console, and "which encoder ran" is the difference between a
+       * seconds-long compress and a minutes-long one.
+       */
+      onFallback?: (reason: string) => void,
     ): Promise<CompressResult> => {
       setCompressing(true);
       try {
@@ -129,6 +136,7 @@ export function useVideoCompress() {
         } catch (err) {
           if (!(err instanceof UnsupportedError)) throw err;
           console.info('WebCodecs path unavailable, using ffmpeg:', err.message);
+          onFallback?.(err.message);
           // Reset progress: the fallback restarts from zero, and leaving the
           // bar wherever WebCodecs stopped would read as a stall.
           onProgress?.(0);

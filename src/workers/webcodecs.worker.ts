@@ -63,6 +63,11 @@ function post(message: Outbound, transfer?: Transferable[]) {
 }
 
 self.onmessage = async ({ data }: MessageEvent<{ file: File }>) => {
+  // Accumulated as we learn about the input, and appended to whatever reason we
+  // bail out with. Without it a fallback on a real phone tells us only *that*
+  // we fell back, not what about the file caused it.
+  let context = '';
+
   try {
     if (typeof VideoEncoder === 'undefined') {
       post({ type: 'unsupported', reason: 'WebCodecs VideoEncoder unavailable' });
@@ -86,15 +91,33 @@ self.onmessage = async ({ data }: MessageEvent<{ file: File }>) => {
       formats: INPUT_FORMATS,
     });
 
+    context = ` [${data.file.type || 'no mime'}]`;
+
     const videoTrack = await input.getPrimaryVideoTrack();
     if (!videoTrack) {
-      post({ type: 'unsupported', reason: 'no video track' });
+      post({ type: 'unsupported', reason: `no video track${context}` });
       return;
     }
 
     // Display dimensions, not coded ones — phone footage carries rotation
     // metadata, and we want the height as the viewer will see it.
     const displayHeight = await videoTrack.getDisplayHeight();
+    const displayWidth = await videoTrack.getDisplayWidth();
+    const audioTrack = await input.getPrimaryAudioTrack();
+
+    context =
+      ` [${data.file.type || 'no mime'}` +
+      ` ${displayWidth}x${displayHeight}` +
+      ` v:${videoTrack.codec ?? 'unknown'}` +
+      ` a:${audioTrack ? (audioTrack.codec ?? 'unknown') : 'none'}]`;
+
+    // Decodability is checked separately from encodability: an iPhone shooting
+    // in "High Efficiency" hands us HEVC, and a browser that can encode H.264
+    // may still not decode what it's being given.
+    if (!(await videoTrack.canDecode())) {
+      post({ type: 'unsupported', reason: `video not decodable${context}` });
+      return;
+    }
 
     const output = new Output({
       format: new Mp4OutputFormat({
@@ -120,7 +143,13 @@ self.onmessage = async ({ data }: MessageEvent<{ file: File }>) => {
     });
 
     if (!conversion.isValid) {
-      post({ type: 'unsupported', reason: 'conversion not valid for this input' });
+      const why = conversion.discardedTracks
+        .map((t) => `${t.track.type}:${t.reason}`)
+        .join(', ');
+      post({
+        type: 'unsupported',
+        reason: `conversion invalid (${why || 'no reason given'})${context}`,
+      });
       return;
     }
 
@@ -131,7 +160,10 @@ self.onmessage = async ({ data }: MessageEvent<{ file: File }>) => {
       (t) => t.track.type === 'audio',
     );
     if (droppedAudio) {
-      post({ type: 'unsupported', reason: `audio track discarded: ${droppedAudio.reason}` });
+      post({
+        type: 'unsupported',
+        reason: `audio discarded: ${droppedAudio.reason}${context}`,
+      });
       return;
     }
 
@@ -151,6 +183,6 @@ self.onmessage = async ({ data }: MessageEvent<{ file: File }>) => {
   } catch (err) {
     // Report as unsupported rather than error: ffmpeg.wasm tolerates a wider
     // range of inputs, so it's worth letting it try before failing the upload.
-    post({ type: 'unsupported', reason: String(err) });
+    post({ type: 'unsupported', reason: `${String(err)}${context}` });
   }
 };

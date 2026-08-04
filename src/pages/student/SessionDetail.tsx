@@ -161,6 +161,13 @@ interface UploadState {
   /** 1-based position and total when several videos are uploaded in one batch. */
   index?: number;
   total?: number;
+  /**
+   * Why the hardware-encoder path was skipped for this video, when it was.
+   * Shown in the progress card: iOS browsers expose no console we can read, so
+   * this is the only way to tell a fast hardware compress from the slow ffmpeg
+   * fallback on a real device.
+   */
+  fallbackReason?: string;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -953,6 +960,7 @@ export function SessionDetail() {
         const { buffer, compressedSizeMB } = await compress(
           file,
           (p) => setUploadState((s) => s ? { ...s, progress: p } : s),
+          (reason) => setUploadState((s) => s ? { ...s, fallbackReason: reason } : s),
         );
 
         setUploadState((s) => s ? { ...s, phase: 'uploading', progress: 0 } : s);
@@ -1449,6 +1457,13 @@ export function SessionDetail() {
                     {uploadState.phase === 'compressing' &&
                       ` · Original: ${fmtBytes(uploadState.originalMB)}`}
                   </p>
+                  {/* Diagnostic: which encoder is doing the work. Absent means
+                      the fast hardware path is running. */}
+                  {uploadState.fallbackReason && (
+                    <p className="mt-1 break-words text-[11px] leading-snug text-amber-700 dark:text-amber-400">
+                      Modo lento (ffmpeg): {uploadState.fallbackReason}
+                    </p>
+                  )}
                 </>
               )}
               {uploadState.phase === 'error' && (
