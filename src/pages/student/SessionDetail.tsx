@@ -970,13 +970,16 @@ export function SessionDetail() {
         );
 
         if (stats) {
-          const frames = Math.round((stats.srcFps * stats.convertMs) / 1000);
+          // Frames from the footage's own length — deriving them from elapsed
+          // time, as this did before, just echoed the source fps back.
+          const frames = stats.srcDurationS * stats.srcFps;
+          const throughput = Math.round(frames / (stats.convertMs / 1000));
           setCompressDiag(
             `${stats.srcWidth}x${stats.srcHeight}@${stats.srcFps}fps ${stats.srcCodec}` +
-              ` → ${stats.outHeight}p · ${fmtBytes(originalMB)}→${fmtBytes(compressedSizeMB)}` +
+              ` rot${stats.srcRotation} · ${stats.srcDurationS}s` +
+              ` · ${fmtBytes(originalMB)}→${fmtBytes(compressedSizeMB)}` +
               ` · probe ${stats.probeMs}ms · ler ${stats.inspectMs}ms` +
-              ` · encode ${(stats.convertMs / 1000).toFixed(1)}s` +
-              ` (~${Math.round(frames / (stats.convertMs / 1000))} fps)` +
+              ` · encode ${(stats.convertMs / 1000).toFixed(1)}s (${throughput} fps)` +
               ` · total ${(stats.totalMs / 1000).toFixed(1)}s`,
           );
         }

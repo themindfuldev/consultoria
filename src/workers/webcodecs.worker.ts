@@ -41,13 +41,16 @@ import {
  */
 const INPUT_FORMATS = [MP4, QTFF, MATROSKA, WEBM];
 
-/** Cap on the output's height, matching the ffmpeg path's `scale=-2:720`. */
-const TARGET_HEIGHT = 720;
+/**
+ * Resolution used only for the up-front codec-support probe. We no longer scale
+ * the video (see below), but the probe still needs concrete dimensions.
+ */
+const PROBE_HEIGHT = 720;
 
 /**
- * WebCodecs has no CRF equivalent, so quality is expressed as a target bitrate.
- * 2.5 Mbps at 720p holds up on the fast movement in lifting footage, where a
- * lower rate would smear exactly the detail the trainer is looking at.
+ * WebCodecs has no CRF equivalent, so quality is a target bitrate. This is what
+ * actually bounds the output size now that resolution is left alone: the source
+ * off an iPhone runs ~17 Mbps, so 2.5 Mbps is still a large reduction.
  */
 const TARGET_BITRATE = 2_500_000;
 
@@ -61,12 +64,18 @@ export interface CompressStats {
   srcHeight: number;
   srcFps: number;
   srcCodec: string;
-  outHeight: number;
+  /** Seconds of footage, used to turn convertMs into a real frames/sec figure. */
+  srcDurationS: number;
+  /**
+   * Rotation metadata on the source. Non-zero is worth knowing: rotation is one
+   * of the other conditions that can force the slow per-frame canvas path.
+   */
+  srcRotation: number;
   /** Milliseconds spent checking codec support before any file work. */
   probeMs: number;
   /** Milliseconds spent reading the container and sampling packet stats. */
   inspectMs: number;
-  /** Milliseconds spent in the decode → scale → encode → mux pipeline. */
+  /** Milliseconds spent in the decode → encode → mux pipeline. */
   convertMs: number;
   totalMs: number;
 }
@@ -106,7 +115,7 @@ self.onmessage = async ({ data }: MessageEvent<{ file: File }>) => {
 
     // Ask before building anything: a browser can expose VideoEncoder and still
     // refuse this configuration.
-    if (!(await canEncodeVideo('avc', { height: TARGET_HEIGHT, quality }))) {
+    if (!(await canEncodeVideo('avc', { height: PROBE_HEIGHT, quality }))) {
       post({ type: 'unsupported', reason: 'H.264 encoding not supported' });
       return;
     }
@@ -135,6 +144,8 @@ self.onmessage = async ({ data }: MessageEvent<{ file: File }>) => {
     // Sampled rather than exhaustive — scanning every packet of a 120 MB file
     // would itself cost seconds and distort what we're trying to measure.
     const packetStats = await videoTrack.computePacketStats(50);
+    const rotation = await videoTrack.getRotation();
+    const durationS = await input.computeDuration();
 
     tInspectDone = performance.now();
 
@@ -167,9 +178,21 @@ self.onmessage = async ({ data }: MessageEvent<{ file: File }>) => {
       video: {
         codec: 'avc',
         quality,
-        // Only ever scale down. Setting height unconditionally would upscale
-        // already-small clips, costing bytes and gaining nothing.
-        ...(displayHeight > TARGET_HEIGHT ? { height: TARGET_HEIGHT } : {}),
+        // Deliberately no width/height. Asking mediabunny to resize sets its
+        // `needsRerender` flag, which pushes every frame through an
+        // OffscreenCanvas and back into a VideoFrame — a GPU round-trip per
+        // frame that measured ~14x slower than decoding alone and wiped out the
+        // whole benefit of hardware encoding. Leaving the resolution alone keeps
+        // frames on the decoder → encoder path; the bitrate cap does the
+        // shrinking instead.
+        //
+        // Belt and braces against transmuxing. Without a resize the source and
+        // target codecs match, which is the shape where mediabunny may copy
+        // packets through untouched and compress nothing. Specifying `quality`
+        // already forces a re-encode on its own (measured: output size tracks
+        // the bitrate either way), but nothing in the API guarantees that, and
+        // the failure mode is a silent 120 MB upload.
+        forceTranscode: true,
       },
       // No `audio` options on purpose — that leaves forceTranscode off, so the
       // encoded audio is copied rather than run through an AudioEncoder.
@@ -223,7 +246,8 @@ self.onmessage = async ({ data }: MessageEvent<{ file: File }>) => {
           srcHeight: displayHeight,
           srcFps: Math.round(packetStats.averagePacketRate * 10) / 10,
           srcCodec: videoTrack.codec ?? 'unknown',
-          outHeight: Math.min(displayHeight, TARGET_HEIGHT),
+          srcDurationS: Math.round(durationS * 10) / 10,
+          srcRotation: rotation,
           probeMs: Math.round(tProbeDone - t0),
           inspectMs: Math.round(tInspectDone - tProbeDone),
           convertMs: Math.round(tEnd - tConvertStart),
