@@ -204,6 +204,12 @@ export function SessionDetail() {
 
   // Per-video upload state (shown during active upload)
   const [uploadState, setUploadState] = useState<UploadState | null>(null);
+  /**
+   * Temporary: timings from the last hardware compress. Kept in its own state
+   * so it outlives `uploadState`, which is cleared the moment the upload
+   * finishes — otherwise the numbers would vanish before they can be read.
+   */
+  const [compressDiag, setCompressDiag] = useState<string | null>(null);
 
   // Preview sheet state — up to 3 videos at once, each with its own tag.
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -957,11 +963,23 @@ export function SessionDetail() {
 
         setUploadState({ fileName: file.name, originalMB, phase: 'compressing', progress: 0, index: i + 1, total });
 
-        const { buffer, compressedSizeMB } = await compress(
+        const { buffer, compressedSizeMB, stats } = await compress(
           file,
           (p) => setUploadState((s) => s ? { ...s, progress: p } : s),
           (reason) => setUploadState((s) => s ? { ...s, fallbackReason: reason } : s),
         );
+
+        if (stats) {
+          const frames = Math.round((stats.srcFps * stats.convertMs) / 1000);
+          setCompressDiag(
+            `${stats.srcWidth}x${stats.srcHeight}@${stats.srcFps}fps ${stats.srcCodec}` +
+              ` → ${stats.outHeight}p · ${fmtBytes(originalMB)}→${fmtBytes(compressedSizeMB)}` +
+              ` · probe ${stats.probeMs}ms · ler ${stats.inspectMs}ms` +
+              ` · encode ${(stats.convertMs / 1000).toFixed(1)}s` +
+              ` (~${Math.round(frames / (stats.convertMs / 1000))} fps)` +
+              ` · total ${(stats.totalMs / 1000).toFixed(1)}s`,
+          );
+        }
 
         setUploadState((s) => s ? { ...s, phase: 'uploading', progress: 0 } : s);
         const uploaded = await uploadFileToDrive(
@@ -1471,6 +1489,25 @@ export function SessionDetail() {
                   {uploadState.error} — tente novamente.
                 </p>
               )}
+            </div>
+          )}
+
+          {/* Temporary diagnostic: where the compression time actually went.
+              Persists after the upload so the numbers can be read. */}
+          {compressDiag && (
+            <div className="mb-4 rounded-2xl bg-slate-100 p-3 dark:bg-slate-800/60">
+              <div className="flex items-start justify-between gap-2">
+                <p className="break-words font-mono text-[11px] leading-snug text-slate-600 dark:text-slate-300">
+                  {compressDiag}
+                </p>
+                <button
+                  onClick={() => setCompressDiag(null)}
+                  aria-label="Fechar"
+                  className="flex-shrink-0 rounded-full p-1 text-slate-400 hover:bg-black/5 hover:text-slate-700 dark:hover:bg-white/10"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           )}
 

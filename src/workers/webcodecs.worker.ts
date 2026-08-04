@@ -51,9 +51,29 @@ const TARGET_HEIGHT = 720;
  */
 const TARGET_BITRATE = 2_500_000;
 
+/**
+ * Timing and source facts for one compress, reported on success. Temporary
+ * diagnostic: the encode is running on hardware but slower than an iPhone
+ * should manage, and this narrows down where the time actually goes.
+ */
+export interface CompressStats {
+  srcWidth: number;
+  srcHeight: number;
+  srcFps: number;
+  srcCodec: string;
+  outHeight: number;
+  /** Milliseconds spent checking codec support before any file work. */
+  probeMs: number;
+  /** Milliseconds spent reading the container and sampling packet stats. */
+  inspectMs: number;
+  /** Milliseconds spent in the decode → scale → encode → mux pipeline. */
+  convertMs: number;
+  totalMs: number;
+}
+
 type Outbound =
   | { type: 'progress'; progress: number }
-  | { type: 'done'; buffer: ArrayBuffer }
+  | { type: 'done'; buffer: ArrayBuffer; stats: CompressStats }
   | { type: 'unsupported'; reason: string }
   | { type: 'error'; message: string };
 
@@ -67,6 +87,11 @@ self.onmessage = async ({ data }: MessageEvent<{ file: File }>) => {
   // bail out with. Without it a fallback on a real phone tells us only *that*
   // we fell back, not what about the file caused it.
   let context = '';
+  const t0 = performance.now();
+  // Assigned as each phase completes; only read on the success path, which is
+  // reached strictly after both.
+  let tProbeDone: number;
+  let tInspectDone: number;
 
   try {
     if (typeof VideoEncoder === 'undefined') {
@@ -101,9 +126,17 @@ self.onmessage = async ({ data }: MessageEvent<{ file: File }>) => {
 
     // Display dimensions, not coded ones — phone footage carries rotation
     // metadata, and we want the height as the viewer will see it.
+    tProbeDone = performance.now();
+
     const displayHeight = await videoTrack.getDisplayHeight();
     const displayWidth = await videoTrack.getDisplayWidth();
     const audioTrack = await input.getPrimaryAudioTrack();
+
+    // Sampled rather than exhaustive — scanning every packet of a 120 MB file
+    // would itself cost seconds and distort what we're trying to measure.
+    const packetStats = await videoTrack.computePacketStats(50);
+
+    tInspectDone = performance.now();
 
     context =
       ` [${data.file.type || 'no mime'}` +
@@ -171,7 +204,9 @@ self.onmessage = async ({ data }: MessageEvent<{ file: File }>) => {
       post({ type: 'progress', progress });
     };
 
+    const tConvertStart = performance.now();
     await conversion.execute();
+    const tEnd = performance.now();
 
     const buffer = output.target.buffer;
     if (!buffer) {
@@ -179,7 +214,24 @@ self.onmessage = async ({ data }: MessageEvent<{ file: File }>) => {
       return;
     }
 
-    post({ type: 'done', buffer }, [buffer]);
+    post(
+      {
+        type: 'done',
+        buffer,
+        stats: {
+          srcWidth: displayWidth,
+          srcHeight: displayHeight,
+          srcFps: Math.round(packetStats.averagePacketRate * 10) / 10,
+          srcCodec: videoTrack.codec ?? 'unknown',
+          outHeight: Math.min(displayHeight, TARGET_HEIGHT),
+          probeMs: Math.round(tProbeDone - t0),
+          inspectMs: Math.round(tInspectDone - tProbeDone),
+          convertMs: Math.round(tEnd - tConvertStart),
+          totalMs: Math.round(tEnd - t0),
+        },
+      },
+      [buffer],
+    );
   } catch (err) {
     // Report as unsupported rather than error: ffmpeg.wasm tolerates a wider
     // range of inputs, so it's worth letting it try before failing the upload.

@@ -25,9 +25,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { CompressStats } from '../workers/webcodecs.worker';
+
 export interface CompressResult {
   buffer: ArrayBuffer;
   compressedSizeMB: number;
+  /** Present only when the hardware path ran. Temporary diagnostic. */
+  stats?: CompressStats;
 }
 
 type FfmpegMessage =
@@ -35,7 +39,11 @@ type FfmpegMessage =
   | { type: 'done'; buffer: ArrayBuffer }
   | { type: 'error'; message: string };
 
-type WebCodecsMessage = FfmpegMessage | { type: 'unsupported'; reason: string };
+type WebCodecsMessage =
+  | { type: 'progress'; progress: number }
+  | { type: 'done'; buffer: ArrayBuffer; stats: CompressStats }
+  | { type: 'unsupported'; reason: string }
+  | { type: 'error'; message: string };
 
 /** Raised by the WebCodecs attempt to signal "try ffmpeg instead". */
 class UnsupportedError extends Error {}
@@ -57,7 +65,10 @@ export function useVideoCompress() {
   }, []);
 
   const runWebCodecs = useCallback(
-    (file: File, onProgress?: (progress: number) => void): Promise<ArrayBuffer> => {
+    (
+      file: File,
+      onProgress?: (progress: number) => void,
+    ): Promise<{ buffer: ArrayBuffer; stats: CompressStats }> => {
       return new Promise((resolve, reject) => {
         if (!webCodecsRef.current) {
           webCodecsRef.current = new Worker(
@@ -71,7 +82,7 @@ export function useVideoCompress() {
           if (data.type === 'progress') {
             onProgress?.(data.progress);
           } else if (data.type === 'done') {
-            resolve(data.buffer);
+            resolve({ buffer: data.buffer, stats: data.stats });
           } else if (data.type === 'unsupported') {
             reject(new UnsupportedError(data.reason));
           } else {
@@ -131,8 +142,9 @@ export function useVideoCompress() {
       setCompressing(true);
       try {
         let buffer: ArrayBuffer;
+        let stats: CompressStats | undefined;
         try {
-          buffer = await runWebCodecs(file, onProgress);
+          ({ buffer, stats } = await runWebCodecs(file, onProgress));
         } catch (err) {
           if (!(err instanceof UnsupportedError)) throw err;
           console.info('WebCodecs path unavailable, using ffmpeg:', err.message);
@@ -142,7 +154,7 @@ export function useVideoCompress() {
           onProgress?.(0);
           buffer = await runFfmpeg(file, onProgress);
         }
-        return { buffer, compressedSizeMB: buffer.byteLength / 1_048_576 };
+        return { buffer, compressedSizeMB: buffer.byteLength / 1_048_576, stats };
       } finally {
         setCompressing(false);
       }
