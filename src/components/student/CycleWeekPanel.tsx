@@ -31,6 +31,7 @@ type SessionStatus = Session['status'];
 const STATUS_META: Record<SessionStatus, { label: string; badge: string }> = {
   pending:     { label: 'Não iniciado', badge: 'bg-slate-100 text-slate-600 dark:bg-slate-700/60 dark:text-slate-300' },
   in_progress: { label: 'Em andamento', badge: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' },
+  paused:      { label: 'Pausado',      badge: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300' },
   skipped:     { label: 'Pulado',       badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
   completed:   { label: 'Concluído',    badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
 };
@@ -77,8 +78,12 @@ function SessionRows({
       {rows.map((row, idx) => {
         const status: SessionStatus = row.session?.status ?? 'pending';
         const busy = pendingActionTab === row.tab;
-        const canSkip = !settled && (status === 'pending' || status === 'in_progress');
+        const canSkip = !settled && (status === 'pending' || status === 'in_progress' || status === 'paused');
         const canUnskip = !settled && status === 'skipped';
+        // Paused = started but set aside; the open action becomes "Retomar" and
+        // takes the same orange as partial feedback, so a session waiting on the
+        // student stands out from one that's actually running.
+        const isPaused = status === 'paused';
         const hasFeedback = row.session?.feedbackStatus === 'complete';
         // Partial = the trainer replied but some videos are still unanswered —
         // flagged in orange so it reads apart from a fully answered session.
@@ -136,8 +141,13 @@ function SessionRows({
               <button
                 onClick={() => onOpen(row)}
                 disabled={busy}
-                aria-label="Abrir" title="Abrir"
-                className="rounded-lg bg-indigo-600 p-1.5 text-white transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-60"
+                aria-label={isPaused ? 'Retomar' : 'Abrir'}
+                title={isPaused ? 'Retomar' : 'Abrir'}
+                className={`rounded-lg p-1.5 text-white transition-all active:scale-95 disabled:opacity-60 ${
+                  isPaused
+                    ? 'bg-orange-500 hover:bg-orange-600'
+                    : 'bg-indigo-600 hover:bg-indigo-700'
+                }`}
               >
                 <Play className="h-4 w-4" />
               </button>

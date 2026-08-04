@@ -15,6 +15,7 @@ import { trimText } from '../../utils/text';
 const STATUS_META: Record<Session['status'], { label: string; badge: string }> = {
   pending:     { label: 'Não iniciado', badge: 'bg-slate-100 text-slate-600 dark:bg-slate-700/60 dark:text-slate-300' },
   in_progress: { label: 'Em andamento', badge: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' },
+  paused:      { label: 'Pausado',      badge: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300' },
   skipped:     { label: 'Pulado',       badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
   completed:   { label: 'Concluído',    badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
 };

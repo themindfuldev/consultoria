@@ -16,6 +16,7 @@ import { db } from '../firebase';
 import { useAuth } from './useAuth';
 import { getTrainingTabs, isSheetAccessError } from '../services/sheetsService';
 import { trimText } from '../utils/text';
+import { unskippedStatus } from '../utils/session';
 import type { Cycle, CycleWeek, Session } from '../types';
 
 function todayStr(): string {
@@ -339,7 +340,7 @@ export function useCycleWeek(cycle: Cycle | null) {
     try {
       await updateDoc(doc(db, 'sessions', session.id), {
         // Return to where it was before being skipped.
-        status: session.preWorkout ? 'in_progress' : 'pending',
+        status: unskippedStatus(session),
         skippedAt: deleteField(),
       });
     } catch {
@@ -355,7 +356,7 @@ export function useCycleWeek(cycle: Cycle | null) {
     if (!currentUser || !cycle || !currentWeek || pendingAction) return;
 
     const existing = sessionByTab.get(tabName);
-    if (existing?.status === 'in_progress') {
+    if (existing?.status === 'in_progress' || existing?.status === 'paused') {
       const confirmed = window.confirm(
         `Pular o treino "${trimText(tabName)}"? O progresso já preenchido nesta sessão será descartado.`,
       );

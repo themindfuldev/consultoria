@@ -224,13 +224,18 @@ are treated as `in_progress`.
 
 ### `sessions/{sessionId}` — one training-session instance
 Key fields: `{ cycleId, studentUid, trainerEmail?, studentName?, studentWhatsapp?,
-tabName, order?, weekNumber, status: 'pending'|'in_progress'|'completed'|'skipped',
-date, startedAt?, finishedAt?, skippedAt?, preWorkout?, postWorkout?,
-exerciseEntries?, completedSets?, driveFolderId?, driveFolderUrl?, hasVideos,
-videosNotifiedAt?, feedbackStatus?: 'none'|'draft'|'complete',
+tabName, order?, weekNumber,
+status: 'pending'|'in_progress'|'paused'|'completed'|'skipped',
+date, startedAt?, finishedAt?, skippedAt?, pausedAt?, pausedMs?, preWorkout?,
+postWorkout?, exerciseEntries?, completedSets?, driveFolderId?, driveFolderUrl?,
+hasVideos, videosNotifiedAt?, feedbackStatus?: 'none'|'draft'|'complete',
 weeklyFeedbackDocGenerated?, plan? }`.
 
 - Pre-created as `pending` for each training tab when a week starts.
+- `pausedAt` / `pausedMs` — the pause in flight, and the accumulated total of all
+  closed pause intervals. Every duration reading subtracts `pausedMs`, so a
+  session set aside overnight reports time trained, not wall-clock time. Sessions
+  that were never paused carry neither field (read as 0).
 - `exerciseEntries` — student per-**set** notes keyed by set key (`r{rowNumber}`
   or `{exerciseName}#{index}`), written back to sheet columns F/G on finish; `rpe`
   is omitted when left blank (never coerced to 0).
@@ -323,15 +328,26 @@ A cycle progresses week by week via the `weeks` sub-collection. A week is
   `in_progress` — and the trainer's WhatsApp "started" message fires — only when
   the student fills the two pre-workout questions and taps "Começar treino". A
   started session stays the *current* workout — banner included — until it's
-  concluded or skipped, with no time limit; the header's duration reports the
-  real elapsed span, days included (`3d 02:05`), so a forgotten session stays
-  visible instead of being silently dropped. Several sessions *can* be in
-  progress at once (parallel programs, or one left unconcluded); the "Treino em
-  andamento" bar always shows exactly one — the most recently started.
-- **Statuses** `pending | in_progress | completed | skipped`. Skipped sessions are
-  revertible ("Despular"); opening one is read-only until un-skipped.
+  paused, concluded or skipped, with no time limit; the header's duration reports
+  the elapsed span minus paused time, days included (`3d 02:05`), so a forgotten
+  session stays visible instead of being silently dropped. Several sessions *can*
+  be in progress at once (parallel programs, or one left unconcluded); the
+  "Treino em andamento" bar always shows exactly one — the most recently started.
+- **Pause.** "Pausar treino" (beside "Finalizar treino") is for a workout that
+  won't be finished the same day. It stops the clock (`pausedAt`), stands the
+  session down from the "Treino em andamento" bar, drops its offline snapshot,
+  and makes the plan read-only behind a "Retomar treino" call-to-action.
+  Resuming folds the interval into `pausedMs` and restarts the clock. Pause is
+  **not** terminal — the week stays "em andamento" until the session is concluded
+  or skipped, so a paused workout can never be forgotten into a finished week.
+- **Statuses** `pending | in_progress | paused | completed | skipped`. Skipped
+  sessions are revertible ("Despular"); opening one is read-only until
+  un-skipped, and one skipped *while paused* returns to `paused`, not to
+  `in_progress` — its open pause interval still has to be closed by a resume.
 - The session list is a table (`name · status · Abrir`); completed rows show
-  "Concluído em dd/mm".
+  "Concluído em dd/mm". A paused row reads **Pausado** and its open action turns
+  orange ("Retomar") — the same orange as partial feedback, marking a row that's
+  waiting on the student.
 
 ---
 
@@ -406,6 +422,10 @@ pre/post blocks with the marker row indices used for write-back).
 - **Post-workout form** — same questions (feeling: Igual / Melhor / Pior).
 - **"Finalizar Treino"** — writes actuals back to the sheet + `Respostas`, saves
   `session_exercises`, sets `status: 'completed'`, and fires the trainer notification.
+- **"Pausar treino"** — secondary action beside it: `status: 'paused'` +
+  `pausedAt`, nothing written to the sheet and no trainer notification (the
+  "iniciado" message already went out; a pause is not news). "Retomar treino"
+  reverses it, adding the interval to `pausedMs`.
 
 ---
 

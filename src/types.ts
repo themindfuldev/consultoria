@@ -148,15 +148,28 @@ export interface Session {
   /**
    * 'pending'     — pre-created when the week starts, not opened yet.
    * 'in_progress' — opened by the student; stays resumable until concluded or skipped.
+   * 'paused'      — started but set aside (typically to be finished another day):
+   *                 the clock stops, the plan goes read-only and the "Treino em
+   *                 andamento" bar steps back until it's resumed. Not terminal —
+   *                 the week stays "em andamento" until it's concluded or skipped.
    * 'completed'   — finished.
    * 'skipped'     — explicitly skipped for the week.
    */
-  status: 'pending' | 'in_progress' | 'completed' | 'skipped';
+  status: 'pending' | 'in_progress' | 'paused' | 'completed' | 'skipped';
   date: Timestamp;
   /** Set when the session is first opened (pending → in_progress); absent while still pending. */
   startedAt?: Timestamp;
   finishedAt?: Timestamp;
   skippedAt?: Timestamp;
+  /** When the current pause began. Present only while `status === 'paused'`. */
+  pausedAt?: Timestamp;
+  /**
+   * Accumulated milliseconds of every **closed** pause interval, subtracted from
+   * the session's elapsed span so the duration reports time actually trained.
+   * Added to on resume; the pause in flight is not included (it's derived from
+   * `pausedAt`). Absent on sessions that were never paused — read as 0.
+   */
+  pausedMs?: number;
   preWorkout?: {
     energyLevel: 1 | 2 | 3 | 4 | 5;
     feeling: 'Bem' | 'Não estou muito legal';

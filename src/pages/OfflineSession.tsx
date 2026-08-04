@@ -4,7 +4,7 @@ import { ArrowLeft, Clock, Moon, NotebookText, Save, Sun, Trash2 } from 'lucide-
 import { useDarkMode } from '../hooks/useDarkMode';
 import { WorkoutPlan } from '../components/student/WorkoutPlan';
 import type { ExerciseEntry } from '../components/student/WorkoutPlan';
-import { formatDuration } from '../utils/duration';
+import { formatDuration, netElapsedMs } from '../utils/duration';
 import { trimText } from '../utils/text';
 import type { ParsedSheetTab } from '../types';
 
@@ -16,6 +16,9 @@ interface OfflineSnapshot {
   dateLabel: string;
   /** Session start time (ms) — powers the live duration. Absent on older snapshots. */
   startedAt?: number | null;
+  /** Time already spent paused (ms), subtracted from the elapsed span. Absent on
+   *  older snapshots, and on snapshots of sessions that were never paused. */
+  pausedMs?: number;
   parsedTab: ParsedSheetTab;
   preWorkout: { energyLevel: number; feeling: string } | null;
   exerciseEntries: Record<string, ExerciseEntry>;
@@ -65,7 +68,7 @@ export function OfflineSession() {
     return () => clearInterval(id);
   }, []);
   const durationLabel = snapshot?.startedAt
-    ? formatDuration(now - snapshot.startedAt)
+    ? formatDuration(netElapsedMs(snapshot.startedAt, now, snapshot.pausedMs))
     : '';
 
   // The offline viewer only ever renders while signed out (SessionRoute sends

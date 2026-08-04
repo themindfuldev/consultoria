@@ -7,6 +7,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  increment,
   limit,
   onSnapshot,
   orderBy,
@@ -24,6 +25,7 @@ import {
   Lock,
   MessageSquare,
   NotebookText,
+  Pause,
   Pencil,
   Play,
   PlusCircle,
@@ -67,8 +69,8 @@ import {
   writeCells,
 } from '../../services/sheetsService';
 import { notifyTrainer } from '../../services/notifyService';
-import { clearOfflineSnapshots } from '../../utils/session';
-import { formatDuration } from '../../utils/duration';
+import { clearOfflineSnapshots, unskippedStatus } from '../../utils/session';
+import { formatDuration, netElapsedMs } from '../../utils/duration';
 import { trimText } from '../../utils/text';
 import { videosAwaitingFeedback } from '../../utils/feedback';
 import type { Cycle, CycleWeek, Feedback, ParsedSheetTab, Session, SessionVideo } from '../../types';
@@ -249,6 +251,10 @@ export function SessionDetail() {
   const [reopening, setReopening] = useState(false);
   const [reopenError, setReopenError] = useState('');
 
+  // Pause/resume (shared — only one of the two can be offered at a time).
+  const [pausing, setPausing] = useState(false);
+  const [pauseError, setPauseError] = useState('');
+
   // Seed the post-workout answers from what was saved on finish, so a reopened
   // session doesn't ask the student to fill them in from scratch again. Only
   // fills blanks — any answer already picked in this view wins, since `session`
@@ -269,36 +275,50 @@ export function SessionDetail() {
   const [now, setNow] = useState(() => Date.now());
 
   // ── Phase derivation ────────────────────────────────────────────────────────
-  // No new status enum needed — phase is derived from existing fields.
-  const phase: 'pre' | 'training' | 'done' =
+  // Derived from the status + whether the pre-workout answers are in, so the
+  // page never needs its own copy of the lifecycle.
+  const phase: 'pre' | 'training' | 'paused' | 'done' =
     !session?.preWorkout ? 'pre'
     : session.status === 'completed' ? 'done'
+    : session.status === 'paused' ? 'paused'
     : 'training';
 
   useEffect(() => {
     if (phase !== 'training') return;
     // Refresh immediately on entering `training` — otherwise `now` is still the
-    // (earlier) mount time when the session is started, making now − startedAt
-    // negative so the duration renders empty until the first minute ticks.
+    // (earlier) mount time when the session is started or resumed, which would
+    // freeze the duration until the first minute ticks.
     setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(id);
   }, [phase]);
 
-  // Duration shown in the header (HH:mm). Starts counting once the session has a
-  // start stamp: live (now − startedAt) while training, frozen (finished −
-  // started) once concluded. Legacy sessions missing `startedAt` show none.
-  const durationLabel = session?.startedAt instanceof Timestamp
-    ? phase === 'done' && session.finishedAt instanceof Timestamp
-      ? formatDuration(session.finishedAt.toMillis() - session.startedAt.toMillis())
-      : phase === 'training'
-        ? formatDuration(now - session.startedAt.toMillis())
-        : ''
+  // Duration shown in the header (HH:mm), always **net of paused time**. Starts
+  // counting once the session has a start stamp, and the end of the measured
+  // span depends on the phase: the live clock while training, `pausedAt` while
+  // paused (so the reading is frozen), `finishedAt` once concluded. Legacy
+  // sessions missing `startedAt` show none.
+  const durationEndedAt =
+    phase === 'done' && session?.finishedAt instanceof Timestamp
+      ? session.finishedAt.toMillis()
+      : phase === 'paused' && session?.pausedAt instanceof Timestamp
+        ? session.pausedAt.toMillis()
+        : phase === 'training' || phase === 'paused'
+          ? now
+          : null;
+
+  const durationLabel = session?.startedAt instanceof Timestamp && durationEndedAt != null
+    ? formatDuration(netElapsedMs(session.startedAt.toMillis(), durationEndedAt, session.pausedMs))
     : '';
 
   // A skipped session opens read-only (Despular to revert) regardless of how far
   // it had progressed before being skipped.
   const isSkipped = session?.status === 'skipped';
+
+  // A paused session opens read-only too ("Retomar" to resume). The clock is
+  // stopped, so letting notes/sets be edited would record training that isn't
+  // being timed — resuming first is one tap, and it restarts the clock.
+  const isPaused = session?.status === 'paused';
 
   // Once a later week has been started, this week's training is settled: no
   // starting, finishing, reopening, skipping or un-skipping it, and the plan
@@ -311,19 +331,20 @@ export function SessionDetail() {
 
   // What the *workout* can still do. The video exchange is deliberately not
   // covered by this — see `videosLocked`.
-  const workoutLocked = isSkipped || isPastWeek;
+  const workoutLocked = isSkipped || isPastWeek || isPaused;
 
   // Videos and the feedback request outlive the training itself: they carry on
   // for as long as the trainer hasn't answered, whatever week it is now. Only a
-  // skipped session (nothing was trained) closes them.
+  // skipped session (nothing was trained) closes them. A paused session did
+  // train — the videos already shot stay uploadable while it waits.
   const videosLocked = isSkipped;
 
-  // Before the session is under way (not started, or skipped and awaiting
-  // "Despular"), the call-to-action box goes above the workout plan so the
-  // student acts first and reads the plan below. Once training/done, the plan
+  // Before the session is under way (not started, or skipped/paused and awaiting
+  // "Despular"/"Retomar"), the call-to-action box goes above the workout plan so
+  // the student acts first and reads the plan below. Once training/done, the plan
   // returns to the top since that's what they're actively working through.
   const actionsFirst =
-    (phase === 'pre' && !workoutLocked) || isSkipped;
+    (phase === 'pre' && !workoutLocked) || isSkipped || isPaused;
 
   // The trainer's feedback has arrived. It doesn't lock anything on its own —
   // feedback often lands mid-week and a follow-up video is a normal part of the
@@ -594,9 +615,7 @@ export function SessionDetail() {
     if (!session || isPastWeek) return;
     setPreError('');
     setUnskipping(true);
-    // Revert to where it was before being skipped: a session that had already
-    // started (pre-workout filled) returns to in_progress; otherwise pending.
-    const revertStatus = session.preWorkout ? 'in_progress' : 'pending';
+    const revertStatus = unskippedStatus(session);
     try {
       await updateDoc(doc(db, 'sessions', session.id), {
         status: revertStatus,
@@ -717,6 +736,63 @@ export function SessionDetail() {
     }
   };
 
+  // ── Pause / resume a session ────────────────────────────────────────────────
+  // For a workout that won't be finished today. Pausing stops the clock and
+  // stands the session down: it stops claiming the "Treino em andamento" bar and
+  // goes read-only until resumed. It is *not* a terminal state — the week stays
+  // "em andamento" until the session is concluded or skipped, exactly as before.
+
+  const handlePauseSession = async () => {
+    if (!session || workoutLocked || pausing) return;
+    setPauseError('');
+    setPausing(true);
+    try {
+      await updateDoc(doc(db, 'sessions', session.id), {
+        status: 'paused',
+        pausedAt: serverTimestamp(),
+      });
+      // Optimistic local stamp (the server value resolves a beat later) so the
+      // header duration freezes at the right reading straight away.
+      setSession((prev) => (prev ? { ...prev, status: 'paused', pausedAt: Timestamp.now() } : prev));
+      setShowFinishForm(false);
+      // The offline snapshot advertises a workout in progress on the signed-out
+      // login screen — a paused one shouldn't. The snapshot effect writes a fresh
+      // one as soon as the session is resumed.
+      localStorage.removeItem(offlineKey(session.id));
+    } catch {
+      setPauseError('Não foi possível pausar o treino. Tente novamente.');
+    } finally {
+      setPausing(false);
+    }
+  };
+
+  const handleResumeSession = async () => {
+    if (!session || isPastWeek || pausing) return;
+    setPauseError('');
+    setPausing(true);
+    // Close the pause interval and fold it into the accumulated total. The
+    // stamps are server-side and this delta is client-side, so a clock skew
+    // could make it negative on a very short pause — floored at zero.
+    const pausedSince = session.pausedAt instanceof Timestamp ? session.pausedAt.toMillis() : null;
+    const interval = pausedSince != null ? Math.max(0, Date.now() - pausedSince) : 0;
+    try {
+      await updateDoc(doc(db, 'sessions', session.id), {
+        status: 'in_progress',
+        pausedMs: increment(interval),
+        pausedAt: deleteField(),
+      });
+      setSession((prev) =>
+        prev
+          ? { ...prev, status: 'in_progress', pausedMs: (prev.pausedMs ?? 0) + interval, pausedAt: undefined }
+          : prev,
+      );
+    } catch {
+      setPauseError('Não foi possível retomar o treino. Tente novamente.');
+    } finally {
+      setPausing(false);
+    }
+  };
+
   // ── Reopen a finished session (finalized by mistake) ────────────────────────
   // Sends it back to `in_progress` so the plan, sets and notes become editable
   // again. `postWorkout` is kept (it pre-fills the finish form) and overwritten
@@ -770,8 +846,10 @@ export function SessionDetail() {
         cycleTitle: cycle.title,
         tabName: session.tabName,
         dateLabel,
-        // Start time (ms) so the offline viewer can keep counting the duration.
+        // Start time (ms) and paused total so the offline viewer keeps counting
+        // the same net duration the live page shows.
         startedAt: session.startedAt instanceof Timestamp ? session.startedAt.toMillis() : null,
+        pausedMs: session.pausedMs ?? 0,
         parsedTab,
         preWorkout: session.preWorkout ?? null,
         exerciseEntries,
@@ -1138,6 +1216,30 @@ export function SessionDetail() {
         </div>
       )}
 
+      {/* ── Phase A0': paused — read-only until resumed ───────────────────── */}
+      {isPaused && (
+        <div className="glass-premium mb-5 rounded-2xl p-4">
+          <div className="mb-2 flex items-center gap-2 text-sm font-bold text-orange-600 dark:text-orange-400">
+            <Pause className="h-4 w-4" />
+            Treino pausado
+          </div>
+          <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+            O tempo está parado e não conta na duração. Retome quando voltar a treinar.
+          </p>
+          {pauseError && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{pauseError}</p>}
+          {!isPastWeek && (
+            <button
+              onClick={handleResumeSession}
+              disabled={pausing}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-orange-600 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Play className="h-4 w-4" />
+              {pausing ? 'Retomando…' : 'Retomar treino'}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ── Phase A: pre-workout form ────────────────────────────────────── */}
       {phase === 'pre' && !workoutLocked && (
         <div className="glass-premium mb-5 rounded-2xl p-4">
@@ -1300,9 +1402,10 @@ export function SessionDetail() {
 
       {/* ── Videos: upload flow ──────────────────────────────────────────────
           Available while the session is still in progress (a session can stay
-          open for days) and after it's concluded. Only the "Solicitar feedback"
+          open for days), while it's paused (the training it shows already
+          happened), and after it's concluded. Only the "Solicitar feedback"
           action below is gated to the concluded phase. */}
-      {(phase === 'training' || phase === 'done') && (
+      {(phase === 'training' || phase === 'paused' || phase === 'done') && (
         <>
           {/* Active upload progress / error */}
           {uploadState && (
@@ -1417,13 +1520,26 @@ export function SessionDetail() {
       {phase === 'training' && !workoutLocked && (
         <div className="mb-5 flex flex-col gap-3">
           {!showFinishForm ? (
-            <button
-              onClick={() => setShowFinishForm(true)}
-              className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-95"
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              Finalizar treino
-            </button>
+            <>
+              <button
+                onClick={() => setShowFinishForm(true)}
+                className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-95"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Finalizar treino
+              </button>
+              {/* For a workout that won't be finished today: stops the clock and
+                  stands the session down until "Retomar". */}
+              <button
+                onClick={handlePauseSession}
+                disabled={pausing}
+                className="flex items-center justify-center gap-2 rounded-xl border border-orange-200 bg-white py-3 text-sm font-semibold text-orange-600 transition-all hover:bg-orange-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-orange-500/40 dark:bg-slate-800 dark:text-orange-400 dark:hover:bg-slate-700"
+              >
+                <Pause className="h-4 w-4" />
+                {pausing ? 'Pausando…' : 'Pausar treino'}
+              </button>
+              {pauseError && <p className="text-xs text-red-600 dark:text-red-400">{pauseError}</p>}
+            </>
           ) : (
             <div className="glass-premium rounded-2xl p-4">
               <p className="mb-3 text-sm font-bold text-slate-900 dark:text-white">
