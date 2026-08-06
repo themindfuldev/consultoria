@@ -1522,23 +1522,27 @@ export function SessionDetail() {
         <div className="mb-5 flex flex-col gap-3">
           {!showFinishForm ? (
             <>
-              <button
-                onClick={() => setShowFinishForm(true)}
-                className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-95"
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                Finalizar treino
-              </button>
-              {/* For a workout that won't be finished today: stops the clock and
-                  stands the session down until "Retomar". */}
-              <button
-                onClick={handlePauseSession}
-                disabled={pausing}
-                className="flex items-center justify-center gap-2 rounded-xl border border-orange-200 bg-white py-3 text-sm font-semibold text-orange-600 transition-all hover:bg-orange-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-orange-500/40 dark:bg-slate-800 dark:text-orange-400 dark:hover:bg-slate-700"
-              >
-                <Pause className="h-4 w-4" />
-                {pausing ? 'Pausando…' : 'Pausar treino'}
-              </button>
+              {/* Side by side: standing the session down is the lesser action,
+                  so it sits on the left and finishing keeps the right. */}
+              <div className="flex gap-3">
+                {/* For a workout that won't be finished today: stops the clock and
+                    stands the session down until "Retomar". */}
+                <button
+                  onClick={handlePauseSession}
+                  disabled={pausing}
+                  className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-orange-200 bg-white px-3 py-3 text-sm font-semibold text-orange-600 transition-all hover:bg-orange-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-orange-500/40 dark:bg-slate-800 dark:text-orange-400 dark:hover:bg-slate-700"
+                >
+                  <Pause className="h-4 w-4 shrink-0" />
+                  {pausing ? 'Pausando…' : 'Pausar treino'}
+                </button>
+                <button
+                  onClick={() => setShowFinishForm(true)}
+                  className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-emerald-600 px-3 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-95"
+                >
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  Finalizar treino
+                </button>
+              </div>
               {pauseError && <p className="text-xs text-red-600 dark:text-red-400">{pauseError}</p>}
             </>
           ) : (
