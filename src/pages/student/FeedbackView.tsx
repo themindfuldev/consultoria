@@ -6,6 +6,7 @@ import {
   getDoc,
   getDocs,
   query,
+  serverTimestamp,
   Timestamp,
   updateDoc,
   where,
@@ -17,9 +18,9 @@ import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
 import { Layout } from '../../components/Layout';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
 import { ReadOnlyVideoCard } from '../../components/UploadedVideoCard';
-import { buildWeeklyFeedbackHtml, replaceWeeklyDoc } from '../../services/docsService';
+import { buildWeeklyFeedbackHtml, createWeeklyDoc } from '../../services/docsService';
 import type { WeeklySection } from '../../services/docsService';
-import { getOrCreateWeekFolder } from '../../services/driveService';
+import { deleteDriveFile, driveFileExists, getOrCreateWeekFolder } from '../../services/driveService';
 import { tokenizeLinks } from '../../utils/linkify';
 import type { Cycle, CycleWeek, Feedback, Session, SessionVideo, UserProfile } from '../../types';
 import { trimText } from '../../utils/text';
@@ -49,11 +50,23 @@ function LinkifiedText({ text }: { text: string }) {
   );
 }
 
+function millis(stamp?: Timestamp): number | null {
+  return stamp instanceof Timestamp ? stamp.toMillis() : null;
+}
+
+/**
+ * When the trainer last touched this feedback. `updatedAt` is bumped on every
+ * write; the fallbacks cover feedbacks written before it was tracked.
+ */
+function feedbackTouchedAt(fb: Feedback): number | null {
+  return millis(fb.updatedAt) ?? millis(fb.completedAt) ?? millis(fb.createdAt);
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function FeedbackView() {
   const { sessionId } = useParams<{ sessionId: string }>();
-  const { getAccessToken } = useAuth();
+  const { getAccessToken, isGoogleTokenValid } = useAuth();
   const navigate = useNavigate();
 
   // Video playback here needs a Drive token; warm it on open like the other
@@ -67,13 +80,15 @@ export function FeedbackView() {
   const [videos, setVideos] = useState<SessionVideo[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Google Doc creation state
+  // Weekly Google Doc state. The doc belongs to the cycle *week*, so its
+  // id/url/generation time are read from (and written back to) the `weeks` doc.
   const [creatingDoc, setCreatingDoc] = useState(false);
   const [docUrl, setDocUrl] = useState<string | null>(null);
   const [docError, setDocError] = useState('');
-  // Only true once the doc has been (re)generated in THIS visit — until then we
-  // show "Atualizar", swapping to "Abrir" only after a successful update.
-  const [docReady, setDocReady] = useState(false);
+  /** When the weekly doc was last generated (ms), or null if it never was. */
+  const [docGeneratedAt, setDocGeneratedAt] = useState<number | null>(null);
+  /** True once Drive has told us the stored doc is gone (deleted or trashed). */
+  const [docMissing, setDocMissing] = useState(false);
 
   // ── Load everything ─────────────────────────────────────────────────────────
 
@@ -96,22 +111,8 @@ export function FeedbackView() {
         const fb = feedbackSnap.data() as Feedback;
         setSession(s);
         setFeedback(fb);
-        // Persisted flag: once this session generated the weekly doc, the button
-        // is spent — show "Abrir" instead of an actionable "Atualizar".
-        if (s.weeklyFeedbackDocGenerated) setDocReady(true);
 
-        // Pre-set the weekly doc URL if this week already has one.
-        getDocs(query(
-          collection(db, 'cycles', s.cycleId, 'weeks'),
-          where('weekNumber', '==', s.weekNumber ?? 1),
-        ))
-          .then((snap) => {
-            const wd = snap.docs[0]?.data() as CycleWeek | undefined;
-            if (wd?.feedbackDocUrl) setDocUrl(wd.feedbackDocUrl);
-          })
-          .catch(() => {/* non-fatal */});
-
-        const [cycleSnap, studentSnap, videosSnap] = await Promise.all([
+        const [cycleSnap, studentSnap, videosSnap, weekSnap] = await Promise.all([
           getDoc(doc(db, 'cycles', s.cycleId)),
           getDoc(doc(db, 'users', s.studentUid)),
           // Must filter by studentUid to satisfy the videos read rule (rules are
@@ -121,7 +122,29 @@ export function FeedbackView() {
             where('sessionId', '==', sessionId),
             where('studentUid', '==', s.studentUid),
           )),
+          // The week carries the weekly doc — awaited with the rest so the
+          // action below renders in its final state instead of flipping.
+          getDocs(query(
+            collection(db, 'cycles', s.cycleId, 'weeks'),
+            where('weekNumber', '==', s.weekNumber ?? 1),
+          )).catch(() => null),
         ]);
+
+        const week = weekSnap?.docs[0]?.data() as CycleWeek | undefined;
+        if (week?.feedbackDocUrl) {
+          setDocUrl(week.feedbackDocUrl);
+          setDocGeneratedAt(millis(week.feedbackDocGeneratedAt));
+          // A doc that was deleted in Drive (or lost to a half-failed update)
+          // must not be offered as "Abrir" — check, and fall back to
+          // "Atualizar" when it's really gone. Skipped without a live token so
+          // a page load never triggers the Google popup.
+          if (week.feedbackDocId && isGoogleTokenValid()) {
+            getAccessToken()
+              .then((token) => driveFileExists(week.feedbackDocId!, token))
+              .then((exists) => { if (exists === false) setDocMissing(true); })
+              .catch(() => {/* couldn't tell — leave the link as is */});
+          }
+        }
 
         if (cycleSnap.exists()) setCycle(cycleSnap.data() as Cycle);
         if (studentSnap.exists()) setStudentProfile(studentSnap.data() as UserProfile);
@@ -134,7 +157,7 @@ export function FeedbackView() {
     };
 
     loadAll();
-  }, [sessionId]);
+  }, [sessionId, getAccessToken, isGoogleTokenValid]);
 
   // ── Create Google Doc (on demand) ───────────────────────────────────────────
 
@@ -206,26 +229,31 @@ export function FeedbackView() {
       const html = buildWeeklyFeedbackHtml(
         weekNumber, cycle.title, modality, studentProfile.displayName, sections,
       );
-      const created = await replaceWeeklyDoc(
-        prevDocId, `Feedbacks - ${weekLabel}`, html, weekFolder.id, token,
+      const created = await createWeeklyDoc(
+        `Feedbacks - ${weekLabel}`, html, weekFolder.id, token,
       );
 
+      // 4) Point the week at the new doc *before* dropping the old one, so a
+      //    failure anywhere in here leaves the stored link on a file that still
+      //    exists rather than on a deleted one.
+      let pointerMoved = false;
       if (weekDoc) {
-        await updateDoc(doc(db, 'cycles', session.cycleId, 'weeks', weekDoc.id), {
-          feedbackDocId: created.id,
-          feedbackDocUrl: created.webViewLink,
-        }).catch(() => {/* non-fatal */});
+        try {
+          await updateDoc(doc(db, 'cycles', session.cycleId, 'weeks', weekDoc.id), {
+            feedbackDocId: created.id,
+            feedbackDocUrl: created.webViewLink,
+            feedbackDocGeneratedAt: serverTimestamp(),
+          });
+          pointerMoved = true;
+        } catch {/* non-fatal: the new doc is usable, only the pointer is stale */}
+      }
+      if (pointerMoved && prevDocId && prevDocId !== created.id) {
+        deleteDriveFile(prevDocId, token).catch(() => {/* may already be gone */});
       }
 
       setDocUrl(created.webViewLink);
-      setDocReady(true);
-
-      // Register on the session that the weekly feedback doc was generated
-      // successfully (best-effort — the doc already exists regardless).
-      if (sessionId) {
-        updateDoc(doc(db, 'sessions', sessionId), { weeklyFeedbackDocGenerated: true })
-          .catch(() => {/* non-fatal status flag */});
-      }
+      setDocGeneratedAt(Date.now());
+      setDocMissing(false);
     } catch (err) {
       console.error(err);
       setDocError(`Não foi possível criar o documento: ${String(err)}`);
@@ -257,6 +285,17 @@ export function FeedbackView() {
       </Layout>
     );
   }
+
+  // The weekly doc is current only if it exists in Drive and was generated
+  // after the trainer's last write to this feedback. A doc from before
+  // `feedbackDocGeneratedAt` was tracked has no stamp, so it counts as stale —
+  // one "Atualizar" tap brings it (and the stamp) up to date.
+  const feedbackAt = feedback ? feedbackTouchedAt(feedback) : null;
+  const docUpToDate =
+    !!docUrl
+    && !docMissing
+    && docGeneratedAt !== null
+    && (feedbackAt === null || docGeneratedAt >= feedbackAt);
 
   const dateLabel = session?.date
     ? session.date.toDate().toLocaleDateString('pt-BR', {
@@ -365,21 +404,18 @@ export function FeedbackView() {
         )}
 
         {/* ── Actions (bottom) ─────────────────────────────────────────────
-            Once this session has generated the weekly doc (`docReady`, backed
-            by the persisted `weeklyFeedbackDocGenerated` flag), the "Atualizar"
-            action is spent — it becomes an "Abrir" link. This makes the update
-            clickable only once per session. */}
+            "Abrir" only when the weekly doc is known to exist and to already
+            include this feedback; anything else — never generated, generated
+            before the trainer's latest reply, or gone from Drive — offers
+            "Atualizar" instead, so newly answered exercises can always be
+            rolled into the doc. */}
         <div className="flex flex-col gap-2 pb-2">
-          {docReady ? (
+          {docUpToDate ? (
             <a
-              href={docUrl ?? undefined}
+              href={docUrl!}
               target="_blank"
               rel="noopener noreferrer"
-              aria-disabled={!docUrl}
-              onClick={(e) => { if (!docUrl) e.preventDefault(); }}
-              className={`flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95 ${
-                docUrl ? '' : 'cursor-not-allowed opacity-60'
-              }`}
+              className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95"
             >
               <FileText className="h-4 w-4" />
               Abrir feedbacks da semana

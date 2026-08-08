@@ -45,6 +45,29 @@ export async function deleteDriveFile(fileId: string, token: string): Promise<vo
   }
 }
 
+/**
+ * Tells whether a Drive file is still there (and reachable by this token).
+ * Only a definitive "gone" answer (404/410) returns `false`; any other failure
+ * — offline, throttled, expired token — returns `null` for "couldn't tell", so
+ * callers don't mistake a transient blip for a deleted file.
+ */
+export async function driveFileExists(
+  fileId: string,
+  token: string,
+): Promise<boolean | null> {
+  try {
+    const res = await fetch(`${DRIVE_API}/files/${fileId}?fields=id,trashed`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.status === 404 || res.status === 410) return false;
+    if (!res.ok) return null;
+    const json = (await res.json()) as { trashed?: boolean };
+    return json.trashed !== true;
+  } catch {
+    return null;
+  }
+}
+
 /** Set a file or folder to "anyone with the link → reader". */
 export async function makePublicViewer(fileId: string, token: string): Promise<void> {
   await driveJson(

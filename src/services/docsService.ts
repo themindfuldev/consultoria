@@ -12,7 +12,7 @@
  */
 
 import type { ExerciseFeedback, SessionVideo } from '../types';
-import { deleteDriveFile, makePublicViewer } from './driveService';
+import { makePublicViewer } from './driveService';
 import { linkifyToHtml } from '../utils/linkify';
 import { trimText } from '../utils/text';
 
@@ -152,19 +152,20 @@ async function createDocFromHtml(
 }
 
 /**
- * Replaces the weekly doc: deletes the previous one (if any) and recreates it
- * from the latest HTML. Simpler and more reliable than an in-place Docs update,
- * since the doc is always rebuilt from all the week's feedbacks.
+ * (Re)builds the weekly doc from the latest HTML. Always a fresh file rather
+ * than an in-place Docs update — the doc is rebuilt from all of the week's
+ * feedbacks anyway, and creating is far simpler than diffing.
+ *
+ * The previous doc is deliberately **not** deleted here: the caller must first
+ * point the `weeks` doc at the new file and only then drop the old one. Deleting
+ * up-front (as this used to) left the stored URL aimed at a dead file whenever
+ * the creation that followed failed.
  */
-export async function replaceWeeklyDoc(
-  previousDocId: string | undefined,
+export async function createWeeklyDoc(
   name: string,
   html: string,
   folderId: string,
   token: string,
 ): Promise<CreatedDoc> {
-  if (previousDocId) {
-    await deleteDriveFile(previousDocId, token).catch(() => {/* may already be gone */});
-  }
   return createDocFromHtml(name, html, folderId, token);
 }
