@@ -126,6 +126,14 @@ export interface CycleWeek {
   /** The single weekly feedback Google Doc ("Feedbacks - Semana X") for this week. */
   feedbackDocId?: string;
   feedbackDocUrl?: string;
+  /**
+   * When the weekly doc above was last (re)generated. Compared against each
+   * feedback's `updatedAt` to tell whether the doc still reflects the trainer's
+   * latest replies — an older stamp means the student is offered "Atualizar"
+   * instead of "Abrir". Absent on docs generated before this was tracked, which
+   * are therefore always treated as stale.
+   */
+  feedbackDocGeneratedAt?: Timestamp;
 }
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
@@ -204,7 +212,12 @@ export interface Session {
    * every session's videos and feedback doc.
    */
   feedbackPartial?: boolean;
-  /** True once the student successfully generated/updated the weekly feedback Google Doc from this session. */
+  /**
+   * Legacy, no longer read or written. It used to mark a session as "already
+   * rolled into the weekly doc", which permanently spent the update action —
+   * so later feedback on the same session could never reach the doc. Freshness
+   * is now derived from `weeks.feedbackDocGeneratedAt` vs `feedback.updatedAt`.
+   */
   weeklyFeedbackDocGenerated?: boolean;
   /**
    * Snapshot of the parsed training tab, saved by the student side so the
@@ -288,6 +301,13 @@ export interface Feedback {
   exerciseFeedback: ExerciseFeedback[];
   generalNotes: string;
   createdAt: Timestamp;
+  /**
+   * Bumped on every trainer write (draft auto-save or "Feedback Completo"), so
+   * the student side can tell whether the weekly Google Doc still reflects this
+   * feedback. Absent on feedbacks written before this was tracked — callers fall
+   * back to `completedAt`/`createdAt`.
+   */
+  updatedAt?: Timestamp;
   completedAt?: Timestamp;
   /** Google Docs URL for the exported feedback document (created on first student view). */
   feedbackDocUrl?: string;

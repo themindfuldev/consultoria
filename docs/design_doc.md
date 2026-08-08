@@ -217,10 +217,12 @@ startDate, archivedAt?, createdAt, trainerEmail?, trainerName? }`.
 
 ### `cycles/{cycleId}/weeks/{weekId}` — cycle weeks
 `{ id, cycleId, weekNumber, startedAt, status?: 'in_progress'|'completed',
-completedAt?, feedbackDocId?, feedbackDocUrl? }`. One doc per "Começar Semana X".
-A week not yet started simply has no doc. `feedbackDocId/Url` point to the single
-weekly feedback Google Doc ("Feedbacks - Semana X"). Legacy docs with no `status`
-are treated as `in_progress`.
+completedAt?, feedbackDocId?, feedbackDocUrl?, feedbackDocGeneratedAt? }`. One doc
+per "Começar Semana X". A week not yet started simply has no doc.
+`feedbackDocId/Url` point to the single weekly feedback Google Doc
+("Feedbacks - Semana X") and `feedbackDocGeneratedAt` records when it was last
+built (compared against `feedback.updatedAt` to detect a stale doc). Legacy docs
+with no `status` are treated as `in_progress`.
 
 ### `sessions/{sessionId}` — one training-session instance
 Key fields: `{ cycleId, studentUid, trainerEmail?, studentName?, studentWhatsapp?,
@@ -229,7 +231,8 @@ status: 'pending'|'in_progress'|'paused'|'completed'|'skipped',
 date, startedAt?, finishedAt?, skippedAt?, pausedAt?, pausedMs?, preWorkout?,
 postWorkout?, exerciseEntries?, completedSets?, driveFolderId?, driveFolderUrl?,
 hasVideos, videosNotifiedAt?, feedbackStatus?: 'none'|'draft'|'complete',
-weeklyFeedbackDocGenerated?, plan? }`.
+plan? }`. (`weeklyFeedbackDocGenerated?` still exists on old docs but is no
+longer read or written — see the weekly Doc section.)
 
 - Pre-created as `pending` for each training tab when a week starts.
 - `pausedAt` / `pausedMs` — the pause in flight, and the accumulated total of all
@@ -258,7 +261,9 @@ originalSizeMB, compressedSizeMB, uploadedAt }`.
 ### `feedback/{sessionId}` — trainer feedback (text only)
 `{ id (=sessionId), sessionId, cycleId, studentUid, studentName?, trainerEmail,
 status: 'draft'|'complete', exerciseFeedback[], generalNotes, createdAt,
-completedAt?, feedbackDocUrl? }`. `exerciseFeedback[]` carries `textFeedback` and
+updatedAt?, completedAt?, feedbackDocUrl? }`. `updatedAt` is bumped on every
+trainer write — it is what tells the weekly Doc apart as fresh or stale.
+`exerciseFeedback[]` carries `textFeedback` and
 a `mediaFiles[]` array **kept for backward compatibility only** — trainer media
 upload was removed, so new feedback is text-only (any legacy media still renders
 read-only).
@@ -533,14 +538,31 @@ attachment was removed — feedback is text only (legacy media renders read-only
 - **"Salvar rascunho"** → `feedback.status = 'draft'`, `sessions.feedbackStatus = 'draft'`.
 - **"Feedback Completo"** → `status = 'complete'`, `completedAt = now()`,
   `sessions.feedbackStatus = 'complete'`, and a branded `wa.me` link to the student.
+- Both writes stamp `feedback.updatedAt = now()`.
 
 ### Weekly feedback Google Doc
 Feedback is also consolidated into a single **weekly Google Doc** per cycle week
-("Feedbacks - Semana X"), built from HTML and created/replaced by
+("Feedbacks - Semana X"), built from HTML by
 [`docsService`](../src/services/docsService.ts)
-(`buildWeeklyFeedbackHtml` → `replaceWeeklyDoc`). The Doc id/url are stored on the
-`weeks` doc (`feedbackDocId/Url`); `sessions.weeklyFeedbackDocGenerated` tracks
-whether a session has been rolled into it.
+(`buildWeeklyFeedbackHtml` → `createWeeklyDoc`) and rebuilt from scratch on every
+update. The Doc id/url/build time are stored on the `weeks` doc
+(`feedbackDocId/Url/GeneratedAt`).
+
+Two rules keep the stored link honest:
+
+- **Freshness is derived, not flagged.** The student's action reads "Abrir" only
+  when `weeks.feedbackDocGeneratedAt` is at or after this session's
+  `feedback.updatedAt`; otherwise it reads "Atualizar". So a session that gets a
+  second round of feedback (the trainer answering exercises left out of a partial
+  reply) can always be rolled into the Doc. The old
+  `sessions.weeklyFeedbackDocGenerated` boolean did the opposite — it spent the
+  action on first use and left later feedback stranded.
+- **Create → repoint → delete.** The new Doc is created first, the `weeks` doc is
+  moved onto it, and only then is the previous Doc deleted from Drive. Deleting
+  up-front left `feedbackDocUrl` pointing at a dead file whenever the rebuild that
+  followed failed. As a backstop, the student view checks the stored Doc still
+  exists in Drive (`driveFileExists`, skipped when no Google token is live) and
+  falls back to "Atualizar" when it doesn't.
 
 ### Student feedback view (`/student/sessions/:sessionId/feedback`,
 [`FeedbackView`](../src/pages/student/FeedbackView.tsx))

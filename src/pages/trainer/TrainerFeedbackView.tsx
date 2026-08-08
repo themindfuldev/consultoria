@@ -273,6 +273,9 @@ export function TrainerFeedbackView() {
           exerciseFeedback,
           generalNotes,
           createdAt: serverTimestamp(),
+          // Every write bumps this — it's what tells the student's weekly Doc
+          // apart as up to date or stale (see FeedbackView).
+          updatedAt: serverTimestamp(),
         },
         { merge: true },
       );
@@ -328,6 +331,7 @@ export function TrainerFeedbackView() {
           exerciseFeedback,
           generalNotes,
           createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
           completedAt: serverTimestamp(),
         },
         { merge: true },
