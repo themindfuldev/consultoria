@@ -68,12 +68,12 @@ import {
   setKey,
   writeCells,
 } from '../../services/sheetsService';
-import { notifyTrainer } from '../../services/notifyService';
+import { notifyTrainer, openWhatsApp } from '../../services/notifyService';
 import { clearOfflineSnapshots, unskippedStatus } from '../../utils/session';
 import { formatDuration, netElapsedMs } from '../../utils/duration';
 import { trimText } from '../../utils/text';
-import { videosAwaitingFeedback } from '../../utils/feedback';
-import type { Cycle, CycleWeek, Feedback, ParsedSheetTab, Session, SessionVideo } from '../../types';
+import { isFeedbackDelivered, videosAwaitingFeedback } from '../../utils/feedback';
+import type { Cycle, CycleWeek, Feedback, ParsedSheetTab, Session, SessionVideo, Trainer } from '../../types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -208,8 +208,18 @@ export function SessionDetail() {
   const [editSelected, setEditSelected] = useState('');
   const [editCustom, setEditCustom] = useState('');
 
-  // Notification state (video-ready notification)
-  const [notifying, setNotifying] = useState(false);
+  // The trainer's WhatsApp number, resolved as soon as the cycle is known so
+  // "Solicitar feedback" can open the deep link straight out of the tap. Looking
+  // it up inside the handler would put a `window.open` behind an `await`, which
+  // mobile browsers block as an unsolicited popup. `null` = not resolved yet.
+  const [trainerPhone, setTrainerPhone] = useState<string | null>(null);
+  useEffect(() => {
+    const email = cycle?.trainerEmail;
+    if (!email) return;
+    getDoc(doc(db, 'trainers', email))
+      .then((snap) => setTrainerPhone((snap.data() as Trainer | undefined)?.whatsappPhone ?? ''))
+      .catch(() => {/* non-fatal — the handler falls back to a live lookup */});
+  }, [cycle?.trainerEmail]);
 
   // "Notificar treinador" preference (saved on the user profile; default on).
   const [notify, setNotify] = useState(true);
@@ -346,19 +356,19 @@ export function SessionDetail() {
   const actionsFirst =
     (phase === 'pre' && !workoutLocked) || isSkipped || isPaused;
 
-  // The trainer's feedback has arrived. It doesn't lock anything on its own —
-  // feedback often lands mid-week and a follow-up video is a normal part of the
-  // exchange, so videos stay editable and feedback re-requestable regardless.
-  const feedbackAvailable = session?.feedbackStatus === 'complete';
-
   // ── The feedback doc (which exercises were answered, and when) ──────────────
   // Read straight off the doc rather than denormalised onto the session, so
   // sessions whose feedback predates this also work.
 
+  // Whether the trainer has written *anything* for this session — a draft counts.
+  // Skipping the read when there is nothing avoids a request the rules deny
+  // outright (they can't grant a read on a document that doesn't exist yet).
+  const feedbackWritten = !!session && session.feedbackStatus !== 'none';
+
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [feedbackLoaded, setFeedbackLoaded] = useState(false);
   useEffect(() => {
-    if (!sessionId || !feedbackAvailable) {
+    if (!sessionId || !feedbackWritten) {
       setFeedback(null);
       setFeedbackLoaded(false);
       return;
@@ -367,9 +377,23 @@ export function SessionDetail() {
       .then((snap) => setFeedback((snap.data() as Feedback | undefined) ?? null))
       .catch(() => setFeedback(null))
       .finally(() => setFeedbackLoaded(true));
-  }, [sessionId, feedbackAvailable]);
+  }, [sessionId, feedbackWritten]);
 
-  const feedbackCompletedAt = feedback?.completedAt ?? feedback?.createdAt ?? null;
+  // The trainer's feedback has arrived. It doesn't lock anything on its own —
+  // feedback often lands mid-week and a follow-up video is a normal part of the
+  // exchange, so videos stay editable and feedback re-requestable regardless.
+  //
+  // `session.feedbackStatus` is only a denormalised copy of the feedback doc, so
+  // the doc itself gets the last word: a copy left behind by a half-applied
+  // write can't hide a reply the trainer has already sent.
+  //
+  // Only a *delivered* reply counts, though: the doc is also read while it is
+  // still a draft (to notice a reply the session's copy missed), and a draft the
+  // trainer is halfway through must not read as answered anywhere on this page.
+  const deliveredFeedback = isFeedbackDelivered(feedback) ? feedback : null;
+  const feedbackAvailable = session?.feedbackStatus === 'complete' || !!deliveredFeedback;
+
+  const feedbackCompletedAt = deliveredFeedback?.completedAt ?? deliveredFeedback?.createdAt ?? null;
 
   // Any video uploaded after that feedback. A still-pending `uploadedAt` (server
   // timestamp not yet resolved) can only be a video just added here, so it counts.
@@ -379,17 +403,24 @@ export function SessionDetail() {
 
   // Videos the trainer hasn't answered yet — no feedback at all, or an exercise
   // block the trainer left empty (partial feedback).
-  const pendingFeedbackVideos = videosAwaitingFeedback(videos, feedback?.exerciseFeedback);
+  const pendingFeedbackVideos = videosAwaitingFeedback(videos, deliveredFeedback?.exerciseFeedback);
   const feedbackPartial = feedbackAvailable && pendingFeedbackVideos.length > 0;
 
-  // Keep the denormalised flag on the session in sync, so the cycle's session
-  // list can flag partial feedback without loading every session's videos and
-  // feedback doc. Waits for both to have loaded so it never writes a guess.
+  // Keep the denormalised flags on the session in sync with the feedback doc, so
+  // the cycle's session list can show "feedback disponível" (and flag a partial
+  // one) without loading every session's videos and feedback doc. Waits for both
+  // to have loaded so it never writes a guess.
   useEffect(() => {
     if (!session || loading || !feedbackAvailable || !feedbackLoaded) return;
-    if ((session.feedbackPartial ?? false) === feedbackPartial) return;
-    updateDoc(doc(db, 'sessions', session.id), { feedbackPartial })
-      .then(() => setSession((prev) => (prev ? { ...prev, feedbackPartial } : prev)))
+    const patch: Record<string, unknown> = {};
+    // Repairs a session whose copy was left on 'draft'/'none' even though the
+    // reply went out — until it is fixed, the week panel and the weekly Doc both
+    // skip a session the student can already read the feedback for.
+    if (session.feedbackStatus !== 'complete') patch.feedbackStatus = 'complete';
+    if ((session.feedbackPartial ?? false) !== feedbackPartial) patch.feedbackPartial = feedbackPartial;
+    if (Object.keys(patch).length === 0) return;
+    updateDoc(doc(db, 'sessions', session.id), patch)
+      .then(() => setSession((prev) => (prev ? { ...prev, ...(patch as Partial<Session>) } : prev)))
       .catch(() => {/* best-effort — the page itself computes it live */});
   }, [session, loading, feedbackAvailable, feedbackLoaded, feedbackPartial]);
 
@@ -1073,14 +1104,33 @@ export function SessionDetail() {
   const handleNotify = () => {
     // Only sent when there are videos to review.
     if (!session || !cycle || !cycle.trainerEmail || videos.length === 0) return;
-    setNotifying(true);
     const weekSuffix = session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.';
+    const subject = 'Treino disponível para feedback';
     const body =
       `Há ${videos.length} vídeos do treino *${session.tabName}*${weekSuffix}\n` +
       `Acessar treino: ${window.location.origin}/trainer/sessions/${session.id}`;
-    notifyTrainer(cycle.trainerEmail, 'Treino disponível para feedback', body)
-      .then(() => updateDoc(doc(db, 'sessions', session.id), { videosNotifiedAt: serverTimestamp() }))
-      .finally(() => setNotifying(false));
+
+    if (trainerPhone === null) {
+      // Prefetch hasn't landed (or failed): fall back to looking the number up
+      // now. Costs the popup on browsers that require a gesture, but it is the
+      // only way to send at all, and one reload puts it back on the fast path.
+      notifyTrainer(cycle.trainerEmail, subject, body)
+        .catch(() => {/* the notification is a convenience, never a blocker */});
+    } else if (trainerPhone === '') {
+      showToast('Seu treinador ainda não cadastrou um WhatsApp.');
+      return;
+    } else {
+      openWhatsApp(trainerPhone, subject, body);
+    }
+
+    // Stamped in the background, deliberately not awaited. Opening WhatsApp
+    // sends this page to the background, where a mobile browser suspends it —
+    // the write applies locally but its server ack may not arrive until the
+    // student comes back. Waiting on that ack to re-enable the button is what
+    // left it greyed out until a reload.
+    updateDoc(doc(db, 'sessions', session.id), { videosNotifiedAt: serverTimestamp() })
+      .catch(() => {/* best-effort — the request itself has already gone out */});
+    setSession((prev) => (prev ? { ...prev, videosNotifiedAt: Timestamp.now() } : prev));
   };
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -1136,8 +1186,7 @@ export function SessionDetail() {
   const requestFeedbackButton = (
     <button
       onClick={handleNotify}
-      disabled={notifying}
-      className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-green-700 active:scale-95 disabled:opacity-60"
+      className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-green-700 active:scale-95"
     >
       <Send className="h-4 w-4" />
       {session?.videosNotifiedAt ? 'Re-solicitar feedback' : 'Solicitar feedback'}

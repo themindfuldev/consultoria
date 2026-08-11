@@ -21,7 +21,7 @@ import { useWakeLock } from '../../hooks/useWakeLock';
 import { openWhatsApp } from '../../services/notifyService';
 import { setKey } from '../../services/sheetsService';
 import { getOrCreateTrainerFeedbackFolder, uploadFileToDrive } from '../../services/driveService';
-import { videosAwaitingFeedback } from '../../utils/feedback';
+import { isFeedbackDelivered, videosAwaitingFeedback } from '../../utils/feedback';
 import { Layout } from '../../components/Layout';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
 import { ReadOnlyVideoCard } from '../../components/UploadedVideoCard';
@@ -81,6 +81,18 @@ export function TrainerFeedbackView() {
   // True once this feedback has been responded (status 'complete'). Edits keep
   // auto-saving without downgrading it back to draft.
   const [responded, setResponded] = useState(false);
+  // The debounced auto-save runs from a closure captured when it was *scheduled*,
+  // so reading `responded`/`completing` as state there would give it a stale
+  // answer — that is how a save queued a second before "Responder feedback" used
+  // to overwrite the reply with `status: 'draft'`, leaving the student with a
+  // feedback page that worked but a session that claimed no feedback existed.
+  // These mirrors are what the auto-save reads instead.
+  const respondedRef = useRef(false);
+  const completingRef = useRef(false);
+  const markResponded = (value: boolean) => {
+    respondedRef.current = value;
+    setResponded(value);
+  };
   // Edits made *since* that reply went out. A partial reply is normal — the
   // trainer answers what they can and comes back to the rest — so once they add
   // anything new the reply becomes re-sendable and the student gets told.
@@ -129,7 +141,20 @@ export function TrainerFeedbackView() {
         // Pre-fill form if draft exists
         if (feedbackSnap?.exists()) {
           const fb = feedbackSnap.data() as Feedback;
-          if (fb.status === 'complete') setResponded(true);
+          // `completedAt` counts too, so a feedback whose status was knocked back
+          // to 'draft' by the old race reopens as answered.
+          if (isFeedbackDelivered(fb)) {
+            markResponded(true);
+            // …and gets repaired on the spot: only the trainer may write the
+            // feedback doc, so this is the one place that can put its status
+            // back. `updatedAt` is deliberately left alone — bumping it would
+            // make the student's weekly Doc look stale for no reason.
+            if (fb.status !== 'complete') {
+              setDoc(doc(db, 'feedback', sessionId), { status: 'complete' }, { merge: true })
+                .then(() => updateDoc(doc(db, 'sessions', sessionId), { feedbackStatus: 'complete' }))
+                .catch(() => {/* best-effort */});
+            }
+          }
           const fMap = new Map<string, string>();
           const mMap = new Map<string, FeedbackMediaFile[]>();
           for (const ef of fb.exerciseFeedback) {
@@ -253,12 +278,14 @@ export function TrainerFeedbackView() {
   // ── Save draft ──────────────────────────────────────────────────────────────
 
   const handleSaveDraft = async () => {
-    if (!currentUser || !session || completing) return;
+    // Both flags are read off refs, not state: this also runs from a debounce
+    // timer whose closure predates the reply that flipped them.
+    if (!currentUser || !session || completingRef.current) return;
     setSaving(true);
     setSaveError('');
     try {
       // An already-responded feedback keeps 'complete' on edit (don't downgrade).
-      const status = responded ? 'complete' : 'draft';
+      const status = respondedRef.current ? 'complete' : 'draft';
       const exerciseFeedback = buildExerciseFeedbackArray();
       await setDoc(
         doc(db, 'feedback', sessionId!),
@@ -302,10 +329,14 @@ export function TrainerFeedbackView() {
     const t = setTimeout(() => { hydratedRef.current = true; }, 0);
     return () => clearTimeout(t);
   }, [loading]);
+  // Held so "Responder feedback" can cancel a save that is still waiting out its
+  // debounce — it writes the same form state anyway, only with the right status.
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!hydratedRef.current) return;
     setHasUnsentChanges(true);
-    const t = setTimeout(() => { handleSaveDraft(); }, 1000);
+    const t = setTimeout(() => { draftTimerRef.current = null; handleSaveDraft(); }, 1000);
+    draftTimerRef.current = t;
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feedbackMap, generalNotes, mediaMap]);
@@ -313,7 +344,18 @@ export function TrainerFeedbackView() {
   // ── Complete feedback + WhatsApp + feedbackStatus ────────────────────────────
 
   const handleComplete = async () => {
-    if (!currentUser || !session || !cycle) return;
+    // Deliberately not gated on `cycle`: it isn't used here, and the cycle read
+    // is allowed to fail on load — a trainer whose cycle doc didn't come back
+    // would otherwise tap "Responder feedback" and have nothing happen at all.
+    if (!currentUser || !session || completingRef.current) return;
+    // A draft save still waiting out its debounce carries the same form state
+    // this write does, but with `status: 'draft'` — let it fire and it lands
+    // after the reply and buries it. Cancel it.
+    if (draftTimerRef.current) {
+      clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = null;
+    }
+    completingRef.current = true;
     setCompleting(true);
     setSaveError('');
     try {
@@ -357,13 +399,13 @@ export function TrainerFeedbackView() {
       // is a mid-course update — keep the trainer on the session they are still
       // working through.
       setHasUnsentChanges(false);
-      if (!responded) {
-        setResponded(true);
-        navigate('/trainer');
-      }
+      const wasFirstReply = !respondedRef.current;
+      markResponded(true);
+      if (wasFirstReply) navigate('/trainer');
     } catch {
       setSaveError('Não foi possível concluir o feedback.');
     } finally {
+      completingRef.current = false;
       setCompleting(false);
     }
   };
