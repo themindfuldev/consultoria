@@ -72,7 +72,7 @@ import { notifyTrainer } from '../../services/notifyService';
 import { clearOfflineSnapshots, unskippedStatus } from '../../utils/session';
 import { formatDuration, netElapsedMs } from '../../utils/duration';
 import { trimText } from '../../utils/text';
-import { videosAwaitingFeedback } from '../../utils/feedback';
+import { isFeedbackDelivered, videosAwaitingFeedback } from '../../utils/feedback';
 import type { Cycle, CycleWeek, Feedback, ParsedSheetTab, Session, SessionVideo } from '../../types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -346,19 +346,19 @@ export function SessionDetail() {
   const actionsFirst =
     (phase === 'pre' && !workoutLocked) || isSkipped || isPaused;
 
-  // The trainer's feedback has arrived. It doesn't lock anything on its own —
-  // feedback often lands mid-week and a follow-up video is a normal part of the
-  // exchange, so videos stay editable and feedback re-requestable regardless.
-  const feedbackAvailable = session?.feedbackStatus === 'complete';
-
   // ── The feedback doc (which exercises were answered, and when) ──────────────
   // Read straight off the doc rather than denormalised onto the session, so
   // sessions whose feedback predates this also work.
 
+  // Whether the trainer has written *anything* for this session — a draft counts.
+  // Skipping the read when there is nothing avoids a request the rules deny
+  // outright (they can't grant a read on a document that doesn't exist yet).
+  const feedbackWritten = !!session && session.feedbackStatus !== 'none';
+
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [feedbackLoaded, setFeedbackLoaded] = useState(false);
   useEffect(() => {
-    if (!sessionId || !feedbackAvailable) {
+    if (!sessionId || !feedbackWritten) {
       setFeedback(null);
       setFeedbackLoaded(false);
       return;
@@ -367,9 +367,23 @@ export function SessionDetail() {
       .then((snap) => setFeedback((snap.data() as Feedback | undefined) ?? null))
       .catch(() => setFeedback(null))
       .finally(() => setFeedbackLoaded(true));
-  }, [sessionId, feedbackAvailable]);
+  }, [sessionId, feedbackWritten]);
 
-  const feedbackCompletedAt = feedback?.completedAt ?? feedback?.createdAt ?? null;
+  // The trainer's feedback has arrived. It doesn't lock anything on its own —
+  // feedback often lands mid-week and a follow-up video is a normal part of the
+  // exchange, so videos stay editable and feedback re-requestable regardless.
+  //
+  // `session.feedbackStatus` is only a denormalised copy of the feedback doc, so
+  // the doc itself gets the last word: a copy left behind by a half-applied
+  // write can't hide a reply the trainer has already sent.
+  //
+  // Only a *delivered* reply counts, though: the doc is also read while it is
+  // still a draft (to notice a reply the session's copy missed), and a draft the
+  // trainer is halfway through must not read as answered anywhere on this page.
+  const deliveredFeedback = isFeedbackDelivered(feedback) ? feedback : null;
+  const feedbackAvailable = session?.feedbackStatus === 'complete' || !!deliveredFeedback;
+
+  const feedbackCompletedAt = deliveredFeedback?.completedAt ?? deliveredFeedback?.createdAt ?? null;
 
   // Any video uploaded after that feedback. A still-pending `uploadedAt` (server
   // timestamp not yet resolved) can only be a video just added here, so it counts.
@@ -379,17 +393,24 @@ export function SessionDetail() {
 
   // Videos the trainer hasn't answered yet — no feedback at all, or an exercise
   // block the trainer left empty (partial feedback).
-  const pendingFeedbackVideos = videosAwaitingFeedback(videos, feedback?.exerciseFeedback);
+  const pendingFeedbackVideos = videosAwaitingFeedback(videos, deliveredFeedback?.exerciseFeedback);
   const feedbackPartial = feedbackAvailable && pendingFeedbackVideos.length > 0;
 
-  // Keep the denormalised flag on the session in sync, so the cycle's session
-  // list can flag partial feedback without loading every session's videos and
-  // feedback doc. Waits for both to have loaded so it never writes a guess.
+  // Keep the denormalised flags on the session in sync with the feedback doc, so
+  // the cycle's session list can show "feedback disponível" (and flag a partial
+  // one) without loading every session's videos and feedback doc. Waits for both
+  // to have loaded so it never writes a guess.
   useEffect(() => {
     if (!session || loading || !feedbackAvailable || !feedbackLoaded) return;
-    if ((session.feedbackPartial ?? false) === feedbackPartial) return;
-    updateDoc(doc(db, 'sessions', session.id), { feedbackPartial })
-      .then(() => setSession((prev) => (prev ? { ...prev, feedbackPartial } : prev)))
+    const patch: Record<string, unknown> = {};
+    // Repairs a session whose copy was left on 'draft'/'none' even though the
+    // reply went out — until it is fixed, the week panel and the weekly Doc both
+    // skip a session the student can already read the feedback for.
+    if (session.feedbackStatus !== 'complete') patch.feedbackStatus = 'complete';
+    if ((session.feedbackPartial ?? false) !== feedbackPartial) patch.feedbackPartial = feedbackPartial;
+    if (Object.keys(patch).length === 0) return;
+    updateDoc(doc(db, 'sessions', session.id), patch)
+      .then(() => setSession((prev) => (prev ? { ...prev, ...(patch as Partial<Session>) } : prev)))
       .catch(() => {/* best-effort — the page itself computes it live */});
   }, [session, loading, feedbackAvailable, feedbackLoaded, feedbackPartial]);
 

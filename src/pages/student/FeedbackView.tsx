@@ -21,6 +21,7 @@ import { ReadOnlyVideoCard } from '../../components/UploadedVideoCard';
 import { buildWeeklyFeedbackHtml, createWeeklyDoc } from '../../services/docsService';
 import type { WeeklySection } from '../../services/docsService';
 import { deleteDriveFile, driveFileExists, getOrCreateWeekFolder } from '../../services/driveService';
+import { isFeedbackDelivered } from '../../utils/feedback';
 import { tokenizeLinks } from '../../utils/linkify';
 import type { Cycle, CycleWeek, Feedback, Session, SessionVideo, UserProfile } from '../../types';
 import { trimText } from '../../utils/text';
@@ -112,6 +113,16 @@ export function FeedbackView() {
         setSession(s);
         setFeedback(fb);
 
+        // This page is usually the first thing the student opens after the
+        // trainer's WhatsApp message, so it is also the earliest chance to repair
+        // a session whose denormalised copy was left behind by the reply. Until
+        // it matches, the session page and the weekly Doc both act as if no
+        // feedback had arrived.
+        if (isFeedbackDelivered(fb) && s.feedbackStatus !== 'complete') {
+          updateDoc(doc(db, 'sessions', sessionId), { feedbackStatus: 'complete' })
+            .catch(() => {/* best-effort — this page renders from the doc itself */});
+        }
+
         const [cycleSnap, studentSnap, videosSnap, weekSnap] = await Promise.all([
           getDoc(doc(db, 'cycles', s.cycleId)),
           getDoc(doc(db, 'users', s.studentUid)),
@@ -173,7 +184,10 @@ export function FeedbackView() {
         ? (cycle.modalityCustom ?? 'Outro')
         : cycle.modality;
 
-      // 1) All the student's completed-feedback sessions in this cycle-week.
+      // 1) Every session of this cycle-week the trainer has written something for.
+      //    The session's `feedbackStatus` only narrows the set — whether the reply
+      //    actually went out is decided below, off the feedback doc itself, so a
+      //    stale copy can't drop an answered session out of the week's document.
       const sessSnap = await getDocs(query(
         collection(db, 'sessions'),
         where('cycleId', '==', session.cycleId),
@@ -181,22 +195,26 @@ export function FeedbackView() {
       ));
       const weekSessions = sessSnap.docs
         .map((d) => d.data() as Session)
-        .filter((s) => (s.weekNumber ?? 1) === weekNumber && s.feedbackStatus === 'complete')
+        .filter((s) => (s.weekNumber ?? 1) === weekNumber
+          && (s.feedbackStatus === 'complete' || s.feedbackStatus === 'draft'))
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
       // 2) One section per session (its feedback + videos).
       const sections: WeeklySection[] = [];
       for (const s of weekSessions) {
         const [fbSnap, vidSnap] = await Promise.all([
-          getDoc(doc(db, 'feedback', s.id)),
+          getDoc(doc(db, 'feedback', s.id)).catch(() => null),
           getDocs(query(
             collection(db, 'videos'),
             where('sessionId', '==', s.id),
             where('studentUid', '==', s.studentUid),
           )),
         ]);
-        if (!fbSnap.exists()) continue;
+        if (!fbSnap?.exists()) continue;
         const fb = fbSnap.data() as Feedback;
+        // A draft the trainer is still working on is not part of the week's
+        // feedbacks; a reply that went out is, whatever the session says.
+        if (!isFeedbackDelivered(fb)) continue;
         const vids = vidSnap.docs.map((d) => d.data() as SessionVideo);
         vids.sort((a, b) => (a.uploadedAt?.seconds ?? Infinity) - (b.uploadedAt?.seconds ?? Infinity));
         const dateLbl = s.date instanceof Timestamp

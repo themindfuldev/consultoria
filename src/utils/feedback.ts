@@ -1,4 +1,20 @@
-import type { ExerciseFeedback, SessionVideo } from '../types';
+import type { ExerciseFeedback, Feedback, SessionVideo } from '../types';
+
+/**
+ * Whether the trainer's reply actually went out to the student, as opposed to a
+ * draft they are still writing.
+ *
+ * `status` is the primary signal, but it is not enough on its own: the trainer's
+ * debounced auto-save could land *after* "Responder feedback" and knock a
+ * delivered reply back down to `'draft'`. `completedAt` is only ever written by
+ * that reply and never cleared, so it settles the question for feedbacks caught
+ * by that race.
+ */
+export function isFeedbackDelivered(
+  feedback: Pick<Feedback, 'status' | 'completedAt'> | null | undefined,
+): boolean {
+  return !!feedback && (feedback.status === 'complete' || feedback.completedAt != null);
+}
 
 /**
  * The trainer's feedback form groups a session's videos by exercise tag, with
