@@ -68,12 +68,12 @@ import {
   setKey,
   writeCells,
 } from '../../services/sheetsService';
-import { notifyTrainer } from '../../services/notifyService';
+import { notifyTrainer, openWhatsApp } from '../../services/notifyService';
 import { clearOfflineSnapshots, unskippedStatus } from '../../utils/session';
 import { formatDuration, netElapsedMs } from '../../utils/duration';
 import { trimText } from '../../utils/text';
 import { isFeedbackDelivered, videosAwaitingFeedback } from '../../utils/feedback';
-import type { Cycle, CycleWeek, Feedback, ParsedSheetTab, Session, SessionVideo } from '../../types';
+import type { Cycle, CycleWeek, Feedback, ParsedSheetTab, Session, SessionVideo, Trainer } from '../../types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -208,8 +208,18 @@ export function SessionDetail() {
   const [editSelected, setEditSelected] = useState('');
   const [editCustom, setEditCustom] = useState('');
 
-  // Notification state (video-ready notification)
-  const [notifying, setNotifying] = useState(false);
+  // The trainer's WhatsApp number, resolved as soon as the cycle is known so
+  // "Solicitar feedback" can open the deep link straight out of the tap. Looking
+  // it up inside the handler would put a `window.open` behind an `await`, which
+  // mobile browsers block as an unsolicited popup. `null` = not resolved yet.
+  const [trainerPhone, setTrainerPhone] = useState<string | null>(null);
+  useEffect(() => {
+    const email = cycle?.trainerEmail;
+    if (!email) return;
+    getDoc(doc(db, 'trainers', email))
+      .then((snap) => setTrainerPhone((snap.data() as Trainer | undefined)?.whatsappPhone ?? ''))
+      .catch(() => {/* non-fatal — the handler falls back to a live lookup */});
+  }, [cycle?.trainerEmail]);
 
   // "Notificar treinador" preference (saved on the user profile; default on).
   const [notify, setNotify] = useState(true);
@@ -1094,14 +1104,33 @@ export function SessionDetail() {
   const handleNotify = () => {
     // Only sent when there are videos to review.
     if (!session || !cycle || !cycle.trainerEmail || videos.length === 0) return;
-    setNotifying(true);
     const weekSuffix = session.weekNumber ? ` (Semana ${session.weekNumber}).` : '.';
+    const subject = 'Treino disponível para feedback';
     const body =
       `Há ${videos.length} vídeos do treino *${session.tabName}*${weekSuffix}\n` +
       `Acessar treino: ${window.location.origin}/trainer/sessions/${session.id}`;
-    notifyTrainer(cycle.trainerEmail, 'Treino disponível para feedback', body)
-      .then(() => updateDoc(doc(db, 'sessions', session.id), { videosNotifiedAt: serverTimestamp() }))
-      .finally(() => setNotifying(false));
+
+    if (trainerPhone === null) {
+      // Prefetch hasn't landed (or failed): fall back to looking the number up
+      // now. Costs the popup on browsers that require a gesture, but it is the
+      // only way to send at all, and one reload puts it back on the fast path.
+      notifyTrainer(cycle.trainerEmail, subject, body)
+        .catch(() => {/* the notification is a convenience, never a blocker */});
+    } else if (trainerPhone === '') {
+      showToast('Seu treinador ainda não cadastrou um WhatsApp.');
+      return;
+    } else {
+      openWhatsApp(trainerPhone, subject, body);
+    }
+
+    // Stamped in the background, deliberately not awaited. Opening WhatsApp
+    // sends this page to the background, where a mobile browser suspends it —
+    // the write applies locally but its server ack may not arrive until the
+    // student comes back. Waiting on that ack to re-enable the button is what
+    // left it greyed out until a reload.
+    updateDoc(doc(db, 'sessions', session.id), { videosNotifiedAt: serverTimestamp() })
+      .catch(() => {/* best-effort — the request itself has already gone out */});
+    setSession((prev) => (prev ? { ...prev, videosNotifiedAt: Timestamp.now() } : prev));
   };
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -1157,8 +1186,7 @@ export function SessionDetail() {
   const requestFeedbackButton = (
     <button
       onClick={handleNotify}
-      disabled={notifying}
-      className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-green-700 active:scale-95 disabled:opacity-60"
+      className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-green-700 active:scale-95"
     >
       <Send className="h-4 w-4" />
       {session?.videosNotifiedAt ? 'Re-solicitar feedback' : 'Solicitar feedback'}
