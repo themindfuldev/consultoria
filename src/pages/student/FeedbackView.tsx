@@ -88,6 +88,8 @@ export function FeedbackView() {
   const [docError, setDocError] = useState('');
   /** When the weekly doc was last generated (ms), or null if it never was. */
   const [docGeneratedAt, setDocGeneratedAt] = useState<number | null>(null);
+  /** Sessions the stored doc was built from, or null when it doesn't say. */
+  const [docSessionIds, setDocSessionIds] = useState<string[] | null>(null);
   /** True once Drive has told us the stored doc is gone (deleted or trashed). */
   const [docMissing, setDocMissing] = useState(false);
 
@@ -145,6 +147,7 @@ export function FeedbackView() {
         if (week?.feedbackDocUrl) {
           setDocUrl(week.feedbackDocUrl);
           setDocGeneratedAt(millis(week.feedbackDocGeneratedAt));
+          setDocSessionIds(week.feedbackDocSessionIds ?? null);
           // A doc that was deleted in Drive (or lost to a half-failed update)
           // must not be offered as "Abrir" — check, and fall back to
           // "Atualizar" when it's really gone. Skipped without a live token so
@@ -201,6 +204,10 @@ export function FeedbackView() {
 
       // 2) One section per session (its feedback + videos).
       const sections: WeeklySection[] = [];
+      // Recorded on the week alongside the doc, so the freshness check below can
+      // tell a doc that predates a session's feedback from one that simply left
+      // it out — the timestamp on its own cannot.
+      const includedSessionIds: string[] = [];
       for (const s of weekSessions) {
         const [fbSnap, vidSnap] = await Promise.all([
           getDoc(doc(db, 'feedback', s.id)).catch(() => null),
@@ -226,6 +233,7 @@ export function FeedbackView() {
           videos: vids,
           generalNotes: fb.generalNotes,
         });
+        includedSessionIds.push(s.id);
       }
 
       // 3) Week folder + the single weekly doc (replace if it exists).
@@ -261,6 +269,7 @@ export function FeedbackView() {
             feedbackDocId: created.id,
             feedbackDocUrl: created.webViewLink,
             feedbackDocGeneratedAt: serverTimestamp(),
+            feedbackDocSessionIds: includedSessionIds,
           });
           pointerMoved = true;
         } catch {/* non-fatal: the new doc is usable, only the pointer is stale */}
@@ -271,6 +280,7 @@ export function FeedbackView() {
 
       setDocUrl(created.webViewLink);
       setDocGeneratedAt(Date.now());
+      setDocSessionIds(includedSessionIds);
       setDocMissing(false);
     } catch (err) {
       console.error(err);
@@ -304,15 +314,21 @@ export function FeedbackView() {
     );
   }
 
-  // The weekly doc is current only if it exists in Drive and was generated
-  // after the trainer's last write to this feedback. A doc from before
-  // `feedbackDocGeneratedAt` was tracked has no stamp, so it counts as stale —
-  // one "Atualizar" tap brings it (and the stamp) up to date.
+  // The weekly doc is current only if it exists in Drive, was generated after
+  // the trainer's last write to this feedback, *and* actually contains this
+  // session. The last part matters on its own: a doc generated at a moment when
+  // this session was left out is still newer than the feedback, so on the
+  // timestamp alone it would read as current forever and "Atualizar" would never
+  // come back. A doc from before either field was tracked counts as stale — one
+  // "Atualizar" tap brings it (and the bookkeeping) up to date.
   const feedbackAt = feedback ? feedbackTouchedAt(feedback) : null;
+  const docCoversThisSession =
+    !isFeedbackDelivered(feedback) || (!!sessionId && (docSessionIds?.includes(sessionId) ?? false));
   const docUpToDate =
     !!docUrl
     && !docMissing
     && docGeneratedAt !== null
+    && docCoversThisSession
     && (feedbackAt === null || docGeneratedAt >= feedbackAt);
 
   const dateLabel = session?.date

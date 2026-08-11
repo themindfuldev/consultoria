@@ -134,6 +134,14 @@ export interface CycleWeek {
    * are therefore always treated as stale.
    */
   feedbackDocGeneratedAt?: Timestamp;
+  /**
+   * The sessions whose feedback actually made it into the doc above. The
+   * timestamp alone can't tell: a doc generated while a session was (wrongly)
+   * excluded is *newer* than that session's feedback, so it would count as
+   * current forever and could never be rebuilt from the UI. Absent on docs
+   * generated before this was tracked, which are therefore treated as stale.
+   */
+  feedbackDocSessionIds?: string[];
 }
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
@@ -216,7 +224,8 @@ export interface Session {
    * Legacy, no longer read or written. It used to mark a session as "already
    * rolled into the weekly doc", which permanently spent the update action —
    * so later feedback on the same session could never reach the doc. Freshness
-   * is now derived from `weeks.feedbackDocGeneratedAt` vs `feedback.updatedAt`.
+   * is now derived from `weeks.feedbackDocGeneratedAt` vs `feedback.updatedAt`,
+   * together with `weeks.feedbackDocSessionIds`.
    */
   weeklyFeedbackDocGenerated?: boolean;
   /**
