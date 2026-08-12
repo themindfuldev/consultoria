@@ -548,6 +548,13 @@ Feedback is also consolidated into a single **weekly Google Doc** per cycle week
 update. The Doc id/url/build time are stored on the `weeks` doc
 (`feedbackDocId/Url/GeneratedAt`).
 
+Drive's HTML→Doc conversion always produces a *paged* doc, so right after the
+upload a Docs API `updateDocumentStyle`
+(`documentFormat.documentMode = PAGELESS`) switches it to **pageless** — the doc
+is read on phones, where page breaks only get in the way. That call takes the
+same non-sensitive `drive.file` scope (the app created the file), and like the
+sharing call it is best-effort: if it fails, the reader just gets a paged doc.
+
 Two rules keep the stored link honest:
 
 - **Freshness is derived, not flagged.** The student's action reads "Abrir" only
