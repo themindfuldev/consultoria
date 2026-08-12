@@ -9,6 +9,9 @@
  * while the metadata declares `application/vnd.google-apps.document` as the
  * target type — Drive then converts the HTML into a native Google Doc. (Sending
  * the Google-Apps mime as the media Content-Type is what returned HTTP 400.)
+ *
+ * That conversion always yields a *paged* doc, so a second call — the Docs API
+ * `updateDocumentStyle` below — flips it to pageless.
  */
 
 import type { ExerciseFeedback, SessionVideo } from '../types';
@@ -17,6 +20,7 @@ import { linkifyToHtml } from '../utils/linkify';
 import { trimText } from '../utils/text';
 
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3';
+const DOCS_API = 'https://docs.googleapis.com/v1';
 
 // ── HTML builder ──────────────────────────────────────────────────────────────
 
@@ -114,6 +118,38 @@ export interface CreatedDoc {
   webViewLink: string;
 }
 
+/**
+ * Switches a Google Doc to pageless. Drive's HTML→Doc conversion can only
+ * produce a paged doc, and neither the HTML nor the upload metadata carries the
+ * setting, so it takes this extra Docs API round trip.
+ *
+ * `batchUpdate` accepts the `drive.file` scope the app already holds — the doc
+ * was created by us, so no extra consent is needed. Pageless hides headers,
+ * footers and page numbers, none of which the feedback HTML uses.
+ */
+async function makePageless(documentId: string, token: string): Promise<void> {
+  const res = await fetch(`${DOCS_API}/documents/${documentId}:batchUpdate`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      requests: [
+        {
+          updateDocumentStyle: {
+            documentStyle: { documentFormat: { documentMode: 'PAGELESS' } },
+            fields: 'documentFormat.documentMode',
+          },
+        },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Docs API batchUpdate → ${res.status}: ${await res.text()}`);
+  }
+}
+
 /** Creates a Google Doc from HTML inside `folderId` and shares it (anyone → reader). */
 async function createDocFromHtml(
   name: string,
@@ -147,7 +183,12 @@ async function createDocFromHtml(
     throw new Error(`Falha ao criar documento: ${res.status} ${await res.text()}`);
   }
   const json = (await res.json()) as CreatedDoc;
-  await makePublicViewer(json.id, token).catch(() => {/* sharing is best-effort */});
+  // Both follow-ups are best-effort: a doc that stayed paged, or private, is
+  // still a perfectly readable doc and must not fail the whole feedback flow.
+  await Promise.all([
+    makePublicViewer(json.id, token).catch(() => {/* sharing is best-effort */}),
+    makePageless(json.id, token).catch(() => {/* pageless is best-effort */}),
+  ]);
   return json;
 }
 
