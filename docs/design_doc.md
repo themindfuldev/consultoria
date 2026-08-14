@@ -544,16 +544,29 @@ attachment was removed — feedback is text only (legacy media renders read-only
 Feedback is also consolidated into a single **weekly Google Doc** per cycle week
 ("Feedbacks - Semana X"), built from HTML by
 [`docsService`](../src/services/docsService.ts)
-(`buildWeeklyFeedbackHtml` → `createWeeklyDoc`) and rebuilt from scratch on every
-update. The Doc id/url/build time are stored on the `weeks` doc
+(`buildWeeklyFeedbackHtml` → `upsertWeeklyDoc`), its content rebuilt from scratch
+on every update. The Doc id/url/build time are stored on the `weeks` doc
 (`feedbackDocId/Url/GeneratedAt`).
 
-Drive's HTML→Doc conversion always produces a *paged* doc, so right after the
-upload a Docs API `updateDocumentStyle`
-(`documentFormat.documentMode = PAGELESS`) switches it to **pageless** — the doc
-is read on phones, where page breaks only get in the way. That call takes the
-same non-sensitive `drive.file` scope (the app created the file), and like the
-sharing call it is best-effort: if it fails, the reader just gets a paged doc.
+**One file per week, for the week's whole life.** A rebuild overwrites the
+existing file's content (`files.update` with `uploadType=media`) instead of
+creating a replacement and deleting the predecessor. That keeps the Doc's URL
+stable for anyone who bookmarked it, and cuts a rebuild from five Drive calls
+(three chained folder lookups + create + delete) to one. A new file is created
+only when the week has no Doc yet, or when the one it points at is gone — a
+404/410, a revoked per-file grant, or a Doc sitting in the bin, which is
+deliberately left there rather than resurrected (`driveFileExists` already counts
+trashed as gone).
+
+Drive's HTML→Doc conversion always produces a *paged* doc, so a Docs API
+`updateDocumentStyle` (`documentFormat.documentMode = PAGELESS`) switches it to
+**pageless** — the doc is read on phones, where page breaks only get in the way.
+That call takes the same non-sensitive `drive.file` scope (the app created the
+file). It is **fired without being awaited**: it is the slowest step in a rebuild
+(the Docs backend loads the document model of a freshly converted file) and
+nothing downstream needs it, so blocking "Atualizar" on it just made rebuilds
+feel slow. `keepalive` lets it finish after a navigation, and failure is
+tolerated — the reader simply gets a paged doc.
 
 Two rules keep the stored link honest:
 

@@ -18,7 +18,7 @@ import { useGoogleTokenWarmup } from '../../hooks/useGoogleTokenWarmup';
 import { Layout } from '../../components/Layout';
 import { Breadcrumbs } from '../../components/Breadcrumbs';
 import { ReadOnlyVideoCard } from '../../components/UploadedVideoCard';
-import { buildWeeklyFeedbackHtml, createWeeklyDoc } from '../../services/docsService';
+import { buildWeeklyFeedbackHtml, upsertWeeklyDoc } from '../../services/docsService';
 import type { WeeklySection } from '../../services/docsService';
 import { deleteDriveFile, driveFileExists, getOrCreateWeekFolder } from '../../services/driveService';
 import { isFeedbackDelivered } from '../../utils/feedback';
@@ -236,15 +236,8 @@ export function FeedbackView() {
         includedSessionIds.push(s.id);
       }
 
-      // 3) Week folder + the single weekly doc (replace if it exists).
-      const weekFolder = await getOrCreateWeekFolder(
-        cycle.trainerName ?? 'Treinador',
-        studentProfile.displayName,
-        cycle.title,
-        weekLabel,
-        token,
-      );
-
+      // 3) The single weekly doc — overwritten in place when the week already
+      //    has one, so the folder lookup below only runs for a brand-new doc.
       const weekQ = await getDocs(query(
         collection(db, 'cycles', session.cycleId, 'weeks'),
         where('weekNumber', '==', weekNumber),
@@ -255,13 +248,24 @@ export function FeedbackView() {
       const html = buildWeeklyFeedbackHtml(
         weekNumber, cycle.title, modality, studentProfile.displayName, sections,
       );
-      const created = await createWeeklyDoc(
-        `Feedbacks - ${weekLabel}`, html, weekFolder.id, token,
-      );
+      const created = await upsertWeeklyDoc({
+        name: `Feedbacks - ${weekLabel}`,
+        html,
+        token,
+        existingDocId: prevDocId,
+        resolveFolderId: async () => (await getOrCreateWeekFolder(
+          cycle.trainerName ?? 'Treinador',
+          studentProfile.displayName,
+          cycle.title,
+          weekLabel,
+          token,
+        )).id,
+      });
 
-      // 4) Point the week at the new doc *before* dropping the old one, so a
-      //    failure anywhere in here leaves the stored link on a file that still
-      //    exists rather than on a deleted one.
+      // 4) Point the week at the doc *before* dropping any old one, so a failure
+      //    anywhere in here leaves the stored link on a file that still exists
+      //    rather than on a deleted one. On the overwrite path the id is
+      //    unchanged, which makes the delete below a no-op on its own.
       let pointerMoved = false;
       if (weekDoc) {
         try {
